@@ -15,6 +15,8 @@ before it is considered for live deployment.
 """
 
 from app.strategies.library.base import TemplateStrategy
+from app.strategies.library.index_futures_arbitrage import IndexFuturesArbitrageStrategy
+from app.strategies.library.latency_arbitrage import LatencyArbitrageStrategy
 from app.strategies.library.mean_reversion import MeanReversionStrategy
 from app.strategies.library.momentum import CrossSectionalMomentumStrategy
 from app.strategies.library.opening_range_breakout import OpeningRangeBreakoutStrategy
@@ -27,6 +29,8 @@ TEMPLATES: list[type[TemplateStrategy]] = [
     MeanReversionStrategy,
     OpeningRangeBreakoutStrategy,
     PairsTradingStrategy,
+    LatencyArbitrageStrategy,
+    IndexFuturesArbitrageStrategy,
 ]
 
 _BY_SLUG = {t.SLUG: t for t in TEMPLATES}
@@ -48,4 +52,6 @@ __all__ = [
     "MeanReversionStrategy",
     "OpeningRangeBreakoutStrategy",
     "PairsTradingStrategy",
+    "LatencyArbitrageStrategy",
+    "IndexFuturesArbitrageStrategy",
 ]

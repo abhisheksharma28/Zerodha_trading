@@ -15,6 +15,8 @@ from app.strategies.base import Bar, StrategyContext
 from app.strategies.library import (
     TEMPLATES,
     CrossSectionalMomentumStrategy,
+    IndexFuturesArbitrageStrategy,
+    LatencyArbitrageStrategy,
     MeanReversionStrategy,
     OpeningRangeBreakoutStrategy,
     PairsTradingStrategy,
@@ -322,6 +324,126 @@ def test_pairs_cointegration_gate_blocks_a_non_stationary_spread():
     })
     emitted, _ = run(PairsTradingStrategy, params, steps)
     assert emitted == []  # gate refuses every entry
+
+
+# --------------------------------------------------------------------------
+# latency arbitrage (lead-lag convergence)
+# --------------------------------------------------------------------------
+
+def test_latency_arb_trades_the_laggard_toward_the_leader_then_exits():
+    steps: list[Bar] = []
+    lead = lag = 100.0
+    for i in range(80):                       # 80 bars moving together -> high correlation
+        step = 0.2 if i % 2 == 0 else -0.15
+        lead += step
+        lag += step
+        steps.append(_bar("NIFTY", lead, daily_ts(i)))
+        steps.append(_bar("NIFTYBEES", lag, daily_ts(i)))
+    # leader jumps, laggard lags for a few bars
+    for i in range(80, 84):
+        lead += 1.2
+        steps.append(_bar("NIFTY", lead, daily_ts(i)))
+        steps.append(_bar("NIFTYBEES", lag, daily_ts(i)))
+    # laggard catches up -> gap closes -> exit
+    for i in range(84, 92):
+        lag = lead
+        steps.append(_bar("NIFTY", lead, daily_ts(i)))
+        steps.append(_bar("NIFTYBEES", lag, daily_ts(i)))
+    params = LatencyArbitrageStrategy.resolve_params({
+        **LatencyArbitrageStrategy.presets()["balanced"],
+        "leader_symbol": "NIFTY", "signal_lookback": 3, "divergence_bps": 20.0,
+        "exit_gap_bps": 5.0, "stop_gap_bps": 5000.0, "corr_lookback": 40,
+        "min_correlation": 0.5, "max_holding_bars": 0, "sizing_method": "fixed_quantity",
+        "fixed_quantity": 3,
+    })
+    emitted, positions = run(LatencyArbitrageStrategy, params, steps)
+    assert emitted, "expected a lead-lag entry"
+    first = emitted[0][1][0]
+    assert first.tradingsymbol == "NIFTYBEES" and first.transaction_type == "BUY"
+    assert positions.get("NIFTYBEES", 0) == 0  # exited once the gap closed
+
+
+def test_latency_arb_correlation_guard_blocks_uncorrelated_pair():
+    import random
+
+    random.seed(9)
+    steps = []
+    a = b = 100.0
+    for i in range(120):
+        a += random.gauss(0, 1.0)
+        b += random.gauss(0, 1.0)          # independent -> low correlation
+        steps.append(_bar("A", abs(a) + 50, daily_ts(i)))
+        steps.append(_bar("B", abs(b) + 50, daily_ts(i)))
+    params = LatencyArbitrageStrategy.resolve_params({
+        **LatencyArbitrageStrategy.presets()["balanced"],
+        "leader_symbol": "A", "divergence_bps": 1.0, "corr_lookback": 40,
+        "min_correlation": 0.9,
+    })
+    emitted, _ = run(LatencyArbitrageStrategy, params, steps)
+    assert emitted == []
+
+
+# --------------------------------------------------------------------------
+# index / futures arbitrage (cash-futures basis)
+# --------------------------------------------------------------------------
+
+def test_index_futures_arb_sells_rich_future_and_buys_spot_then_converges():
+    import math
+
+    r, q, dte = 0.065, 0.012, 30
+    t = dte / 365
+    spot = 24_000.0
+    fair = spot * math.exp((r - q) * t)
+    steps: list[Bar] = []
+    # 10 aligned bars near fair value (no trade)
+    for i in range(10):
+        steps.append(_bar("NIFTY", spot, daily_ts(i)))
+        steps.append(_bar("NIFTY-FUT", fair, daily_ts(i)))
+    # future goes ~0.6% rich -> SELL future / BUY spot
+    rich = fair * 1.006
+    for i in range(10, 14):
+        steps.append(_bar("NIFTY", spot, daily_ts(i)))
+        steps.append(_bar("NIFTY-FUT", rich, daily_ts(i)))
+    # converge back to fair -> unwind
+    for i in range(14, 22):
+        steps.append(_bar("NIFTY", spot, daily_ts(i)))
+        steps.append(_bar("NIFTY-FUT", fair, daily_ts(i)))
+    params = IndexFuturesArbitrageStrategy.resolve_params({
+        **IndexFuturesArbitrageStrategy.presets()["balanced"],
+        "spot_symbol": "NIFTY", "risk_free_rate_pct": 6.5, "dividend_yield_pct": 1.2,
+        "expiry_date": "", "days_to_expiry": dte, "entry_deviation_pct": 0.3,
+        "exit_deviation_pct": 0.05, "stop_deviation_pct": 5.0, "futures_lot_size": 50,
+        "sizing_method": "fixed_capital", "capital_allocation": 5_000_000.0,
+        "max_position_size_pct": 50.0,
+    })
+    emitted, positions = run(IndexFuturesArbitrageStrategy, params, steps)
+    assert emitted, "expected a basis entry"
+    first = {o.tradingsymbol: o.transaction_type for o in emitted[0][1]}
+    assert first["NIFTY-FUT"] == "SELL" and first["NIFTY"] == "BUY"
+    assert all(v % 50 == 0 for v in [o.quantity for _, os in emitted for o in os
+                                     if o.tradingsymbol == "NIFTY-FUT"])
+    assert positions.get("NIFTY", 0) == 0 and positions.get("NIFTY-FUT", 0) == 0
+
+
+def test_index_futures_arb_flattens_before_expiry():
+
+    steps: list[Bar] = []
+    spot = 100.0
+    for i in range(30):
+        d = daily_ts(i)
+        # keep the future rich the whole time so it would otherwise stay in a trade
+        steps.append(_bar("SPOT", spot, d))
+        steps.append(_bar("FUT", spot * 1.02, d))
+    params = IndexFuturesArbitrageStrategy.resolve_params({
+        **IndexFuturesArbitrageStrategy.presets()["balanced"],
+        "spot_symbol": "SPOT", "expiry_date": "2026-01-20", "entry_deviation_pct": 0.3,
+        "stop_deviation_pct": 50.0, "close_days_before_expiry": 2, "futures_lot_size": 1,
+        "sizing_method": "fixed_quantity", "fixed_quantity": 10,
+    })
+    emitted, positions = run(IndexFuturesArbitrageStrategy, params, steps)
+    # entered early, force-flat by 2026-01-18 (2 days before the 2026-01-20 expiry)
+    assert emitted
+    assert positions.get("SPOT", 0) == 0 and positions.get("FUT", 0) == 0
 
 
 # --------------------------------------------------------------------------

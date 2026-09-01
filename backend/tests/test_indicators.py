@@ -12,6 +12,7 @@ from app.strategies.indicators import (
     max_drawdown,
     roc,
     rolling_beta,
+    rolling_correlation,
     rolling_std,
     rolling_volatility,
     rsi,
@@ -70,6 +71,14 @@ def test_rolling_beta_recovers_known_slope():
     y = [3.0 * xi + 7.0 for xi in x]  # exact slope 3
     b = rolling_beta(y, x, 30)
     assert b is not None and abs(b - 3.0) < 1e-6
+
+
+def test_rolling_correlation_extremes():
+    x = [float(i) for i in range(40)]
+    perfect = rolling_correlation(x, [2 * v + 1 for v in x], 30)
+    inverse = rolling_correlation(x, [-v for v in x], 30)
+    assert perfect is not None and abs(perfect - 1.0) < 1e-9
+    assert inverse is not None and abs(inverse + 1.0) < 1e-9
 
 
 def test_crossed_helpers():

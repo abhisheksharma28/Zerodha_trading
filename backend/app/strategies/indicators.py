@@ -154,6 +154,23 @@ def crossed_below(fast_prev: float, slow_prev: float, fast_now: float, slow_now:
     return fast_prev >= slow_prev and fast_now < slow_now
 
 
+def rolling_correlation(x: Sequence[float], y: Sequence[float], period: int) -> float | None:
+    """Pearson correlation of the last ``period`` overlapping samples."""
+    if period < 3 or len(x) < period or len(y) < period:
+        return None
+    xs = list(x[-period:])
+    ys = list(y[-period:])
+    n = float(period)
+    mx = sum(xs) / n
+    my = sum(ys) / n
+    cov = sum((xs[i] - mx) * (ys[i] - my) for i in range(period))
+    vx = sum((xs[i] - mx) ** 2 for i in range(period))
+    vy = sum((ys[i] - my) ** 2 for i in range(period))
+    if vx <= 0 or vy <= 0:
+        return None
+    return cov / math.sqrt(vx * vy)
+
+
 def rolling_beta(y: Sequence[float], x: Sequence[float], period: int) -> float | None:
     """OLS slope of ``y`` on ``x`` over the last ``period`` points (hedge
     ratio for pairs trading). Uses the last ``period`` overlapping samples."""
