@@ -207,3 +207,65 @@ export interface BacktestReport {
     is_open: boolean;
   }[];
 }
+
+// --- NIFTY Monthly HNI options strategy --------------------------------
+
+export interface OptionsTemplate {
+  slug: string;
+  name: string;
+  category: string;
+  underlying: string;
+  structure: string;
+  time_horizon: string;
+  complexity: string;
+  warning: string;
+  supports_backtest: boolean;
+  supports_paper: boolean;
+  supports_live: boolean;
+  parameters: Record<string, TemplateParamSpec>;
+  presets: Record<string, Record<string, unknown>>;
+}
+
+export interface OptionsInstance {
+  id: string;
+  slug: string;
+  mode: TradingMode;
+  status: string;
+  config: Record<string, unknown>;
+  basket_id: string;
+  underlying: string;
+  expiry: string | null;
+  entry_date: string | null;
+  dte_at_entry: number | null;
+  spot_at_entry: number | null;
+  lot_size: number | null;
+  strike_a: number | null;
+  strike_b: number | null;
+  strike_c: number | null;
+  basket: { legs: { label: string; action: string; strike: number; lots: number; quantity: number; entry_price: number }[] } | null;
+  net_credit: number | null;
+  credit_pct: number | null;
+  deployed_capital: number | null;
+  deployed_capital_source: string | null;
+  target_amount: number | null;
+  stop_loss_amount: number | null;
+  last_spot: number | null;
+  last_pnl: number | null;
+  exit_reason: string | null;
+  realized_pnl: number | null;
+  fees: number | null;
+  net_pnl: number | null;
+  not_eligible_reason: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OptionsEvaluation {
+  eligible: boolean;
+  reason: string;
+  as_of: string;
+  spot: number | null;
+  expiry: string | null;
+  dte: number | null;
+  basket: Record<string, unknown> | null;
+}

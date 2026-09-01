@@ -6,6 +6,7 @@ import StrategiesPage from "@/pages/StrategiesPage";
 import StrategyDetailPage from "@/pages/StrategyDetailPage";
 import StrategyLibraryPage from "@/pages/StrategyLibraryPage";
 import StrategyTemplateDetailPage from "@/pages/StrategyTemplateDetailPage";
+import OptionsHniPage from "@/pages/OptionsHniPage";
 import BacktestsPage from "@/pages/BacktestsPage";
 import BacktestDetailPage from "@/pages/BacktestDetailPage";
 import DeploymentsPage from "@/pages/DeploymentsPage";
@@ -22,6 +23,7 @@ export default function App() {
         <Route index element={<DashboardPage />} />
         <Route path="strategy-library" element={<StrategyLibraryPage />} />
         <Route path="strategy-library/:slug" element={<StrategyTemplateDetailPage />} />
+        <Route path="options-hni" element={<OptionsHniPage />} />
         <Route path="strategies" element={<StrategiesPage />} />
         <Route path="strategies/:strategyId" element={<StrategyDetailPage />} />
         <Route path="backtests" element={<BacktestsPage />} />
