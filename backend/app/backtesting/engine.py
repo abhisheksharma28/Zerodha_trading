@@ -1,16 +1,16 @@
 """Deterministic, single-threaded backtest engine.
 
 Runs the exact same BaseStrategy subclass that simulation/paper/live modes
-run (see app.strategies.base) — the only mode-specific piece is fill
-simulation, done here with an idealized "fill at this bar's close" model.
-More realistic fill modelling (slippage, next-bar-open fills, partial fills)
-is a natural follow-up; this is intentionally the simplest model that is
-still honest about being idealized rather than pretending precision it
-doesn't have.
+run (see app.strategies.base). Fills are modelled as "fill at this bar's
+close", optionally adjusted by a CostModel that applies execution slippage
+and the full Indian statutory charge stack (see app.backtesting.costs). The
+cost model is injected, never referenced by strategy code, so the same run
+can be re-priced under different assumptions.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from app.backtesting.costs import CostModel
 from app.strategies.base import Bar, BaseStrategy, StrategyContext
 
 
@@ -20,7 +20,12 @@ class SimulatedFill:
     instrument: str
     transaction_type: str
     quantity: int
-    price: float
+    price: float                 # fill price (post-slippage)
+    reference_price: float = 0.0  # bar close before slippage
+    segment: str = ""
+    cost: float = 0.0            # total charges + slippage attributed to this fill
+    product: str = "CNC"
+    exchange: str = "NSE"
 
 
 @dataclass
@@ -28,13 +33,22 @@ class BacktestRunResult:
     equity_curve: list[tuple[object, float]]
     fills: list[SimulatedFill]
     final_positions: dict[str, int]
+    total_costs: float = 0.0
+    cost_breakdown: dict[str, float] = field(default_factory=dict)
 
 
 class BacktestEngine:
-    def __init__(self, strategy_cls: type[BaseStrategy], parameters: dict, initial_capital: float) -> None:
+    def __init__(
+        self,
+        strategy_cls: type[BaseStrategy],
+        parameters: dict,
+        initial_capital: float,
+        cost_model: CostModel | None = None,
+    ) -> None:
         self.strategy_cls = strategy_cls
         self.parameters = parameters
         self.initial_capital = initial_capital
+        self.cost_model = cost_model
 
     def run(self, candles_by_instrument: dict[str, list[Bar]]) -> BacktestRunResult:
         context = StrategyContext(parameters=self.parameters)
@@ -51,6 +65,8 @@ class BacktestEngine:
         last_price: dict[str, float] = {}
         equity_curve: list[tuple[object, float]] = []
         fills: list[SimulatedFill] = []
+        total_costs = 0.0
+        cost_breakdown: dict[str, float] = {}
 
         for bar in merged_bars:
             last_price[bar.instrument] = bar.close
@@ -59,17 +75,39 @@ class BacktestEngine:
             strategy.on_bar(bar)
 
             for order in context.drain_pending_orders():
-                fill_price = bar.close
-                signed_qty = order.quantity if order.transaction_type == "BUY" else -order.quantity
-                cash -= signed_qty * fill_price
+                ref_price = float(bar.close)
+                side = order.transaction_type
+                segment = ""
+                fill_price = ref_price
+                cost = 0.0
+                if self.cost_model is not None:
+                    segment = self.cost_model.segment_for(order.product, order.exchange)
+                    fill_price = self.cost_model.fill_price_with_slippage(
+                        side, ref_price, segment=segment
+                    )
+                    cb = self.cost_model.charge(
+                        side, fill_price, order.quantity, segment, reference_price=ref_price
+                    )
+                    cost = cb.total
+                    for k, v in cb.to_dict().items():
+                        cost_breakdown[k] = cost_breakdown.get(k, 0.0) + v
+
+                signed_qty = order.quantity if side == "BUY" else -order.quantity
+                cash -= signed_qty * fill_price + cost
+                total_costs += cost
                 positions[order.tradingsymbol] = positions.get(order.tradingsymbol, 0) + signed_qty
                 fills.append(
                     SimulatedFill(
                         bar_timestamp=bar.timestamp,
                         instrument=order.tradingsymbol,
-                        transaction_type=order.transaction_type,
+                        transaction_type=side,
                         quantity=order.quantity,
                         price=fill_price,
+                        reference_price=ref_price,
+                        segment=segment,
+                        cost=cost,
+                        product=order.product,
+                        exchange=order.exchange,
                     )
                 )
 
@@ -81,5 +119,9 @@ class BacktestEngine:
         strategy.on_stop()
 
         return BacktestRunResult(
-            equity_curve=equity_curve, fills=fills, final_positions=positions
+            equity_curve=equity_curve,
+            fills=fills,
+            final_positions=positions,
+            total_costs=total_costs,
+            cost_breakdown={k: round(v, 4) for k, v in cost_breakdown.items()},
         )

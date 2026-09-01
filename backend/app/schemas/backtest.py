@@ -24,9 +24,30 @@ class BacktestRunRequest(BaseModel):
     data API. Each row is ``[timestamp, open, high, low, close, volume]``,
     matching Kite's own historical-candles shape. When omitted, the run
     fetches candles via the connected broker session instead.
+
+    ``costs`` overrides the Indian cost-model rates (see
+    app.backtesting.costs.CostConfig): e.g. ``{"slippage_bps": 0,
+    "brokerage_flat": 0, ...}`` to approximate gross P&L. Unknown keys are
+    rejected.
     """
 
     candles: dict[str, list[list[Any]]] | None = None
+    costs: dict[str, float] | None = None
+
+
+class BacktestReport(BaseModel):
+    backtest_id: str
+    status: str
+    instrument_universe: list[str]
+    timeframe: str
+    initial_capital: float
+    error_message: str | None
+    metrics: dict[str, Any]
+    cost_config: dict[str, Any]
+    cost_breakdown: dict[str, Any]
+    equity_curve: list[list[Any]]
+    charts: dict[str, Any]
+    trades: list[dict[str, Any]]
 
 
 class BacktestRead(BaseModel):

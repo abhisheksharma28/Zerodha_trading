@@ -5,7 +5,12 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.core.deps import get_db
-from app.schemas.backtest import BacktestCreate, BacktestRead, BacktestRunRequest
+from app.schemas.backtest import (
+    BacktestCreate,
+    BacktestRead,
+    BacktestReport,
+    BacktestRunRequest,
+)
 from app.services import backtest_service
 
 router = APIRouter(prefix="/backtests", tags=["backtests"])
@@ -44,7 +49,15 @@ def run_backtest(
         backtest_id,
         settings=settings,
         inline_candles=payload.candles if payload else None,
+        cost_config=payload.costs if payload else None,
     )
+
+
+@router.get("/{backtest_id}/report", response_model=BacktestReport)
+def get_backtest_report(backtest_id: uuid.UUID, db: Session = Depends(get_db)):
+    """Full report: expanded metrics, cost breakdown, equity/drawdown/monthly
+    /daily-P&L/exposure series, trade distribution, and the trade list."""
+    return backtest_service.backtest_report(db, backtest_id)
 
 
 @router.get("/{backtest_id}", response_model=BacktestRead)
