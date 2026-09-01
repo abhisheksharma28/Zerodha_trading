@@ -1,54 +1,52 @@
 @import "tailwindcss";
 
-/* Class-based dark mode: `data-theme` on <html> is the switch (see
-   src/lib/theme.tsx). `dark:` variants still work for one-offs. */
+/* Class-based dark mode: `data-theme` on <html> is the switch (src/lib/theme.tsx). */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 @theme {
-  /* Semantic surface / text / accent tokens. Default values below are the
-     dark theme; the [data-theme="light"] block overrides the same custom
-     properties at runtime, so `bg-surface` / `text-fg` / `bg-accent` etc.
-     re-colour with no rebuild. */
-  --color-bg: #0a0a12;
-  --color-surface: #12121d;
-  --color-elevated: #1b1b2b;
-  --color-line: #232338;
-  --color-line-strong: #33334d;
-  --color-fg: #eef0f6;
-  --color-fg-muted: #a0a3b8;
-  --color-fg-faint: #6b6e85;
+  /* Warm near-black "trading terminal" palette with a gold accent.
+     Defaults = dark; [data-theme="light"] overrides the same custom
+     properties at runtime so utilities re-colour with no rebuild. */
+  --color-bg: #121317;
+  --color-surface: #1a1c22;
+  --color-elevated: #23262e;
+  --color-line: #2a2e37;
+  --color-line-strong: #3a3f4b;
+  --color-fg: #f3f4f6;
+  --color-fg-muted: #9ba1ad;
+  --color-fg-faint: #6b7180;
 
-  /* Purple / blue accent */
-  --color-accent: #7c5cff;
-  --color-accent-strong: #6a45ff;
-  --color-accent-soft: #7c5cff26;
-  --color-accent-fg: #ffffff;
+  /* Gold / amber accent */
+  --color-accent: #f0b429;
+  --color-accent-strong: #e0a316;
+  --color-accent-soft: #f0b4291f;
+  --color-accent-fg: #1c1608;
 
   /* Trading semantics */
-  --color-pos: #26c281;
-  --color-neg: #ef4d6b;
+  --color-pos: #34d399;
+  --color-neg: #f87171;
 
   --font-sans:
     "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 [data-theme="light"] {
-  --color-bg: #f6f6f9;
+  --color-bg: #f6f6f4;
   --color-surface: #ffffff;
-  --color-elevated: #eeeef3;
-  --color-line: #e3e3ec;
-  --color-line-strong: #d0d0dd;
-  --color-fg: #16161f;
-  --color-fg-muted: #545467;
-  --color-fg-faint: #83838f;
+  --color-elevated: #efefec;
+  --color-line: #e4e4df;
+  --color-line-strong: #d2d2cb;
+  --color-fg: #17181c;
+  --color-fg-muted: #575a63;
+  --color-fg-faint: #85888f;
 
-  --color-accent: #6a45ff;
-  --color-accent-strong: #5a34f0;
-  --color-accent-soft: #6a45ff1f;
+  --color-accent: #d99a08;
+  --color-accent-strong: #c48a00;
+  --color-accent-soft: #d99a081c;
   --color-accent-fg: #ffffff;
 
-  --color-pos: #12885a;
-  --color-neg: #d13a56;
+  --color-pos: #0f9d63;
+  --color-neg: #dc4d4d;
 }
 
 :root {
@@ -63,7 +61,6 @@ body {
   font-family: var(--font-sans);
 }
 
-/* Thin, unobtrusive scrollbars that respect the theme. */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--color-line-strong) transparent;
@@ -88,12 +85,24 @@ body {
   }
 }
 .animate-in {
-  animation: fade-in 0.2s ease-out;
+  animation: fade-in 0.18s ease-out;
 }
 
-/* A trading platform lives or dies by never letting LIVE mode look like any
-   other mode. These utility classes are used everywhere a mode badge or a
-   deployment's chrome is rendered — see src/components/ModeBadge.tsx. */
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-menu {
+  animation: menu-in 0.12s ease-out;
+}
+
+/* LIVE mode must never be mistaken for any other mode. */
 .mode-live {
   @apply border-red-500/50 bg-red-500/10 text-red-400;
 }

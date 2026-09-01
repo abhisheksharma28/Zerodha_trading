@@ -16,7 +16,6 @@ export interface Overlay {
   color: string;
   lineWidth?: 1 | 2 | 3 | 4;
 }
-
 export interface SubSeries {
   id: string;
   type: "line" | "histogram";
@@ -31,18 +30,33 @@ export interface SubPane {
   height?: number;
 }
 
-function css(v: string) {
-  return getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-}
+const css = (v: string) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const VISIBLE_BARS = 150;
 
-function chartTheme() {
+function baseOptions(h: number) {
   const line = css("--color-line");
   return {
-    layout: { background: { color: "transparent" }, textColor: css("--color-fg-faint") },
+    height: h,
+    autoSize: true,
+    layout: { background: { color: "transparent" }, textColor: css("--color-fg-faint"), fontSize: 11 },
     grid: { vertLines: { color: line }, horzLines: { color: line } },
-    rightPriceScale: { borderColor: line },
-    timeScale: { borderColor: line, timeVisible: true, secondsVisible: false },
+    rightPriceScale: { borderColor: line, scaleMargins: { top: 0.08, bottom: 0.08 } },
+    timeScale: {
+      borderColor: line,
+      timeVisible: true,
+      secondsVisible: false,
+      rightOffset: 6,
+      barSpacing: 8,
+      minBarSpacing: 1.5,
+    },
     crosshair: { mode: CrosshairMode.Normal },
+    handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
+    handleScale: {
+      axisPressedMouseMove: { time: true, price: true },
+      mouseWheel: true,
+      pinch: true,
+    },
+    kineticScroll: { touch: true, mouse: false },
   };
 }
 
@@ -65,114 +79,145 @@ export function PriceChart({
 }) {
   const mainRef = useRef<HTMLDivElement>(null);
   const subRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const apis = useRef<IChartApi[]>([]);
+  const charts = useRef<IChartApi[]>([]);
+  const candleSeries = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const volSeries = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const overlaySeries = useRef<Map<string, ISeriesApi<"Line" | "Histogram">>>(new Map());
+  const subSeries = useRef<ISeriesApi<"Line" | "Histogram">[][]>([]);
+  const candlesRef = useRef<Candle[]>(candles);
+  const didInitialFit = useRef(false);
 
-  // (re)build everything when data, overlays, panes or theme change
+  candlesRef.current = candles;
+  const panesKey = subPanes.map((p) => p.id).join("|");
+
+  // Build the chart shell once per theme / symbol / pane-set — never per data tick.
   useEffect(() => {
-    if (!mainRef.current || candles.length === 0) return;
-    apis.current.forEach((c) => c.remove());
-    apis.current = [];
+    if (!mainRef.current) return;
+    charts.current.forEach((c) => c.remove());
+    charts.current = [];
+    overlaySeries.current.clear();
+    subSeries.current = [];
+    didInitialFit.current = false;
 
-    const theme = chartTheme();
-    const main = createChart(mainRef.current, {
-      ...theme,
-      autoSize: true,
-      height,
-    });
-    apis.current.push(main);
-
-    const candle = main.addCandlestickSeries({
+    const main = createChart(mainRef.current, baseOptions(height));
+    charts.current.push(main);
+    candleSeries.current = main.addCandlestickSeries({
       upColor: css("--color-pos"),
       downColor: css("--color-neg"),
       borderVisible: false,
       wickUpColor: css("--color-pos"),
       wickDownColor: css("--color-neg"),
     });
-    candle.setData(candles as unknown as Parameters<typeof candle.setData>[0]);
-    if (markers.length) candle.setMarkers(markers);
-
-    const vol = main.addHistogramSeries({
+    volSeries.current = main.addHistogramSeries({
       priceScaleId: "vol",
       priceFormat: { type: "volume" },
-      color: css("--color-line-strong"),
     });
-    main.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
-    vol.setData(
+    main.priceScale("vol").applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } });
+
+    if (onHover) {
+      main.subscribeCrosshairMove((p) => {
+        const t = p.time as number | undefined;
+        onHover(t ? (candlesRef.current.find((c) => c.time === t) ?? null) : null);
+      });
+    }
+
+    const subs: IChartApi[] = [];
+    subPanes.forEach((_pane, i) => {
+      const el = subRefs.current[i];
+      if (!el) return;
+      const sc = createChart(el, baseOptions(subPanes[i].height ?? 120));
+      subs.push(sc);
+      charts.current.push(sc);
+      subSeries.current[i] = [];
+    });
+
+    let syncing = false;
+    const all = [main, ...subs];
+    all.forEach((src) =>
+      src.timeScale().subscribeVisibleLogicalRangeChange((r) => {
+        if (syncing || !r) return;
+        syncing = true;
+        all.forEach((d) => d !== src && d.timeScale().setVisibleLogicalRange(r));
+        syncing = false;
+      }),
+    );
+
+    return () => {
+      charts.current.forEach((c) => c.remove());
+      charts.current = [];
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [themeKey, height, panesKey]);
+
+  // Push data.
+  useEffect(() => {
+    const main = charts.current[0];
+    if (!main || !candleSeries.current || candles.length === 0) return;
+
+    candleSeries.current.setData(candles as never);
+    candleSeries.current.setMarkers(markers);
+    volSeries.current?.setData(
       candles.map((c) => ({
         time: c.time as Time,
         value: c.volume,
-        color: c.close >= c.open ? `${css("--color-pos")}55` : `${css("--color-neg")}55`,
+        color: c.close >= c.open ? `${css("--color-pos")}44` : `${css("--color-neg")}44`,
       })),
     );
 
-    const lineSeries: ISeriesApi<"Line">[] = [];
-    for (const o of overlays) {
-      const ls = main.addLineSeries({
-        color: o.color,
-        lineWidth: o.lineWidth ?? 2,
-        priceLineVisible: false,
-        lastValueVisible: false,
-      });
-      ls.setData(o.data as unknown as Parameters<typeof ls.setData>[0]);
-      lineSeries.push(ls);
-    }
-
-    main.timeScale().fitContent();
-
-    // crosshair -> OHLC readout
-    if (onHover) {
-      main.subscribeCrosshairMove((p) => {
-        if (!p.time) return onHover(null);
-        const c = candles.find((x) => x.time === (p.time as number));
-        onHover(c ?? null);
-      });
-    }
-
-    // sub panes (RSI / MACD) — separate charts, time-synced
-    let syncing = false;
-    const subs: IChartApi[] = [];
-    subPanes.forEach((pane, i) => {
-      const el = subRefs.current[i];
-      if (!el) return;
-      const sc = createChart(el, { ...theme, autoSize: true, height: pane.height ?? 120 });
-      subs.push(sc);
-      apis.current.push(sc);
-      for (const s of pane.series) {
-        const ser =
-          s.type === "histogram"
-            ? sc.addHistogramSeries({ color: s.color })
-            : sc.addLineSeries({ color: s.color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
-        ser.setData(s.data as unknown as Parameters<typeof ser.setData>[0]);
+    const wanted = new Set(overlays.map((o) => o.id));
+    for (const [id, s] of overlaySeries.current) {
+      if (!wanted.has(id)) {
+        main.removeSeries(s);
+        overlaySeries.current.delete(id);
       }
+    }
+    for (const o of overlays) {
+      let s = overlaySeries.current.get(o.id);
+      if (!s) {
+        s = main.addLineSeries({
+          color: o.color,
+          lineWidth: o.lineWidth ?? 2,
+          priceLineVisible: false,
+          lastValueVisible: false,
+        });
+        overlaySeries.current.set(o.id, s);
+      }
+      s.applyOptions({ color: o.color });
+      s.setData(o.data as never);
+    }
+
+    const subCharts = charts.current.slice(1);
+    subPanes.forEach((pane, i) => {
+      const sc = subCharts[i];
+      if (!sc) return;
+      (subSeries.current[i] ?? []).forEach((s) => sc.removeSeries(s));
+      subSeries.current[i] = [];
       (pane.priceLines ?? []).forEach((v) => {
         const g = sc.addLineSeries({ color: css("--color-line-strong"), lineWidth: 1, lastValueVisible: false });
         g.setData(candles.map((c) => ({ time: c.time as Time, value: v })));
+        subSeries.current[i].push(g);
       });
-      sc.timeScale().fitContent();
-    });
-
-    const allCharts = [main, ...subs];
-    allCharts.forEach((src) => {
-      src.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-        if (syncing || !range) return;
-        syncing = true;
-        allCharts.forEach((dst) => {
-          if (dst !== src) dst.timeScale().setVisibleLogicalRange(range);
-        });
-        syncing = false;
+      pane.series.forEach((sd) => {
+        const ser =
+          sd.type === "histogram"
+            ? sc.addHistogramSeries({ color: sd.color })
+            : sc.addLineSeries({ color: sd.color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+        ser.setData(sd.data as never);
+        subSeries.current[i].push(ser);
       });
     });
 
-    return () => {
-      apis.current.forEach((c) => c.remove());
-      apis.current = [];
-    };
+    if (!didInitialFit.current) {
+      const n = candles.length;
+      main.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - VISIBLE_BARS), to: n + 4 });
+      didInitialFit.current = true;
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candles, overlays, markers, subPanes, themeKey, height]);
+  }, [candles, overlays, markers, subPanes]);
 
   return (
     <div className="flex flex-col gap-1">
-      <div ref={mainRef} style={{ height }} />
+      <div ref={mainRef} className="w-full" style={{ height }} />
       {subPanes.map((p, i) => (
         <div key={p.id}>
           <p className="px-1 text-[10px] uppercase tracking-wide text-fg-faint">{p.label}</p>
@@ -180,6 +225,7 @@ export function PriceChart({
             ref={(el) => {
               subRefs.current[i] = el;
             }}
+            className="w-full"
             style={{ height: p.height ?? 120 }}
           />
         </div>

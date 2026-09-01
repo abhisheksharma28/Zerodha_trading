@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { useState } from "react";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   Activity,
   BarChart3,
   Bell,
   CandlestickChart,
-  ChevronLeft,
+  ChevronDown,
   FileClock,
   FileText,
   FlaskConical,
@@ -16,6 +16,7 @@ import {
   Plug,
   Radar,
   Rocket,
+  Search,
   Settings as SettingsIcon,
   Wallet,
 } from "lucide-react";
@@ -24,38 +25,37 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { cn } from "@/lib/utils";
 import { useBrokerStatus } from "@/hooks/useBroker";
 
-type NavItem = { to: string; label: string; icon: typeof Gauge; end?: boolean };
-type NavGroup = { heading: string; items: NavItem[] };
+type Item = { to: string; label: string; icon: typeof Gauge; desc?: string };
 
-const NAV: NavGroup[] = [
+const PRIMARY: Item[] = [
+  { to: "/", label: "Dashboard", icon: Gauge },
+  { to: "/charting", label: "Charting", icon: CandlestickChart },
+];
+
+const MENUS: { label: string; items: Item[] }[] = [
   {
-    heading: "Overview",
-    items: [{ to: "/", label: "Dashboard", icon: Gauge, end: true }],
-  },
-  {
-    heading: "Research",
+    label: "Research",
     items: [
-      { to: "/charting", label: "Charting", icon: CandlestickChart },
-      { to: "/backtests", label: "Backtest", icon: FlaskConical },
-      { to: "/strategy-library", label: "Strategy Library", icon: LibraryBig },
-      { to: "/strategies", label: "My Strategies", icon: ListChecks },
-      { to: "/options-hni", label: "NIFTY Monthly HNI", icon: Layers },
-      { to: "/market-scanner", label: "Market Scanner", icon: Radar },
-      { to: "/analytics", label: "Analytics", icon: BarChart3 },
+      { to: "/backtests", label: "Backtest", icon: FlaskConical, desc: "Run & analyse strategies" },
+      { to: "/strategy-library", label: "Strategy Library", icon: LibraryBig, desc: "Research-backed templates" },
+      { to: "/strategies", label: "My Strategies", icon: ListChecks, desc: "Your saved strategies" },
+      { to: "/options-hni", label: "NIFTY Monthly HNI", icon: Layers, desc: "1:3:2 CALL ratio spread" },
+      { to: "/market-scanner", label: "Market Scanner", icon: Radar, desc: "Breadth, movers, sectors" },
+      { to: "/analytics", label: "Analytics", icon: BarChart3, desc: "Aggregate performance" },
     ],
   },
   {
-    heading: "Trading",
+    label: "Trading",
     items: [
-      { to: "/deployments", label: "Live Trading", icon: Rocket },
-      { to: "/monitoring", label: "Monitoring", icon: Activity },
+      { to: "/deployments", label: "Live Trading", icon: Rocket, desc: "Deploy paper / live" },
+      { to: "/monitoring", label: "Monitoring", icon: Activity, desc: "Running deployments" },
       { to: "/positions", label: "Positions", icon: Wallet },
       { to: "/orders", label: "Orders", icon: CandlestickChart },
       { to: "/alerts", label: "Alerts", icon: Bell },
     ],
   },
   {
-    heading: "System",
+    label: "System",
     items: [
       { to: "/reports", label: "Reports", icon: FileText },
       { to: "/audit-logs", label: "Audit Logs", icon: FileClock },
@@ -65,113 +65,105 @@ const NAV: NavGroup[] = [
   },
 ];
 
-const COLLAPSE_KEY = "ui-sidebar-collapsed";
+const linkCls = ({ isActive }: { isActive: boolean }) =>
+  cn(
+    "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors",
+    isActive ? "bg-accent-soft text-accent" : "text-fg-muted hover:bg-elevated hover:text-fg",
+  );
 
 export function AppLayout() {
-  const { data: brokerStatus } = useBrokerStatus();
-  const [collapsed, setCollapsed] = useState(() => {
-    try {
-      return localStorage.getItem(COLLAPSE_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(COLLAPSE_KEY, collapsed ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
-  }, [collapsed]);
+  const { data: broker } = useBrokerStatus();
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   return (
-    <div className="flex min-h-screen bg-bg text-fg">
-      <aside
-        className={cn(
-          "flex shrink-0 flex-col border-r border-line bg-surface/50 transition-[width] duration-200",
-          collapsed ? "w-14" : "w-60",
-        )}
-      >
-        <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-3.5">
-          {!collapsed && (
-            <div className="flex items-center gap-2 overflow-hidden">
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-accent text-accent-fg">
-                <CandlestickChart className="h-3.5 w-3.5" />
-              </span>
-              <div className="leading-tight">
-                <p className="text-sm font-semibold tracking-tight">AlgoEdge</p>
-                <p className="text-[10px] text-fg-faint">Zerodha Kite</p>
-              </div>
-            </div>
-          )}
+    <div className="flex min-h-screen flex-col bg-bg text-fg">
+      <header className="sticky top-0 z-40 border-b border-line bg-surface/80 backdrop-blur">
+        <div className="mx-auto flex h-14 max-w-[1600px] items-center gap-2 px-4">
           <button
             type="button"
-            onClick={() => setCollapsed((c) => !c)}
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-elevated hover:text-fg"
+            onClick={() => navigate("/")}
+            className="mr-2 flex items-center gap-2"
           >
-            <ChevronLeft className={cn("h-4 w-4 transition-transform", collapsed && "rotate-180")} />
+            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-accent text-accent-fg">
+              <CandlestickChart className="h-4 w-4" />
+            </span>
+            <span className="text-sm font-semibold tracking-tight">AlgoEdge</span>
           </button>
-        </div>
 
-        <nav className="flex flex-1 flex-col gap-4 overflow-y-auto p-2">
-          {NAV.map((group) => (
-            <div key={group.heading} className="flex flex-col gap-0.5">
-              {!collapsed && (
-                <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-fg-faint">
-                  {group.heading}
-                </p>
-              )}
-              {group.items.map(({ to, label, icon: Icon, end }) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  end={end}
-                  title={collapsed ? label : undefined}
-                  className={({ isActive }) =>
-                    cn(
-                      "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                      collapsed && "justify-center px-0",
-                      isActive
-                        ? "bg-accent-soft text-accent"
-                        : "text-fg-muted hover:bg-elevated hover:text-fg",
-                    )
-                  }
+          <nav className="flex items-center gap-0.5" onMouseLeave={() => setOpenMenu(null)}>
+            {PRIMARY.map(({ to, label, icon: Icon }) => (
+              <NavLink key={to} to={to} end={to === "/"} className={linkCls}>
+                <Icon className="h-4 w-4" />
+                {label}
+              </NavLink>
+            ))}
+            {MENUS.map((menu) => (
+              <div key={menu.label} className="relative" onMouseEnter={() => setOpenMenu(menu.label)}>
+                <button
+                  type="button"
+                  onClick={() => setOpenMenu((m) => (m === menu.label ? null : menu.label))}
+                  className={cn(
+                    "flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors",
+                    openMenu === menu.label
+                      ? "bg-elevated text-fg"
+                      : "text-fg-muted hover:bg-elevated hover:text-fg",
+                  )}
                 >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  {!collapsed && <span className="truncate">{label}</span>}
-                </NavLink>
-              ))}
-            </div>
-          ))}
-        </nav>
+                  {menu.label}
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </button>
+                {openMenu === menu.label && (
+                  <div className="animate-menu absolute left-0 top-full z-50 mt-1 w-64 rounded-lg border border-line-strong bg-surface p-1.5 shadow-xl">
+                    {menu.items.map(({ to, label, icon: Icon, desc }) => (
+                      <NavLink
+                        key={to}
+                        to={to}
+                        onClick={() => setOpenMenu(null)}
+                        className={({ isActive }) =>
+                          cn(
+                            "flex items-start gap-2.5 rounded-md px-2.5 py-2 transition-colors",
+                            isActive ? "bg-accent-soft" : "hover:bg-elevated",
+                          )
+                        }
+                      >
+                        <Icon className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                        <span>
+                          <span className="block text-sm font-medium text-fg">{label}</span>
+                          {desc && <span className="block text-xs text-fg-faint">{desc}</span>}
+                        </span>
+                      </NavLink>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </nav>
 
-        <div className="flex items-center justify-between gap-2 border-t border-line p-3">
-          <div className="flex items-center gap-2 overflow-hidden text-xs">
-            <span
-              className={cn(
-                "h-2 w-2 shrink-0 rounded-full",
-                brokerStatus?.connected ? "bg-pos" : "bg-line-strong",
-              )}
-            />
-            {!collapsed && (
-              <span className="truncate text-fg-muted">
-                {brokerStatus?.connected
-                  ? `Connected · ${brokerStatus.kite_user_id ?? "Zerodha"}`
-                  : "Broker not connected"}
+          <button
+            type="button"
+            onClick={() => navigate("/charting")}
+            className="ml-auto hidden items-center gap-2 rounded-md border border-line-strong bg-bg px-3 py-1.5 text-xs text-fg-faint hover:text-fg-muted sm:flex"
+          >
+            <Search className="h-3.5 w-3.5" />
+            Search instruments…
+          </button>
+
+          <div className="ml-auto flex items-center gap-3 sm:ml-3">
+            <span className="hidden items-center gap-1.5 text-xs md:flex">
+              <span className={cn("h-2 w-2 rounded-full", broker?.connected ? "bg-pos" : "bg-line-strong")} />
+              <span className="text-fg-muted">
+                {broker?.connected ? broker.kite_user_id ?? "Connected" : "Broker offline"}
               </span>
-            )}
+            </span>
+            <ThemeToggle />
           </div>
-          {!collapsed && <ThemeToggle />}
         </div>
-      </aside>
+      </header>
 
-      <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-7xl px-6 py-6">
-          <div className="animate-in">
-            <Outlet />
-          </div>
+      <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-6">
+        <div className="animate-in">
+          <Outlet />
         </div>
       </main>
     </div>
