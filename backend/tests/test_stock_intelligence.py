@@ -38,9 +38,21 @@ def test_default_provider_is_null_and_reports_unavailable():
 
 
 def test_indianapi_selected_only_with_key():
-    assert isinstance(get_fundamentals_provider(_S("indianapi", "")), NullFundamentalsProvider)
+    from app.providers.fundamentals.yfinance_provider import YFinanceFundamentalsProvider
+
+    # indianapi without a key falls back to the free default, not to nothing
+    assert isinstance(
+        get_fundamentals_provider(_S("indianapi", "")), YFinanceFundamentalsProvider
+    )
     p = get_fundamentals_provider(_S("indianapi", "k-123"))
     assert isinstance(p, IndianApiFundamentalsProvider)
+
+
+def test_yfinance_is_the_default():
+    from app.providers.fundamentals.yfinance_provider import YFinanceFundamentalsProvider
+
+    assert isinstance(get_fundamentals_provider(_S("yfinance")), YFinanceFundamentalsProvider)
+    assert isinstance(get_fundamentals_provider(_S("")), YFinanceFundamentalsProvider)
 
 
 def test_indianapi_slices_the_blob(monkeypatch):

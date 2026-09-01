@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   Activity,
@@ -48,6 +48,7 @@ const MENUS: { label: string; items: Item[] }[] = [
   {
     label: "Trading",
     items: [
+      { to: "/option-chain", label: "Option Chain", icon: Layers, desc: "OI, IV, PCR, max pain" },
       { to: "/deployments", label: "Live Trading", icon: Rocket, desc: "Deploy paper / live" },
       { to: "/monitoring", label: "Monitoring", icon: Activity, desc: "Running deployments" },
       { to: "/positions", label: "Positions", icon: Wallet },
@@ -76,6 +77,15 @@ export function AppLayout() {
   const { data: broker } = useBrokerStatus();
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const navigate = useNavigate();
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openNow = useCallback((label: string) => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    setOpenMenu(label);
+  }, []);
+  const closeSoon = useCallback(() => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = setTimeout(() => setOpenMenu(null), 320);
+  }, []);
 
   return (
     <div className="flex min-h-screen flex-col bg-bg text-fg">
@@ -92,7 +102,7 @@ export function AppLayout() {
             <span className="text-sm font-semibold tracking-tight">AlgoEdge</span>
           </button>
 
-          <nav className="flex items-center gap-0.5" onMouseLeave={() => setOpenMenu(null)}>
+          <nav className="flex items-center gap-0.5" onMouseLeave={closeSoon}>
             {PRIMARY.map(({ to, label, icon: Icon }) => (
               <NavLink key={to} to={to} end={to === "/"} className={linkCls}>
                 <Icon className="h-4 w-4" />
@@ -100,7 +110,12 @@ export function AppLayout() {
               </NavLink>
             ))}
             {MENUS.map((menu) => (
-              <div key={menu.label} className="relative" onMouseEnter={() => setOpenMenu(menu.label)}>
+              <div
+                key={menu.label}
+                className="relative"
+                onMouseEnter={() => openNow(menu.label)}
+                onMouseLeave={closeSoon}
+              >
                 <button
                   type="button"
                   onClick={() => setOpenMenu((m) => (m === menu.label ? null : menu.label))}
@@ -115,7 +130,10 @@ export function AppLayout() {
                   <ChevronDown className="h-3.5 w-3.5" />
                 </button>
                 {openMenu === menu.label && (
-                  <div className="animate-menu absolute left-0 top-full z-50 mt-1 w-64 rounded-lg border border-line-strong bg-surface p-1.5 shadow-xl">
+                  <div
+                    className="animate-menu absolute left-0 top-full z-50 w-64 rounded-lg border border-line-strong bg-surface p-1.5 pt-2 shadow-xl"
+                    onMouseEnter={() => openNow(menu.label)}
+                  >
                     {menu.items.map(({ to, label, icon: Icon, desc }) => (
                       <NavLink
                         key={to}

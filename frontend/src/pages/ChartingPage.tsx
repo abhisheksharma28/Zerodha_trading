@@ -136,7 +136,10 @@ export default function ChartingPage() {
                   onReady={setChartApi}
                   height={480}
                 />
-                <div className="absolute inset-x-0 top-0" style={{ height: 480 }}>
+                <div
+                  className="pointer-events-none absolute inset-x-0 top-0"
+                  style={{ height: 480 }}
+                >
                   <DrawingSurface key={drawKey} api={chartApi} storageKey={drawKey} />
                 </div>
               </div>

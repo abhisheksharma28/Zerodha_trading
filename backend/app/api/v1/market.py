@@ -25,6 +25,16 @@ def overview(
     return market_data_service.market_overview(db, settings, universe=universe)
 
 
+@router.get("/option-chain")
+def option_chain(
+    underlying: str = Query(..., description="e.g. NIFTY, BANKNIFTY, RELIANCE"),
+    expiry: str = Query(..., description="YYYY-MM-DD"),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    return market_data_service.option_chain(db, settings, underlying=underlying, expiry=expiry)
+
+
 @router.get("/candles")
 def candles(
     symbol: str = Query(..., description="e.g. NSE:INFY or INFY"),

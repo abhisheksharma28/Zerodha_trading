@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { IChartApi, ISeriesApi, Time } from "lightweight-charts";
+import type { IChartApi, ISeriesApi } from "lightweight-charts";
 import { Minus, MousePointer2, Ruler, Slash, Square, Trash2, TrendingUp } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -10,8 +10,10 @@ export type ChartApi = {
   container: HTMLDivElement;
 };
 type Tool = "cursor" | "trend" | "hline" | "ray" | "rect" | "fib";
+/** x is a lightweight-charts *logical* index (works across the whole pane,
+ *  including the empty space to the right of the last bar). */
 interface Pt {
-  time: number;
+  x: number;
   price: number;
 }
 interface Drawing {
@@ -23,49 +25,46 @@ interface Drawing {
 
 const FIBS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
 const TOOLS: { tool: Tool; icon: typeof Minus; label: string }[] = [
-  { tool: "cursor", icon: MousePointer2, label: "Cursor" },
+  { tool: "cursor", icon: MousePointer2, label: "Cursor / pan" },
   { tool: "trend", icon: TrendingUp, label: "Trend line" },
   { tool: "hline", icon: Minus, label: "Horizontal line" },
   { tool: "ray", icon: Slash, label: "Ray" },
   { tool: "rect", icon: Square, label: "Rectangle" },
-  { tool: "fib", icon: Ruler, label: "Fib retracement" },
+  { tool: "fib", icon: Ruler, label: "Fibonacci retracement" },
 ];
 
-function load(key: string): Drawing[] {
+const load = (k: string): Drawing[] => {
   try {
-    return JSON.parse(localStorage.getItem(`chart-drawings:${key}`) ?? "[]") as Drawing[];
+    return JSON.parse(localStorage.getItem(`chart-drawings:${k}`) ?? "[]") as Drawing[];
   } catch {
     return [];
   }
-}
-function persist(key: string, d: Drawing[]) {
+};
+const persist = (k: string, d: Drawing[]) => {
   try {
-    localStorage.setItem(`chart-drawings:${key}`, JSON.stringify(d));
+    localStorage.setItem(`chart-drawings:${k}`, JSON.stringify(d));
   } catch {
     /* ignore */
   }
-}
+};
 
-/** Floating toolbar + SVG drawing overlay for a lightweight-charts pane.
- *  Self-contained: give it a React `key` (symbol:timeframe) to reset. */
 export function DrawingSurface({ api, storageKey }: { api: ChartApi | null; storageKey: string }) {
   const [tool, setTool] = useState<Tool>("cursor");
   const [drawings, setDrawings] = useState<Drawing[]>(() => load(storageKey));
   const [draft, setDraft] = useState<{ a: Pt; b: Pt } | null>(null);
   const [, bump] = useState(0);
   const seq = useRef(0);
-  const svgRef = useRef<SVGSVGElement>(null);
   const reproject = useCallback(() => bump((n) => n + 1), []);
 
   useEffect(() => {
     if (!api) return;
     const ts = api.chart.timeScale();
-    ts.subscribeVisibleTimeRangeChange(reproject);
+    ts.subscribeVisibleLogicalRangeChange(reproject);
     const ro = new ResizeObserver(reproject);
     ro.observe(api.container);
     const raf = requestAnimationFrame(reproject);
     return () => {
-      ts.unsubscribeVisibleTimeRangeChange(reproject);
+      ts.unsubscribeVisibleLogicalRangeChange(reproject);
       ro.disconnect();
       cancelAnimationFrame(raf);
     };
@@ -73,16 +72,16 @@ export function DrawingSurface({ api, storageKey }: { api: ChartApi | null; stor
 
   const toXY = (p: Pt) => {
     if (!api) return null;
-    const x = api.chart.timeScale().timeToCoordinate(p.time as Time);
+    const x = api.chart.timeScale().logicalToCoordinate(p.x as never);
     const y = api.series.priceToCoordinate(p.price);
     return x == null || y == null ? null : { x: x as number, y: y as number };
   };
   const fromEvent = (e: React.PointerEvent): Pt | null => {
-    if (!api || !svgRef.current) return null;
-    const r = svgRef.current.getBoundingClientRect();
-    const time = api.chart.timeScale().coordinateToTime(e.clientX - r.left);
+    if (!api) return null;
+    const r = api.container.getBoundingClientRect();
+    const x = api.chart.timeScale().coordinateToLogical(e.clientX - r.left);
     const price = api.series.coordinateToPrice(e.clientY - r.top);
-    return time == null || price == null ? null : { time: time as number, price };
+    return x == null || price == null ? null : { x: x as number, price };
   };
 
   const onDown = (e: React.PointerEvent) => {
@@ -98,23 +97,23 @@ export function DrawingSurface({ api, storageKey }: { api: ChartApi | null; stor
     if (p) setDraft((d) => (d ? { ...d, b: p } : d));
   };
   const onUp = () => {
-    if (!draft) {
-      return;
-    }
+    if (!draft) return;
     const { a, b } = draft;
     setDraft(null);
     if (tool === "cursor") return;
+    // ignore a stray click with no drag
+    if (tool !== "hline" && Math.abs(a.x - b.x) < 0.3 && Math.abs(a.price - b.price) < 1e-9) return;
     seq.current += 1;
     const next: Drawing = {
       id: `${tool}-${seq.current}`,
       tool,
       a,
-      b: tool === "hline" ? { time: b.time, price: a.price } : b,
+      b: tool === "hline" ? { x: b.x, price: a.price } : b,
     };
     setDrawings((list) => {
-      const updated = [...list, next];
-      persist(storageKey, updated);
-      return updated;
+      const upd = [...list, next];
+      persist(storageKey, upd);
+      return upd;
     });
     setTool("cursor");
   };
@@ -130,7 +129,9 @@ export function DrawingSurface({ api, storageKey }: { api: ChartApi | null; stor
     const B = toXY(d.b);
     if (!A || !B) return null;
     if (d.tool === "hline") {
-      return <line key={key} x1={0} x2="100%" y1={A.y} y2={A.y} stroke={stroke} strokeWidth={1} strokeDasharray="4 3" />;
+      return (
+        <line key={key} x1={0} x2="100%" y1={A.y} y2={A.y} stroke={stroke} strokeWidth={1} strokeDasharray="5 3" />
+      );
     }
     if (d.tool === "rect") {
       return (
@@ -149,16 +150,19 @@ export function DrawingSurface({ api, storageKey }: { api: ChartApi | null; stor
     if (d.tool === "fib") {
       const lo = Math.min(d.a.price, d.b.price);
       const hi = Math.max(d.a.price, d.b.price);
+      const x1 = Math.min(A.x, B.x);
+      const x2 = Math.max(A.x, B.x);
       return (
         <g key={key}>
           {FIBS.map((f) => {
-            const y = api?.series.priceToCoordinate(hi - f * (hi - lo));
+            const price = hi - f * (hi - lo);
+            const y = api?.series.priceToCoordinate(price);
             if (y == null) return null;
             return (
               <g key={f}>
-                <line x1={Math.min(A.x, B.x)} x2={Math.max(A.x, B.x)} y1={y} y2={y} stroke={stroke} strokeWidth={0.75} strokeOpacity={0.7} />
-                <text x={Math.max(A.x, B.x) + 3} y={(y as number) + 3} fontSize={9} fill="var(--color-fg-faint)">
-                  {f} · {(hi - f * (hi - lo)).toFixed(1)}
+                <line x1={x1} x2={x2} y1={y} y2={y} stroke={stroke} strokeWidth={0.75} strokeOpacity={0.75} />
+                <text x={x2 + 3} y={(y as number) + 3} fontSize={9} fill="var(--color-fg-faint)">
+                  {f} · {price.toFixed(1)}
                 </text>
               </g>
             );
@@ -166,19 +170,20 @@ export function DrawingSurface({ api, storageKey }: { api: ChartApi | null; stor
         </g>
       );
     }
-    let x2 = B.x;
-    let y2 = B.y;
+    // trend / ray
+    let bx = B.x;
+    let by = B.y;
     if (d.tool === "ray" && B.x !== A.x) {
       const slope = (B.y - A.y) / (B.x - A.x);
-      x2 = B.x > A.x ? 4000 : -4000;
-      y2 = A.y + slope * (x2 - A.x);
+      bx = B.x > A.x ? 5000 : -5000;
+      by = A.y + slope * (bx - A.x);
     }
-    return <line key={key} x1={A.x} y1={A.y} x2={x2} y2={y2} stroke={stroke} strokeWidth={1.25} />;
+    return <line key={key} x1={A.x} y1={A.y} x2={bx} y2={by} stroke={stroke} strokeWidth={1.5} />;
   };
 
   return (
     <>
-      <div className="absolute left-2 top-2 z-20 inline-flex items-center gap-0.5 rounded-md border border-line-strong bg-surface/95 p-0.5 shadow-lg">
+      <div className="pointer-events-auto absolute left-2 top-2 z-30 inline-flex items-center gap-0.5 rounded-md border border-line-strong bg-surface/95 p-0.5 shadow-lg">
         {TOOLS.map(({ tool: t, icon: Icon, label }) => (
           <button
             key={t}
@@ -205,8 +210,10 @@ export function DrawingSurface({ api, storageKey }: { api: ChartApi | null; stor
         </button>
       </div>
       <svg
-        ref={svgRef}
-        className={cn("absolute inset-0 h-full w-full", tool === "cursor" ? "pointer-events-none" : "cursor-crosshair")}
+        className={cn(
+          "absolute inset-0 z-20 h-full w-full",
+          tool === "cursor" ? "pointer-events-none" : "pointer-events-auto cursor-crosshair",
+        )}
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp}
@@ -217,4 +224,3 @@ export function DrawingSurface({ api, storageKey }: { api: ChartApi | null; stor
     </>
   );
 }
-

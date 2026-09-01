@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { SectionCard } from "@/components/SectionCard";
 import { Card, CardContent } from "@/components/ui/card";
 import { useMarketOverview } from "@/hooks/useMarket";
+import { useNow } from "@/hooks/useNow";
 import { useStockDrawer } from "@/lib/stockDrawer";
 import type { MarketQuoteRow, SectorRow } from "@/types/api";
 import { cn } from "@/lib/utils";
@@ -84,16 +85,7 @@ export default function MarketScannerPage() {
       <PageHeader
         title="Market Scanner"
         subtitle="Live NSE breadth, movers, sectors and heat-map — real Zerodha quotes."
-        actions={
-          <button
-            type="button"
-            onClick={() => refetch()}
-            className="flex h-8 items-center gap-1.5 rounded-md border border-line-strong px-2.5 text-xs text-fg-muted hover:bg-elevated hover:text-fg"
-          >
-            <RefreshCw className={cn("h-3.5 w-3.5", isFetching && "animate-spin")} />
-            {dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : "Refresh"}
-          </button>
-        }
+        actions={<LiveClock updatedAt={dataUpdatedAt} fetching={isFetching} onRefresh={refetch} />}
       />
 
       {!data ? (
@@ -197,6 +189,31 @@ export default function MarketScannerPage() {
         </>
       )}
     </div>
+  );
+}
+
+function LiveClock({
+  updatedAt,
+  fetching,
+  onRefresh,
+}: {
+  updatedAt: number;
+  fetching: boolean;
+  onRefresh: () => void;
+}) {
+  const now = useNow(1000);
+  const secs = updatedAt ? Math.max(0, Math.round((now - updatedAt) / 1000)) : null;
+  return (
+    <button
+      type="button"
+      onClick={onRefresh}
+      className="flex h-8 items-center gap-1.5 rounded-md border border-line-strong px-2.5 text-xs text-fg-muted hover:bg-elevated hover:text-fg"
+      title="Refresh now"
+    >
+      <span className={cn("h-1.5 w-1.5 rounded-full", fetching ? "bg-accent" : "bg-pos")} />
+      <RefreshCw className={cn("h-3.5 w-3.5", fetching && "animate-spin")} />
+      {secs == null ? "Refresh" : secs <= 2 ? "live" : `${secs}s ago`}
+    </button>
   );
 }
 

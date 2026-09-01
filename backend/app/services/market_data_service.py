@@ -10,6 +10,7 @@ a reason — it never fabricates prices or serves a stale/mock fallback.
 
 from __future__ import annotations
 
+import math
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -24,7 +25,7 @@ from app.core.logging import get_logger
 from app.market_data.instruments import resolve_instrument_token
 from app.market_data.nse_universe import BROAD_INDICES, SECTOR_INDICES, UNIVERSES
 from app.models.instrument import Instrument
-from app.services import broker_service
+from app.services import broker_service, instrument_service
 
 logger = get_logger(__name__)
 
@@ -324,4 +325,125 @@ def candles(
         "symbol": tradingsymbol,
         "timeframe": tf.token,
         "candles": out,
+    }
+
+
+# --- option chain -----------------------------------------------------
+
+_R = 0.065  # risk-free rate for IV
+_INDEX_SPOT = {
+    "NIFTY": "NIFTY 50",
+    "BANKNIFTY": "NIFTY BANK",
+    "FINNIFTY": "NIFTY FIN SERVICE",
+    "MIDCPNIFTY": "NIFTY MIDCAP SELECT",
+    "NIFTYNXT50": "NIFTY NEXT 50",
+}
+
+
+def _norm_cdf(x: float) -> float:
+    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+
+def _bs(spot: float, strike: float, t: float, vol: float, is_call: bool) -> float:
+    if t <= 0 or vol <= 0 or spot <= 0:
+        return max(0.0, (spot - strike) if is_call else (strike - spot))
+    d1 = (math.log(spot / strike) + (_R + 0.5 * vol * vol) * t) / (vol * math.sqrt(t))
+    d2 = d1 - vol * math.sqrt(t)
+    if is_call:
+        return spot * _norm_cdf(d1) - strike * math.exp(-_R * t) * _norm_cdf(d2)
+    return strike * math.exp(-_R * t) * _norm_cdf(-d2) - spot * _norm_cdf(-d1)
+
+
+def _implied_vol(price: float, spot: float, strike: float, t: float, is_call: bool) -> float | None:
+    intrinsic = max(0.0, (spot - strike) if is_call else (strike - spot))
+    if price <= intrinsic or price <= 0 or t <= 0 or spot <= 0:
+        return None
+    lo, hi = 0.01, 5.0
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        if _bs(spot, strike, t, mid, is_call) > price:
+            hi = mid
+        else:
+            lo = mid
+    return round((lo + hi) / 2 * 100.0, 2)
+
+
+def option_chain(
+    db: Session, settings: Settings, *, underlying: str, expiry: str
+) -> dict[str, Any]:
+    """Live NSE-style option chain for one underlying + expiry, assembled from
+    the instrument master + Zerodha quotes. IV is back-solved from the LTP
+    (Kite doesn't publish it)."""
+    u = underlying.strip().upper()
+    legs = instrument_service.option_strikes(db, u, expiry)
+    if not legs:
+        return {"available": False, "reason": f"No listed options for {u} @ {expiry}.",
+                "underlying": u, "expiry": expiry}
+
+    try:
+        client = broker_service.build_authenticated_client(db, settings)
+    except BrokerNotConnectedError as exc:
+        return {"available": False, "reason": str(exc), "underlying": u, "expiry": expiry}
+
+    spot_sym = f"NSE:{_INDEX_SPOT.get(u, u)}"
+    keys = [spot_sym] + [f"NFO:{leg['tradingsymbol']}" for leg in legs]
+    quotes = _quote_all(client, keys)
+
+    sq = quotes.get(spot_sym) or {}
+    spot = sq.get("last_price")
+
+    try:
+        exp_d = datetime.fromisoformat(expiry[:10]).date()
+        t_years = max((exp_d - datetime.now().date()).days, 0) / 365.0
+    except ValueError:
+        t_years = 0.0
+
+    by_strike: dict[float, dict[str, Any]] = {}
+    for leg in legs:
+        strike = float(leg["strike"] or 0.0)
+        q = quotes.get(f"NFO:{leg['tradingsymbol']}") or {}
+        ltp = q.get("last_price")
+        prev = (q.get("ohlc") or {}).get("close")
+        side = "call" if leg["option_type"] == "CE" else "put"
+        row = by_strike.setdefault(strike, {"strike": strike, "call": None, "put": None})
+        row[side] = {
+            "tradingsymbol": leg["tradingsymbol"],
+            "instrument_token": leg["instrument_token"],
+            "ltp": ltp,
+            "change_pct": ((ltp - prev) / prev * 100.0) if (ltp and prev) else None,
+            "oi": q.get("oi"),
+            "volume": q.get("volume"),
+            "iv": _implied_vol(ltp, spot, strike, t_years, side == "call")
+            if (ltp and spot) else None,
+        }
+
+    rows = [by_strike[k] for k in sorted(by_strike)]
+    tot_call_oi = sum((r["call"] or {}).get("oi") or 0 for r in rows)
+    tot_put_oi = sum((r["put"] or {}).get("oi") or 0 for r in rows)
+    atm = min(rows, key=lambda r: abs(r["strike"] - (spot or 0)))["strike"] if (spot and rows) else None
+
+    # max pain: strike that minimises total writer payout
+    max_pain = None
+    if rows:
+        def _pain(k: float) -> float:
+            p = 0.0
+            for r in rows:
+                c_oi = (r["call"] or {}).get("oi") or 0
+                p_oi = (r["put"] or {}).get("oi") or 0
+                p += max(0.0, k - r["strike"]) * c_oi + max(0.0, r["strike"] - k) * p_oi
+            return p
+        max_pain = min((r["strike"] for r in rows), key=_pain)
+
+    return {
+        "available": True,
+        "underlying": u,
+        "expiry": expiry,
+        "spot": spot,
+        "atm_strike": atm,
+        "pcr": round(tot_put_oi / tot_call_oi, 2) if tot_call_oi else None,
+        "max_pain": max_pain,
+        "total_call_oi": tot_call_oi,
+        "total_put_oi": tot_put_oi,
+        "rows": rows,
+        "as_of": sq.get("timestamp") or datetime.now(UTC).isoformat(),
     }

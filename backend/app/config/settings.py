@@ -40,8 +40,9 @@ class Settings(BaseSettings):
     zerodha_redirect_url: str = "http://localhost:8000/api/v1/broker/callback"
 
     # --- Fundamentals data provider (Stock Intelligence) ---
-    # "none" (default) | "indianapi". Adapters live in app/providers/fundamentals.
-    fundamentals_provider: str = "none"
+    # "yfinance" (default; free, no key) | "indianapi" (needs a key) | "none".
+    # Adapters live in app/providers/fundamentals.
+    fundamentals_provider: str = "yfinance"
     fundamentals_api_key: str = ""
     fundamentals_api_base: str = ""
 

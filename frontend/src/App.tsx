@@ -16,6 +16,7 @@ import TradeLogsPage from "@/pages/TradeLogsPage";
 import AuditLogsPage from "@/pages/AuditLogsPage";
 import BrokerPage from "@/pages/BrokerPage";
 import MarketScannerPage from "@/pages/MarketScannerPage";
+import OptionChainPage from "@/pages/OptionChainPage";
 import ChartingPage from "@/pages/ChartingPage";
 import AnalyticsPage from "@/pages/AnalyticsPage";
 import AlertsPage from "@/pages/AlertsPage";
@@ -41,6 +42,7 @@ export default function App() {
         <Route path="deployments/:deploymentId" element={<DeploymentDetailPage />} />
         <Route path="monitoring" element={<MonitoringPage />} />
         <Route path="market-scanner" element={<MarketScannerPage />} />
+        <Route path="option-chain" element={<OptionChainPage />} />
         <Route path="charting" element={<ChartingPage />} />
         <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="positions" element={<PositionsPage />} />
