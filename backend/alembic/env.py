@@ -35,6 +35,8 @@ def run_migrations_online() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        # Fail fast instead of hanging the deploy if the DB is unreachable.
+        connect_args={"connect_timeout": 10},
     )
 
     with connectable.connect() as connection:

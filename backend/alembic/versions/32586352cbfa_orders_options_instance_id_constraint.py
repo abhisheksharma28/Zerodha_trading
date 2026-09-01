@@ -5,15 +5,15 @@ Revises: d21ed65d2c09
 Create Date: 2026-09-01 23:16:06.162942
 """
 from collections.abc import Sequence
-from typing import Union
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "32586352cbfa"
-down_revision: Union[str, None] = "d21ed65d2c09"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "d21ed65d2c09"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 _CK = "ck_orders_has_deployment_or_backtest"
 
