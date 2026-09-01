@@ -58,6 +58,10 @@ class Settings(BaseSettings):
 
     # --- CORS ---
     cors_allow_origins: list[str] = ["http://localhost:5173"]
+    # Optional regex for CORS origins — handy on Railway where the frontend
+    # is served from https://<something>.up.railway.app. Example:
+    #   CORS_ALLOW_ORIGIN_REGEX=https://.*\.up\.railway\.app
+    cors_allow_origin_regex: str | None = None
 
     @field_validator("secret_key")
     @classmethod
