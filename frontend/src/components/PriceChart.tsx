@@ -68,6 +68,7 @@ export function PriceChart({
   themeKey,
   height = 460,
   onHover,
+  onReady,
 }: {
   candles: Candle[];
   overlays?: Overlay[];
@@ -76,6 +77,9 @@ export function PriceChart({
   themeKey?: string;
   height?: number;
   onHover?: (c: Candle | null) => void;
+  onReady?: (
+    api: { chart: IChartApi; series: ISeriesApi<"Candlestick">; container: HTMLDivElement } | null,
+  ) => void;
 }) {
   const mainRef = useRef<HTMLDivElement>(null);
   const subRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -142,7 +146,12 @@ export function PriceChart({
       }),
     );
 
+    if (onReady && candleSeries.current && mainRef.current) {
+      onReady({ chart: main, series: candleSeries.current, container: mainRef.current });
+    }
+
     return () => {
+      onReady?.(null);
       charts.current.forEach((c) => c.remove());
       charts.current = [];
     };

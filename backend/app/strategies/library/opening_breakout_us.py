@@ -255,10 +255,13 @@ class OpeningBreakoutUSStrategy(TemplateStrategy):
 
         "square_off_time": ParamSpec(
             "string",
-            "15:30",
+            "15:25",
             (
-                "Force-flat time in IST. "
-                "NSE regular cash session ends at 15:30."
+                "Force-flat time in IST. Must be a bar-start time the data "
+                "actually reaches: on 5-minute NSE data the last regular "
+                "session candle starts at 15:25, so 15:30 would never trigger "
+                "and positions would leak overnight. 15:25 keeps everything "
+                "flat before the 15:30 close."
             ),
         ),
 
@@ -704,6 +707,11 @@ class OpeningBreakoutUSStrategy(TemplateStrategy):
                 self._day.items()
             ):
                 if st.day == self._current_day:
+                    # Safety net: if intraday square-off never fired (e.g. a
+                    # coarser timeframe whose last bar is before square_off_time,
+                    # or missing tail candles), never carry a position overnight.
+                    if st.side is not None or self.position(sym) != 0:
+                        self._flatten(sym, st)
                     self._finalize_day(sym, st)
 
         self._current_day = d

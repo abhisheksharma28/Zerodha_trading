@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
+import { DrawingSurface, type ChartApi } from "@/components/DrawingLayer";
 import { IndicatorMenu, type Indicator } from "@/components/IndicatorMenu";
 import { InstrumentSearch } from "@/components/InstrumentSearch";
 import { PageHeader } from "@/components/PageHeader";
@@ -19,6 +20,9 @@ export default function ChartingPage() {
   const [indicators, setIndicators] = useState<Indicator[]>([]);
   const [hover, setHover] = useState<Candle | null>(null);
   const { theme } = useTheme();
+
+  const drawKey = `${symbol}:${timeframe}`;
+  const [chartApi, setChartApi] = useState<ChartApi | null>(null);
 
   const { data, isLoading } = useCandles(symbol, timeframe);
   const candles = useMemo<Candle[]>(
@@ -122,14 +126,20 @@ export default function ChartingPage() {
                   </span>
                 )}
               </div>
-              <PriceChart
-                candles={candles}
-                overlays={overlays}
-                subPanes={subPanes}
-                themeKey={`${theme}-${symbol}-${timeframe}`}
-                onHover={setHover}
-                height={480}
-              />
+              <div className="relative">
+                <PriceChart
+                  candles={candles}
+                  overlays={overlays}
+                  subPanes={subPanes}
+                  themeKey={`${theme}-${symbol}-${timeframe}`}
+                  onHover={setHover}
+                  onReady={setChartApi}
+                  height={480}
+                />
+                <div className="absolute inset-x-0 top-0" style={{ height: 480 }}>
+                  <DrawingSurface key={drawKey} api={chartApi} storageKey={drawKey} />
+                </div>
+              </div>
             </>
           )}
         </CardContent>

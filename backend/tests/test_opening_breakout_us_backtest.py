@@ -155,3 +155,27 @@ def test_opening_breakout_us_backtest_zero_cost_beats_costed_run():
     assert free.total_costs == 0.0
     assert costed.total_costs > 0.0
     assert free.equity_curve[-1][1] > costed.equity_curve[-1][1]
+
+
+def test_no_position_is_carried_overnight_when_squareoff_time_is_unreachable():
+    """Regression: with square_off_time at/after the last available candle
+    (e.g. 15:30 vs a 5-min series ending 15:25) the intraday flatten never
+    fired and positions leaked to the next session, which also suppressed
+    later entries. The day-rollover safety net must keep every session flat."""
+    from app.backtesting.trades import reconstruct_trades
+
+    candles = _dataset()
+    # force the pathological config the bug needed: square-off after the last bar
+    p = _params(square_off_time="15:30")
+    res = BacktestEngine(OpeningBreakoutUSStrategy, p, 5_000_000.0,
+                         cost_model=CostModel(CostConfig())).run(candles)
+
+    # nothing left open at the end of the run
+    assert all(v == 0 for v in res.final_positions.values()), res.final_positions
+
+    trades = reconstruct_trades(res.fills, fill_costs=[f.cost for f in res.fills],
+                                mark_prices={s: b[-1].close for s, b in candles.items() if b})
+    open_trades = [t for t in trades if t.is_open]
+    assert open_trades == [], f"{len(open_trades)} position(s) carried overnight"
+    # and entries still happen on multiple days (leak used to block them)
+    assert len([t for t in trades if not t.is_open]) >= 5

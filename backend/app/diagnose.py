@@ -122,9 +122,7 @@ def main() -> None:
               f"{_WARMUP_SESSIONS}  {'(OK)' if td >= _WARMUP_SESSIONS else '(INSUFFICIENT)'}")
 
     # ---------------- run the strategy --------------------------------
-    params = OpeningBreakoutUSStrategy.resolve_params(
-        {**OpeningBreakoutUSStrategy.presets()["balanced"], "square_off_time": "15:30"}
-    )
+    params = OpeningBreakoutUSStrategy.resolve_params(OpeningBreakoutUSStrategy.presets()["balanced"])
     engine = BacktestEngine(OpeningBreakoutUSStrategy, params, 1_000_000.0,
                             cost_model=CostModel(CostConfig()))
     result = engine.run(candles)

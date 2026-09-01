@@ -135,7 +135,12 @@ export default function BacktestDetailPage() {
       </ChartCard>
 
       {report && backtest && report.trades.length > 0 && (
-        <PriceTradesChart report={report} timeframe={backtest.timeframe} />
+        <PriceTradesChart
+          report={report}
+          timeframe={backtest.timeframe}
+          from={backtest.start_date}
+          to={backtest.end_date}
+        />
       )}
       {report && <ReportCharts report={report} />}
       {report && report.trades.length > 0 && <TradesTable report={report} />}
@@ -146,9 +151,13 @@ export default function BacktestDetailPage() {
 function PriceTradesChart({
   report,
   timeframe,
+  from,
+  to,
 }: {
   report: BacktestReport;
   timeframe: string;
+  from: string;
+  to: string;
 }) {
   const { theme } = useTheme();
   const symbols = useMemo(
@@ -156,7 +165,7 @@ function PriceTradesChart({
     [report.trades],
   );
   const [sym, setSym] = useState(symbols[0]);
-  const { data } = useCandles(sym ? `NSE:${sym}` : undefined, timeframe);
+  const { data } = useCandles(sym ? `NSE:${sym}` : undefined, timeframe, { from, to });
   const candles = data?.available ? (data.candles ?? []) : [];
 
   const markers = useMemo<SeriesMarker<Time>[]>(() => {

@@ -226,6 +226,15 @@ def _epoch(ts: Any) -> int:
     return int(dt.timestamp())
 
 
+def _parse_day(s: str | None) -> datetime | None:
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
+    except ValueError:
+        return None
+
+
 def candles(
     db: Session,
     settings: Settings,
@@ -233,17 +242,21 @@ def candles(
     symbol: str,
     timeframe: str = "5m",
     days: int | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
 ) -> dict[str, Any]:
     """Historical OHLCV for one instrument, shaped for a lightweight-charts
     candlestick + volume series. Real data from the connected Zerodha
-    session; ``available: false`` when there is none."""
+    session; ``available: false`` when there is none.
+
+    Pass ``from_date`` / ``to_date`` (ISO) to pin an exact window — e.g. a
+    backtest's own date range so the chart lines up with the trades. When
+    only ``from_date`` is given the window runs to now; otherwise the
+    per-timeframe default lookback ending today is used."""
     try:
         tf = resolve(timeframe)
     except UnknownTimeframeError as exc:
         raise ValidationError(str(exc)) from exc
-
-    span = days or _CHART_DEFAULT_DAYS.get(tf.token, 60)
-    span = min(span, _CHART_MAX_DAYS.get(tf.token, 365))
 
     try:
         client = broker_service.build_authenticated_client(db, settings)
@@ -255,8 +268,18 @@ def candles(
     except Exception as exc:  # noqa: BLE001
         raise ValidationError(f"Unknown instrument '{symbol}'.") from exc
 
-    to_dt = datetime.now()
-    from_dt = to_dt - timedelta(days=span)
+    fd, td = _parse_day(from_date), _parse_day(to_date)
+    if fd:
+        from_dt = fd
+        to_dt = td or datetime.now()
+        # pad a little so warm-up / edge candles are visible around the window
+        from_dt = from_dt - timedelta(days=2)
+        to_dt = to_dt + timedelta(days=2)
+    else:
+        span = days or _CHART_DEFAULT_DAYS.get(tf.token, 60)
+        span = min(span, _CHART_MAX_DAYS.get(tf.token, 365))
+        to_dt = datetime.now()
+        from_dt = to_dt - timedelta(days=span)
     try:
         rows = client.get_historical_candles(token, kite_interval(tf.token), from_dt, to_dt)
     except Exception as exc:  # noqa: BLE001 - surface Kite's message (e.g. historical add-on)

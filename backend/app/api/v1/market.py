@@ -30,7 +30,12 @@ def candles(
     symbol: str = Query(..., description="e.g. NSE:INFY or INFY"),
     timeframe: str = Query("5m"),
     days: int | None = Query(None, ge=1, le=4000),
+    from_date: str | None = Query(None, description="ISO date/datetime — pin the window start"),
+    to_date: str | None = Query(None, description="ISO date/datetime — pin the window end"),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    return market_data_service.candles(db, settings, symbol=symbol, timeframe=timeframe, days=days)
+    return market_data_service.candles(
+        db, settings, symbol=symbol, timeframe=timeframe, days=days,
+        from_date=from_date, to_date=to_date,
+    )
