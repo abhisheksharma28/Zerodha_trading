@@ -10,6 +10,7 @@ a reason — it never fabricates prices or serves a stale/mock fallback.
 
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -67,7 +68,24 @@ def _known_index_symbols(db: Session) -> set[str]:
     return {r.upper() for r in rows}
 
 
+# Tiny hot cache so a 1-2s frontend poll doesn't multiply Kite quote calls
+# (the underlying quotes only move once per ~second anyway).
+_OVERVIEW_TTL = 1.5
+_overview_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+
+
 def market_overview(db: Session, settings: Settings, *, universe: str = "nifty50") -> dict[str, Any]:
+    hit = _overview_cache.get(universe)
+    if hit and time.monotonic() - hit[0] < _OVERVIEW_TTL:
+        return hit[1]
+    out = _market_overview_uncached(db, settings, universe=universe)
+    _overview_cache[universe] = (time.monotonic(), out)
+    return out
+
+
+def _market_overview_uncached(
+    db: Session, settings: Settings, *, universe: str = "nifty50"
+) -> dict[str, Any]:
     try:
         client = broker_service.build_authenticated_client(db, settings)
     except BrokerNotConnectedError as exc:

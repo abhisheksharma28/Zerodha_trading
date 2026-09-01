@@ -66,3 +66,21 @@ def test_compute_metrics_detects_drawdown():
     metrics = compute_metrics([("t0", 1000.0), ("t1", 1200.0), ("t2", 900.0), ("t3", 1100.0)])
     # peak 1200 -> trough 900 => 25% drawdown
     assert metrics["max_drawdown_pct"] == 25.0
+
+
+def test_compute_metrics_survives_negative_terminal_equity():
+    """A blown-up backtest (equity goes negative on leverage/shorts) must not
+    raise 'type complex doesn't define __round__'."""
+    m = compute_metrics([("t0", 100_000.0), ("t1", 40_000.0), ("t2", -12_000.0)])
+    assert isinstance(m["cagr_pct"], float)
+    assert m["cagr_pct"] == -100.0
+    assert m["total_return_pct"] < -100.0
+
+
+def test_compute_performance_survives_negative_terminal_equity():
+    from app.backtesting.performance import compute_performance
+
+    eq = [("t0", 100_000.0), ("t1", 30_000.0), ("t2", -5_000.0)]
+    p = compute_performance(eq, [], initial_capital=100_000.0, total_costs=500.0)
+    assert isinstance(p["cagr_pct"], float) and isinstance(p["return_pct"], float)
+    assert p["net_pnl"] == -105_000.0

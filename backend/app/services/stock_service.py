@@ -37,6 +37,7 @@ def _quote_snapshot(db: Session, settings: Settings, exchange: str, tradingsymbo
     ltp = q.get("last_price")
     prev = ohlc.get("close")
     chg = (ltp - prev) if (ltp is not None and prev) else None
+    depth = q.get("depth") or {}
     return {
         "available": True,
         "ltp": ltp,
@@ -49,10 +50,22 @@ def _quote_snapshot(db: Session, settings: Settings, exchange: str, tradingsymbo
         "volume": q.get("volume"),
         "avg_price": q.get("average_price"),
         "oi": q.get("oi"),
+        "buy_quantity": q.get("buy_quantity"),
+        "sell_quantity": q.get("sell_quantity"),
         "upper_circuit": (q.get("upper_circuit_limit")),
         "lower_circuit": (q.get("lower_circuit_limit")),
         "last_trade_time": q.get("last_trade_time"),
         "timestamp": q.get("timestamp"),
+        "depth": {
+            "buy": [
+                {"price": b.get("price"), "quantity": b.get("quantity"), "orders": b.get("orders")}
+                for b in (depth.get("buy") or [])
+            ],
+            "sell": [
+                {"price": s.get("price"), "quantity": s.get("quantity"), "orders": s.get("orders")}
+                for s in (depth.get("sell") or [])
+            ],
+        },
     }
 
 

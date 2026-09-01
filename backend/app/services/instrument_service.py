@@ -210,6 +210,48 @@ def get(db: Session, exchange: str, tradingsymbol: str) -> Instrument | None:
     ).scalar_one_or_none()
 
 
+def resolve_many(db: Session, raw: list[str], *, default_exchange: str = "NSE") -> dict[str, Any]:
+    """Resolve a free-text list ('NSE:INFY, itc, reliance', pasted lines, …)
+    against the instrument master. Returns canonical EXCHANGE:SYMBOL refs for
+    what matched and the raw tokens that didn't."""
+    tokens: list[str] = []
+    for chunk in raw:
+        for part in chunk.replace("\n", ",").replace(";", ",").split(","):
+            p = part.strip()
+            if p:
+                tokens.append(p)
+
+    resolved: list[dict[str, Any]] = []
+    unresolved: list[str] = []
+    seen: set[str] = set()
+    for tok in tokens:
+        if ":" in tok:
+            ex, sym = tok.split(":", 1)
+        else:
+            ex, sym = default_exchange, tok
+        ex, sym = ex.strip().upper(), sym.strip().upper()
+        inst = get(db, ex, sym)
+        if inst is None:
+            # fall back to a ranked search (company name, partial symbol)
+            hits = search(db, sym, exchange=ex, instrument_type="EQ", limit=1)
+            inst = hits[0] if hits else None
+        if inst is None:
+            unresolved.append(tok)
+            continue
+        ref = f"{inst.exchange}:{inst.tradingsymbol}"
+        if ref in seen:
+            continue
+        seen.add(ref)
+        resolved.append({
+            "ref": ref,
+            "tradingsymbol": inst.tradingsymbol,
+            "name": inst.name,
+            "exchange": inst.exchange,
+            "instrument_type": inst.instrument_type,
+        })
+    return {"resolved": resolved, "unresolved": unresolved}
+
+
 def underlyings(db: Session, exchange: str = "NFO") -> list[str]:
     rows = db.execute(
         select(Instrument.underlying)

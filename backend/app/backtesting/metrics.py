@@ -24,7 +24,16 @@ def compute_metrics(equity_curve: list[tuple[str, float]], *, trading_days_per_y
 
     n_periods = len(values) - 1
     years = n_periods / trading_days_per_year if trading_days_per_year else 1
-    cagr_pct = ((end / start) ** (1 / years) - 1) * 100 if start > 0 and years > 0 else 0.0
+    if end <= 0:
+        # equity was wiped out (or went negative on leverage) — CAGR of a
+        # non-positive terminal value is undefined; report a total loss.
+        # `negative ** fractional` would otherwise be a complex number and
+        # blow up round().
+        cagr_pct = -100.0
+    elif start > 0 and years > 0:
+        cagr_pct = ((end / start) ** (1 / years) - 1) * 100
+    else:
+        cagr_pct = 0.0
 
     peak = values[0]
     max_dd = 0.0

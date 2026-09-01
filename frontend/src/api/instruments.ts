@@ -39,4 +39,11 @@ export const instrumentsApi = {
     apiClient
       .post("/instruments/sync", null, { params: exchanges ? { exchanges } : undefined })
       .then((r) => r.data),
+  resolve: (symbols: string[], defaultExchange = "NSE") =>
+    apiClient
+      .post<{
+        resolved: { ref: string; tradingsymbol: string; name: string | null }[];
+        unresolved: string[];
+      }>("/instruments/resolve", { symbols, default_exchange: defaultExchange })
+      .then((r) => r.data),
 };

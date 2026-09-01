@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
 
+import { instrumentsApi } from "@/api/instruments";
 import { useInstrumentSearch, useSyncInstruments } from "@/hooks/useInstruments";
 import type { Instrument } from "@/types/api";
 import { cn } from "@/lib/utils";
@@ -64,6 +65,8 @@ export function InstrumentSearch({
   });
   const sync = useSyncInstruments();
   const recent = useMemo(() => (open && !q ? readRecent() : []), [open, q]);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkMiss, setBulkMiss] = useState<string[]>([]);
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
@@ -86,6 +89,22 @@ export function InstrumentSearch({
 
   function remove(ref: string) {
     onChange(value.filter((r) => r !== ref));
+  }
+
+  async function bulkResolve(text: string) {
+    if (!multiple) return;
+    setBulkBusy(true);
+    setBulkMiss([]);
+    try {
+      const res = await instrumentsApi.resolve([text], exchange ?? "NSE");
+      const refs = res.resolved.map((r) => r.ref).filter((r) => !value.includes(r));
+      if (refs.length) onChange([...value, ...refs]);
+      refs.forEach(pushRecent);
+      setBulkMiss(res.unresolved);
+      setQ("");
+    } finally {
+      setBulkBusy(false);
+    }
   }
 
   return (
@@ -112,15 +131,43 @@ export function InstrumentSearch({
           <input
             value={q}
             onChange={(e) => {
-              setQ(e.target.value);
+              const v = e.target.value;
               setOpen(true);
+              if (multiple && /[,\n;]/.test(v)) {
+                void bulkResolve(v);
+              } else {
+                setQ(v);
+              }
+            }}
+            onPaste={(e) => {
+              const text = e.clipboardData.getData("text");
+              if (multiple && /[,\n;]/.test(text)) {
+                e.preventDefault();
+                void bulkResolve(text);
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && multiple && q.trim() && !results?.length) {
+                e.preventDefault();
+                void bulkResolve(q);
+              }
             }}
             onFocus={() => setOpen(true)}
-            placeholder={value.length && !multiple ? "" : placeholder}
+            placeholder={
+              value.length && !multiple
+                ? ""
+                : multiple
+                  ? "Search, or paste a comma-separated list…"
+                  : placeholder
+            }
             className="h-6 w-full bg-transparent text-sm text-fg outline-none placeholder:text-fg-faint"
           />
         </div>
       </div>
+      {bulkBusy && <p className="mt-1 text-[11px] text-fg-faint">Resolving instruments…</p>}
+      {bulkMiss.length > 0 && (
+        <p className="mt-1 text-[11px] text-neg">Not found: {bulkMiss.join(", ")}</p>
+      )}
 
       {open && (
         <div className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-md border border-line-strong bg-surface shadow-xl">

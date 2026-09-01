@@ -116,20 +116,10 @@ export default function MarketScannerPage() {
             ))}
           </div>
 
-          {/* above-the-fold: breadth + top 5 gainers + top 5 losers */}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <SectionCard title="Market Breadth">
-              <Breadth b={data.breadth} />
-            </SectionCard>
-            <SectionCard title="Top Gainers" bodyClassName="p-0">
-              <DataTable columns={stockCols} rows={data.gainers.slice(0, 6)} rowKey={(s) => s.symbol} />
-            </SectionCard>
-            <SectionCard title="Top Losers" bodyClassName="p-0">
-              <DataTable columns={stockCols} rows={data.losers.slice(0, 6)} rowKey={(s) => s.symbol} />
-            </SectionCard>
-          </div>
+          {/* slim breadth strip */}
+          <BreadthStrip b={data.breadth} />
 
-          {/* tabs for the rest */}
+          {/* tabs — the meat, right at the top */}
           <div className="flex gap-1 border-b border-line">
             {TABS.map((t) => (
               <button
@@ -148,10 +138,10 @@ export default function MarketScannerPage() {
 
           {tab === "Movers" && (
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <SectionCard title="All Gainers" bodyClassName="p-0">
+              <SectionCard title="Gainers" bodyClassName="p-0">
                 <DataTable columns={stockCols} rows={data.gainers} rowKey={(s) => s.symbol} />
               </SectionCard>
-              <SectionCard title="All Losers" bodyClassName="p-0">
+              <SectionCard title="Losers" bodyClassName="p-0">
                 <DataTable columns={stockCols} rows={data.losers} rowKey={(s) => s.symbol} />
               </SectionCard>
             </div>
@@ -210,21 +200,26 @@ export default function MarketScannerPage() {
   );
 }
 
-function Breadth({ b }: { b: { advances: number; declines: number; unchanged: number; total: number; ad_ratio: number | null } }) {
+function BreadthStrip({
+  b,
+}: {
+  b: { advances: number; declines: number; unchanged: number; total: number; ad_ratio: number | null };
+}) {
   const t = Math.max(b.total, 1);
   return (
-    <div>
-      <div className="flex h-3 w-full overflow-hidden rounded-full bg-elevated">
+    <div className="flex items-center gap-3 rounded-lg border border-line bg-surface px-3 py-2 text-xs">
+      <span className="shrink-0 font-medium text-fg-muted">Breadth</span>
+      <span className="text-pos tabular-nums">{b.advances}▲</span>
+      <span className="text-fg-faint tabular-nums">{b.unchanged}=</span>
+      <span className="text-neg tabular-nums">{b.declines}▼</span>
+      <div className="flex h-2 flex-1 overflow-hidden rounded-full bg-elevated">
         <div className="bg-pos" style={{ width: `${(b.advances / t) * 100}%` }} />
         <div className="bg-line-strong" style={{ width: `${(b.unchanged / t) * 100}%` }} />
         <div className="bg-neg" style={{ width: `${(b.declines / t) * 100}%` }} />
       </div>
-      <div className="mt-3 grid grid-cols-3 gap-2 text-center text-sm">
-        <div><p className="text-lg font-semibold text-pos tabular-nums">{b.advances}</p><p className="text-[11px] text-fg-faint">Advancing</p></div>
-        <div><p className="text-lg font-semibold text-fg-muted tabular-nums">{b.unchanged}</p><p className="text-[11px] text-fg-faint">Unchanged</p></div>
-        <div><p className="text-lg font-semibold text-neg tabular-nums">{b.declines}</p><p className="text-[11px] text-fg-faint">Declining</p></div>
-      </div>
-      <p className="mt-2 text-center text-xs text-fg-muted">A/D ratio <span className="font-medium text-fg">{b.ad_ratio ?? "–"}</span></p>
+      <span className="shrink-0 text-fg-muted">
+        A/D <span className="font-medium text-fg tabular-nums">{b.ad_ratio ?? "–"}</span>
+      </span>
     </div>
   );
 }

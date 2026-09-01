@@ -32,6 +32,13 @@ class _FakeClient:
         return {k: v for k, v in _QUOTES.items() if k in instruments}
 
 
+@pytest.fixture(autouse=True)
+def _no_overview_cache():
+    market_data_service._overview_cache.clear()
+    yield
+    market_data_service._overview_cache.clear()
+
+
 @pytest.fixture()
 def wired(monkeypatch):
     monkeypatch.setattr(market_data_service, "UNIVERSES", {"t": _UNIVERSE})

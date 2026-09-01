@@ -38,10 +38,16 @@ export interface StockQuickLook {
         volume: number | null;
         avg_price: number | null;
         oi: number | null;
+        buy_quantity: number | null;
+        sell_quantity: number | null;
         upper_circuit: number | null;
         lower_circuit: number | null;
         last_trade_time: string | null;
         timestamp: string | null;
+        depth: {
+          buy: { price: number; quantity: number; orders: number }[];
+          sell: { price: number; quantity: number; orders: number }[];
+        };
       };
   fundamentals_provider: string;
   profile: ProviderResult<Record<string, unknown>>;

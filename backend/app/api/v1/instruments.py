@@ -6,7 +6,9 @@ public instrument dumps (safe to call repeatedly; a scheduled worker is the
 natural follow-up).
 """
 
-from fastapi import APIRouter, Depends, Query
+from typing import Any
+
+from fastapi import APIRouter, Body, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_db
@@ -15,6 +17,17 @@ from app.schemas.instrument import InstrumentRead, OptionStrikeRow, SyncResult
 from app.services import instrument_service
 
 router = APIRouter(prefix="/instruments", tags=["instruments"])
+
+
+@router.post("/resolve")
+def resolve(
+    symbols: list[str] = Body(..., embed=True, description="Free-text tokens or a comma-separated list"),
+    default_exchange: str = Body("NSE", embed=True),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Turn a pasted list ('NSE:INFY, itc, reliance') into canonical
+    EXCHANGE:SYMBOL refs from the instrument master."""
+    return instrument_service.resolve_many(db, symbols, default_exchange=default_exchange)
 
 
 @router.get("/search", response_model=list[InstrumentRead])
