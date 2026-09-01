@@ -3,8 +3,9 @@ import uuid
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.config import Settings, get_settings
 from app.core.deps import get_db
-from app.schemas.backtest import BacktestCreate, BacktestRead
+from app.schemas.backtest import BacktestCreate, BacktestRead, BacktestRunRequest
 from app.services import backtest_service
 
 router = APIRouter(prefix="/backtests", tags=["backtests"])
@@ -23,6 +24,27 @@ def create_backtest(payload: BacktestCreate, db: Session = Depends(get_db)):
     pipeline is wired to a background worker — see app.services.backtest_service.
     run_backtest for the (already-implemented, unit-tested) execution path."""
     return backtest_service.create_backtest(db, payload)
+
+
+@router.post("/{backtest_id}/run", response_model=BacktestRead)
+def run_backtest(
+    backtest_id: uuid.UUID,
+    payload: BacktestRunRequest | None = None,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    """Executes the backtest synchronously and returns the updated row.
+
+    Candles come from ``payload.candles`` when supplied, otherwise from the
+    connected broker session (paid Kite Connect plan only). Execution
+    failures are reported as ``status == "failed"`` on the returned row, not
+    as an HTTP error."""
+    return backtest_service.execute_backtest(
+        db,
+        backtest_id,
+        settings=settings,
+        inline_candles=payload.candles if payload else None,
+    )
 
 
 @router.get("/{backtest_id}", response_model=BacktestRead)

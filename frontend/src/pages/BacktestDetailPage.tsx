@@ -10,15 +10,19 @@ import {
 } from "recharts";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useBacktest } from "@/hooks/useBacktests";
+import { useBacktest, useRunBacktest } from "@/hooks/useBacktests";
 
 export default function BacktestDetailPage() {
   const { backtestId } = useParams<{ backtestId: string }>();
   const { data: backtest, isLoading } = useBacktest(backtestId);
+  const run = useRunBacktest(backtestId ?? "");
 
   if (isLoading) return <p className="text-sm text-neutral-500">Loading…</p>;
   if (!backtest) return <p className="text-sm text-neutral-500">Backtest not found.</p>;
+
+  const runnable = backtest.status === "pending" || backtest.status === "failed";
 
   const chartData = (backtest.equity_curve ?? []).map(([ts, value], i) => ({
     index: i,
@@ -38,10 +42,29 @@ export default function BacktestDetailPage() {
             {new Date(backtest.end_date).toLocaleDateString()}
           </p>
         </div>
-        <Badge variant={backtest.status === "completed" ? "success" : "default"}>
-          {backtest.status}
-        </Badge>
+        <div className="flex items-center gap-3">
+          {runnable && (
+            <Button onClick={() => run.mutate({})} disabled={run.isPending}>
+              {run.isPending
+                ? "Running…"
+                : backtest.status === "failed"
+                  ? "Re-run backtest"
+                  : "Run backtest"}
+            </Button>
+          )}
+          <Badge variant={backtest.status === "completed" ? "success" : "default"}>
+            {backtest.status}
+          </Badge>
+        </div>
       </div>
+
+      {run.isError && (
+        <Card className="border-red-500/40 bg-red-500/5">
+          <CardContent className="py-3 text-sm text-red-400">
+            {(run.error as Error).message}
+          </CardContent>
+        </Card>
+      )}
 
       {backtest.error_message && (
         <Card className="border-red-500/40 bg-red-500/5">
@@ -71,9 +94,9 @@ export default function BacktestDetailPage() {
         <CardContent>
           {chartData.length === 0 ? (
             <p className="text-sm text-neutral-500">
-              No equity curve yet — this backtest hasn't been executed. Running a backtest requires
-              cached historical candles (see app.market_data.cache) fetched via a connected broker
-              session.
+              No equity curve yet — this backtest hasn't been executed. Use “Run backtest” above; it
+              fetches historical candles via the connected broker session (falling back to any
+              candles supplied with the run request).
             </p>
           ) : (
             <div className="h-72 w-full">

@@ -1,6 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { backtestsApi, type CreateBacktestPayload } from "@/api/backtests";
+import {
+  backtestsApi,
+  type CreateBacktestPayload,
+  type RunBacktestPayload,
+} from "@/api/backtests";
 
 export const backtestKeys = {
   all: ["backtests"] as const,
@@ -28,5 +32,16 @@ export function useCreateBacktest() {
   return useMutation({
     mutationFn: (payload: CreateBacktestPayload) => backtestsApi.create(payload),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: backtestKeys.all }),
+  });
+}
+
+export function useRunBacktest(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: RunBacktestPayload = {}) => backtestsApi.run(id, payload),
+    onSuccess: (data) => {
+      queryClient.setQueryData(backtestKeys.detail(id), data);
+      queryClient.invalidateQueries({ queryKey: backtestKeys.all });
+    },
   });
 }

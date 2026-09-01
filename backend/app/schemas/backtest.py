@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -13,6 +14,19 @@ class BacktestCreate(BaseModel):
     end_date: datetime
     initial_capital: float
     timeframe: str = "day"
+
+
+class BacktestRunRequest(BaseModel):
+    """Optional body for ``POST /backtests/{id}/run``.
+
+    ``candles`` lets a client feed OHLCV bars directly, bypassing the broker
+    entirely — the only option on the free Kite tier, which has no historical
+    data API. Each row is ``[timestamp, open, high, low, close, volume]``,
+    matching Kite's own historical-candles shape. When omitted, the run
+    fetches candles via the connected broker session instead.
+    """
+
+    candles: dict[str, list[list[Any]]] | None = None
 
 
 class BacktestRead(BaseModel):
