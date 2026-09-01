@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.backtesting.timeframes import catalog as timeframe_catalog
 from app.config import Settings, get_settings
 from app.core.deps import get_db
 from app.schemas.backtest import (
@@ -14,6 +15,12 @@ from app.schemas.backtest import (
 from app.services import backtest_service
 
 router = APIRouter(prefix="/backtests", tags=["backtests"])
+
+
+@router.get("/timeframes")
+def list_timeframes():
+    """Every timeframe the backtest engine supports, for the UI selector."""
+    return timeframe_catalog()
 
 
 @router.get("", response_model=list[BacktestRead])

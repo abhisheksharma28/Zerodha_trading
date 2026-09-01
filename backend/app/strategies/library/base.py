@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, ClassVar
 
+from app.backtesting.timeframes import ALL_TIMEFRAMES
 from app.brokers.base import OrderRequest
 from app.strategies.base import Bar, BaseStrategy, StrategyContext
 from app.strategies.indicators import ema, roc, rolling_volatility, sma
@@ -193,6 +194,15 @@ class TemplateStrategy(BaseStrategy):
     METADATA: ClassVar[TemplateMetadata]
     MIN_INSTRUMENTS: ClassVar[int] = 1
     MAX_INSTRUMENTS: ClassVar[int | None] = None
+
+    # Timeframes this template is designed to run on (canonical tokens from
+    # app.backtesting.timeframes). The backtest service validates the
+    # requested timeframe against this set and refuses a mismatch with a
+    # clear reason rather than producing misleading results. Default: all.
+    SUPPORTED_TIMEFRAMES: ClassVar[tuple[str, ...]] = ALL_TIMEFRAMES
+    # Bars of warm-up the strategy needs before it can emit its first signal
+    # (used by the zero-trade diagnostics). 0 = unknown / not declared.
+    MIN_BARS_REQUIRED: ClassVar[int] = 0
 
     # --- construction -----------------------------------------------------
 
@@ -417,4 +427,6 @@ def merge_metadata_defaults(md: TemplateMetadata, cls: type[TemplateStrategy]) -
     out["presets"] = cls.presets()
     out["min_instruments"] = cls.MIN_INSTRUMENTS
     out["max_instruments"] = cls.MAX_INSTRUMENTS
+    out["supported_timeframes"] = list(cls.SUPPORTED_TIMEFRAMES)
+    out["min_bars_required"] = cls.MIN_BARS_REQUIRED
     return out

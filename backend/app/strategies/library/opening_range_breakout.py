@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from datetime import date, time
 from typing import Any, ClassVar
 
+from app.backtesting.timeframes import INTRADAY_TIMEFRAMES
 from app.strategies.base import Bar
 from app.strategies.indicators import atr, sma
 from app.strategies.library.base import ParamSpec, TemplateMetadata, TemplateStrategy, preset
@@ -54,6 +55,7 @@ class OpeningRangeBreakoutStrategy(TemplateStrategy):
     NAME: ClassVar[str] = "Opening Range Breakout"
     CATEGORY: ClassVar[str] = "Breakout"
     MIN_INSTRUMENTS: ClassVar[int] = 1
+    SUPPORTED_TIMEFRAMES: ClassVar[tuple[str, ...]] = INTRADAY_TIMEFRAMES
 
     PARAMS: ClassVar[dict[str, ParamSpec]] = {
         "opening_range_start": ParamSpec("string", "09:15", "OR window start (HH:MM IST)."),

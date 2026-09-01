@@ -26,6 +26,8 @@ class CrossSectionalMomentumStrategy(TemplateStrategy):
     NAME: ClassVar[str] = "Cross-Sectional Momentum"
     CATEGORY: ClassVar[str] = "Momentum"
     MIN_INSTRUMENTS: ClassVar[int] = 3
+    SUPPORTED_TIMEFRAMES: ClassVar[tuple[str, ...]] = ("1d",)
+    MIN_BARS_REQUIRED: ClassVar[int] = 125
 
     PARAMS: ClassVar[dict[str, ParamSpec]] = {
         "lookback_1": ParamSpec("integer", 20, "Short momentum lookback (bars).", min=2, max=500),

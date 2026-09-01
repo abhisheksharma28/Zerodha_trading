@@ -38,6 +38,8 @@ class PairsTradingStrategy(TemplateStrategy):
     CATEGORY: ClassVar[str] = "Statistical Arbitrage"
     MIN_INSTRUMENTS: ClassVar[int] = 2
     MAX_INSTRUMENTS: ClassVar[int] = 2
+    SUPPORTED_TIMEFRAMES: ClassVar[tuple[str, ...]] = ("1d",)
+    MIN_BARS_REQUIRED: ClassVar[int] = 65
 
     PARAMS: ClassVar[dict[str, ParamSpec]] = {
         "lookback": ParamSpec("integer", 60, "Window for the spread Z-score.", min=5, max=1000),

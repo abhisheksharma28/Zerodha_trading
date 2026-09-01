@@ -18,6 +18,7 @@ from app.strategies.library import (
     IndexFuturesArbitrageStrategy,
     LatencyArbitrageStrategy,
     MeanReversionStrategy,
+    OpeningBreakoutUSStrategy,
     OpeningRangeBreakoutStrategy,
     PairsTradingStrategy,
     TrendFollowingStrategy,
@@ -266,6 +267,168 @@ def test_orb_respects_daily_trade_cap():
                                                               stop_loss_pct=0.3), steps)
     buys = [1 for _, orders in emitted for o in orders if o.transaction_type == "BUY"]
     assert sum(buys) == 1
+
+
+# --------------------------------------------------------------------------
+# opening breakout US (paper's 5m ORB + Relative Volume, NSE)
+# --------------------------------------------------------------------------
+
+from datetime import date as _date  # noqa: E402
+
+
+def _obus_params(**over):
+    p = dict(OpeningBreakoutUSStrategy.presets()["balanced"])
+    p.update(
+        opening_range_minutes=5, rvol_lookback=14, atr_period=14, rvol_min=1.0, top_n=20,
+        min_open_price=50.0, min_avg_daily_volume=400_000.0, min_atr=0.5,
+        square_off_time="15:20", allow_short=True,
+        sizing_method="risk_per_trade", risk_per_trade_pct=1.0, capital_allocation=2_000_000.0,
+        max_position_size_pct=25.0,
+    )
+    p.update(over)
+    return OpeningBreakoutUSStrategy.resolve_params(p)
+
+
+def _weekday_days(n: int, start=_date(2026, 1, 5)):
+    out, k = [], 0
+    while len(out) < n:
+        d = start + timedelta(days=k)
+        if d.weekday() < 5:
+            out.append(d)
+        k += 1
+    return out
+
+
+def _obus_day_bars(sym, day, *, or_open, or_close, or_high, or_low, or_vol,
+                   post_close, post_vol=300_000.0):
+    """One synthetic trading day for one symbol: a 09:15 opening 5-min bar,
+    two post-OR bars (the first carries the breakout close), then a 15:20
+    square-off bar. Slot order is [OR, breakout, drift, square-off]."""
+    dts = datetime(day.year, day.month, day.day, 9, 15)
+    hi_open = max(or_high, or_open, or_close)
+    lo_open = min(or_low, or_open, or_close)
+    hi_post = max(or_high, or_open, or_close, post_close) + 0.3
+    lo_post = min(or_low, or_open, or_close, post_close) - 0.3
+    return [
+        Bar(timestamp=intraday_ts(dts, 0), open=or_open, high=hi_open, low=lo_open,
+            close=or_close, volume=or_vol, instrument=sym),
+        Bar(timestamp=intraday_ts(dts, 5), open=or_close, high=hi_post, low=lo_post,
+            close=post_close, volume=post_vol, instrument=sym),
+        Bar(timestamp=intraday_ts(dts, 10), open=post_close, high=post_close + 0.3,
+            low=post_close - 0.3, close=post_close, volume=post_vol, instrument=sym),
+        Bar(timestamp=intraday_ts(dts, 6 * 60 + 5), open=post_close, high=post_close + 0.3,
+            low=post_close - 0.3, close=post_close, volume=50_000.0, instrument=sym),
+    ]
+
+
+def _obus_interleave(per_symbol_days):
+    """per_symbol_days: list of {sym: [4 bars]} (one dict per day). Emit bars
+    in time order (slot by slot, symbol by symbol) as a real feed would."""
+    steps = []
+    for day_map in per_symbol_days:
+        for slot in range(4):
+            for bars in day_map.values():
+                steps.append(bars[slot])
+    return steps
+
+
+def _obus_history(syms, days, *, base=200.0, or_vol=100_000.0):
+    """Quiet baseline sessions: small green opening candle, no breakout, ~1x
+    RVOL. Enough of them to fill the 14-session RVOL / ATR windows."""
+    per_day = []
+    for i, day in enumerate(days):
+        drift = base + (i % 3) - 1.0  # gentle daily variation so ATR > 0
+        per_day.append({
+            s: _obus_day_bars(
+                s, day, or_open=drift, or_close=drift + 0.3,
+                or_high=drift + 1.0, or_low=drift - 1.0, or_vol=or_vol,
+                post_close=drift + 0.4,  # inside the range -> no breakout
+            )
+            for s in syms
+        })
+    return _obus_interleave(per_day)
+
+
+def _obus_trade_day(specs, day):
+    """specs: {sym: dict(or_open, or_close, or_vol, post_close)}. Returns the
+    interleaved bar list for that single day."""
+    day_map = {
+        s: _obus_day_bars(s, day, or_open=k["or_open"], or_close=k["or_close"],
+                          or_high=201.0, or_low=199.0, or_vol=k["or_vol"],
+                          post_close=k["post_close"])
+        for s, k in specs.items()
+    }
+    return _obus_interleave([day_map])
+
+
+def test_obus_arms_top_n_by_rvol_and_trades_the_breakout():
+    syms = ["AAA", "BBB", "CCC", "DDD"]
+    steps = _obus_history(syms, _weekday_days(16))
+    trade_day = _weekday_days(17)[-1]
+    # AAA & BBB open on ~8x their usual opening volume; CCC & DDD on ~1x.
+    # All four break out; only the two Stocks in Play should be armed.
+    steps += _obus_trade_day({
+        "AAA": {"or_open": 200.0, "or_close": 200.8, "or_vol": 800_000.0, "post_close": 203.0},
+        "BBB": {"or_open": 200.0, "or_close": 200.8, "or_vol": 800_000.0, "post_close": 203.0},
+        "CCC": {"or_open": 200.0, "or_close": 200.8, "or_vol": 100_000.0, "post_close": 203.0},
+        "DDD": {"or_open": 200.0, "or_close": 200.8, "or_vol": 100_000.0, "post_close": 203.0},
+    }, trade_day)
+
+    emitted, positions = run(OpeningBreakoutUSStrategy, _obus_params(top_n=2), steps)
+    traded = {o.tradingsymbol for _, orders in emitted for o in orders}
+    assert traded == {"AAA", "BBB"}, "only the two highest-RVOL names should be armed"
+    first_side: dict[str, str] = {}
+    for _, orders in emitted:
+        for o in orders:
+            first_side.setdefault(o.tradingsymbol, o.transaction_type)
+    assert first_side["AAA"] == "BUY" and first_side["BBB"] == "BUY"  # green OR -> long
+    assert positions.get("AAA", 0) == 0 and positions.get("BBB", 0) == 0  # flat by 15:20
+
+
+def test_obus_direction_lock_refuses_the_opposite_side_breakout():
+    steps = _obus_history(["AAA", "BBB"], _weekday_days(16))
+    trade_day = _weekday_days(17)[-1]
+    steps += _obus_trade_day({
+        # RED opening candle -> short-only -> an upside break is ignored
+        "AAA": {"or_open": 200.0, "or_close": 199.2, "or_vol": 900_000.0, "post_close": 203.0},
+        "BBB": {"or_open": 200.0, "or_close": 200.8, "or_vol": 900_000.0, "post_close": 203.0},
+    }, trade_day)
+    emitted, _ = run(OpeningBreakoutUSStrategy, _obus_params(top_n=20), steps)
+    traded = {o.tradingsymbol for _, orders in emitted for o in orders}
+    assert "AAA" not in traded  # red OR + upside break => no trade
+    assert "BBB" in traded
+
+
+def test_obus_rvol_filter_excludes_low_activity_names():
+    steps = _obus_history(["AAA", "BBB"], _weekday_days(16))
+    trade_day = _weekday_days(17)[-1]
+    steps += _obus_trade_day({
+        "AAA": {"or_open": 200.0, "or_close": 200.8, "or_vol": 100_000.0, "post_close": 203.0},
+        "BBB": {"or_open": 200.0, "or_close": 200.8, "or_vol": 100_000.0, "post_close": 203.0},
+    }, trade_day)
+    emitted, _ = run(OpeningBreakoutUSStrategy, _obus_params(rvol_min=3.0), steps)
+    assert emitted == []  # ~1x RVOL, threshold 3x => nothing armed
+
+
+def test_obus_no_lookahead_future_days_cannot_change_past_orders():
+    syms = ["AAA", "BBB", "CCC"]
+    steps = _obus_history(syms, _weekday_days(20))
+    steps += _obus_trade_day({
+        "AAA": {"or_open": 200.0, "or_close": 200.8, "or_vol": 900_000.0, "post_close": 203.0},
+        "BBB": {"or_open": 200.0, "or_close": 200.8, "or_vol": 110_000.0, "post_close": 203.0},
+        "CCC": {"or_open": 200.0, "or_close": 200.8, "or_vol": 90_000.0, "post_close": 203.0},
+    }, _weekday_days(21)[-1])
+
+    bars_per_day = 4 * len(syms)
+    cutoff = bars_per_day * 15
+    short_run, _ = run(OpeningBreakoutUSStrategy, _obus_params(top_n=2), steps[:cutoff])
+    long_run, _ = run(OpeningBreakoutUSStrategy, _obus_params(top_n=2), steps)
+    long_truncated = [(i, o) for (i, o) in long_run if i < cutoff]
+
+    def norm(runs):
+        return [(i, [(o.tradingsymbol, o.transaction_type) for o in orders]) for i, orders in runs]
+
+    assert norm(short_run) == norm(long_truncated)
 
 
 # --------------------------------------------------------------------------

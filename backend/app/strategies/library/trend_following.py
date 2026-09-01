@@ -37,6 +37,8 @@ class TrendFollowingStrategy(TemplateStrategy):
     NAME: ClassVar[str] = "Trend Following"
     CATEGORY: ClassVar[str] = "Trend"
     MIN_INSTRUMENTS: ClassVar[int] = 1
+    SUPPORTED_TIMEFRAMES: ClassVar[tuple[str, ...]] = ("1d",)
+    MIN_BARS_REQUIRED: ClassVar[int] = 60
 
     PARAMS: ClassVar[dict[str, ParamSpec]] = {
         "ma_type": ParamSpec("enum", "ema", "Moving-average type.", choices=("sma", "ema")),

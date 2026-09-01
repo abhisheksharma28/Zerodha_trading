@@ -33,6 +33,8 @@ class MeanReversionStrategy(TemplateStrategy):
     NAME: ClassVar[str] = "Mean Reversion"
     CATEGORY: ClassVar[str] = "Mean Reversion"
     MIN_INSTRUMENTS: ClassVar[int] = 1
+    SUPPORTED_TIMEFRAMES: ClassVar[tuple[str, ...]] = ("1d",)
+    MIN_BARS_REQUIRED: ClassVar[int] = 25
 
     PARAMS: ClassVar[dict[str, ParamSpec]] = {
         "lookback": ParamSpec("integer", 20, "Rolling window for mean / std / Z-score.",

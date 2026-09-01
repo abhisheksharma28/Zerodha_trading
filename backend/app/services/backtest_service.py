@@ -15,8 +15,10 @@ from sqlalchemy.orm import Session
 from app.audit.service import record as record_audit
 from app.backtesting.costs import CostConfig, CostModel
 from app.backtesting.data_quality import validate_candles
+from app.backtesting.diagnostics import explain_no_trades
 from app.backtesting.engine import BacktestEngine, SimulatedFill
 from app.backtesting.performance import build_charts, compute_performance
+from app.backtesting.timeframes import UnknownTimeframeError, bars_per_year, kite_interval, resolve
 from app.backtesting.trades import reconstruct_trades
 from app.config import Settings
 from app.core.exceptions import NotFoundError, ValidationError
@@ -54,13 +56,19 @@ def create_backtest(db: Session, payload: BacktestCreate) -> Backtest:
     if payload.end_date <= payload.start_date:
         raise ValidationError("end_date must be after start_date")
 
+    try:
+        canonical_tf = resolve(payload.timeframe).token
+    except UnknownTimeframeError as exc:
+        raise ValidationError(str(exc)) from exc
+    _validate_timeframe_supported(version, canonical_tf)
+
     backtest = Backtest(
         strategy_version_id=payload.strategy_version_id,
         instrument_universe=payload.instrument_universe,
         start_date=payload.start_date,
         end_date=payload.end_date,
         initial_capital=payload.initial_capital,
-        timeframe=payload.timeframe,
+        timeframe=canonical_tf,
         status=BacktestStatus.PENDING,
     )
     db.add(backtest)
@@ -78,6 +86,24 @@ def create_backtest(db: Session, payload: BacktestCreate) -> Backtest:
     return backtest
 
 
+def _validate_timeframe_supported(version: StrategyVersion, canonical_tf: str) -> None:
+    """Refuse a timeframe the strategy was not designed for, with a reason —
+    never run it and return misleading numbers. Hand-written user strategies
+    (no SUPPORTED_TIMEFRAMES declaration) are not restricted."""
+    try:
+        strategy_cls = load_strategy_class(version.source_code, version.entry_point)
+    except Exception:  # noqa: BLE001 - compile errors surface elsewhere
+        return
+    supported = getattr(strategy_cls, "SUPPORTED_TIMEFRAMES", None)
+    if supported and canonical_tf not in supported:
+        raise ValidationError(
+            f"This strategy does not support the {canonical_tf} timeframe. "
+            f"Supported: {', '.join(supported)}. "
+            "Intraday strategies need intraday bars; end-of-day strategies expect daily bars — "
+            "running on the wrong timeframe would produce misleading results."
+        )
+
+
 def _bars_from_rows(tradingsymbol: str, rows: list[list[Any]]) -> list[Bar]:
     """Rows are ``[timestamp, open, high, low, close, volume]`` (Kite's shape)."""
     bars: list[Bar] = []
@@ -91,6 +117,7 @@ def _bars_from_rows(tradingsymbol: str, rows: list[list[Any]]) -> list[Bar]:
 
 def _fetch_candles_via_broker(db: Session, settings: Settings, backtest: Backtest) -> dict[str, list[Bar]]:
     client = broker_service.build_authenticated_client(db, settings)
+    interval = kite_interval(backtest.timeframe)  # canonical token -> Kite's interval string
     candles_by_instrument: dict[str, list[Bar]] = {}
     for symbol in backtest.instrument_universe:
         token, tradingsymbol = resolve_instrument_token(symbol)
@@ -98,7 +125,7 @@ def _fetch_candles_via_broker(db: Session, settings: Settings, backtest: Backtes
             client,
             token,
             tradingsymbol,
-            backtest.timeframe,
+            interval,
             backtest.start_date,
             backtest.end_date,
         )
@@ -267,12 +294,29 @@ def run_backtest(
             fill_costs=[f.cost for f in result.fills],
             mark_prices=mark_prices,
         )
+        try:
+            periods_per_year = round(bars_per_year(backtest.timeframe))
+        except UnknownTimeframeError:
+            periods_per_year = 252
         metrics = compute_performance(
             result.equity_curve, trades,
             initial_capital=initial_capital, total_costs=result.total_costs,
+            trading_days_per_year=periods_per_year,
         )
         metrics["cost_breakdown"] = result.cost_breakdown
+        metrics["timeframe"] = backtest.timeframe
+        metrics["periods_per_year"] = periods_per_year
         charts = build_charts(result.equity_curve, trades, initial_capital)
+
+        dq = data_quality or {"ok": True, "errors": [], "warnings": [], "per_symbol": []}
+        diagnostics = result.diagnostics.to_dict()
+        no_trades_analysis: list[str] = []
+        if metrics.get("total_trades", 0) == 0:
+            no_trades_analysis = explain_no_trades(
+                result.diagnostics, dq,
+                timeframe=backtest.timeframe,
+                min_bars_required=getattr(strategy_cls, "MIN_BARS_REQUIRED", 0) or None,
+            )
 
         orders_persisted = _persist_backtest_orders(db, backtest, result.fills)
 
@@ -283,8 +327,9 @@ def run_backtest(
             "trades": [t.to_dict() for t in trades][:2000],
             "cost_config": cost_model.config.to_dict(),
             "orders_persisted": orders_persisted,
-            "data_quality": data_quality or {"ok": True, "errors": [], "warnings": [],
-                                             "per_symbol": []},
+            "data_quality": dq,
+            "diagnostics": diagnostics,
+            "no_trades_analysis": no_trades_analysis,
         }
         backtest.status = BacktestStatus.COMPLETED
         backtest.completed_at = datetime.now(UTC)
@@ -324,6 +369,8 @@ def backtest_report(db: Session, backtest_id) -> dict[str, Any]:
     cost_config = m.pop("cost_config", {})
     cost_breakdown = m.pop("cost_breakdown", {})
     data_quality = m.pop("data_quality", {"ok": True, "errors": [], "warnings": [], "per_symbol": []})
+    diagnostics = m.pop("diagnostics", {})
+    no_trades_analysis = m.pop("no_trades_analysis", [])
     return {
         "backtest_id": str(backtest.id),
         "status": backtest.status.value,
@@ -335,6 +382,8 @@ def backtest_report(db: Session, backtest_id) -> dict[str, Any]:
         "cost_config": cost_config,
         "cost_breakdown": cost_breakdown,
         "data_quality": data_quality,
+        "diagnostics": diagnostics,
+        "no_trades_analysis": no_trades_analysis,
         "equity_curve": backtest.equity_curve or [],
         "charts": charts,
         "trades": trades,

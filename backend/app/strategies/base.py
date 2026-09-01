@@ -37,6 +37,7 @@ class StrategyContext:
     parameters: dict[str, Any]
     positions: dict[str, int] = field(default_factory=dict)  # instrument -> net qty
     _pending_orders: list[OrderRequest] = field(default_factory=list)
+    signals: dict[str, int] = field(default_factory=dict)  # optional diagnostics counters
 
     def submit_order(self, order: OrderRequest) -> None:
         self._pending_orders.append(order)
@@ -44,6 +45,13 @@ class StrategyContext:
     def drain_pending_orders(self) -> list[OrderRequest]:
         pending, self._pending_orders = self._pending_orders, []
         return pending
+
+    def note_signal(self, label: str, n: int = 1) -> None:
+        """Optional: record that the strategy produced a signal of some kind
+        this bar (e.g. "long_entry", "exit", "filtered_out"). Purely for
+        backtest diagnostics — it never affects execution. Strategies that
+        don't call this simply contribute nothing to the signal report."""
+        self.signals[label] = self.signals.get(label, 0) + int(n)
 
 
 class BaseStrategy(ABC):

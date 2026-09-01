@@ -19,6 +19,7 @@ from app.strategies.library.index_futures_arbitrage import IndexFuturesArbitrage
 from app.strategies.library.latency_arbitrage import LatencyArbitrageStrategy
 from app.strategies.library.mean_reversion import MeanReversionStrategy
 from app.strategies.library.momentum import CrossSectionalMomentumStrategy
+from app.strategies.library.opening_breakout_us import OpeningBreakoutUSStrategy
 from app.strategies.library.opening_range_breakout import OpeningRangeBreakoutStrategy
 from app.strategies.library.pairs_trading import PairsTradingStrategy
 from app.strategies.library.trend_following import TrendFollowingStrategy
@@ -28,6 +29,7 @@ TEMPLATES: list[type[TemplateStrategy]] = [
     TrendFollowingStrategy,
     MeanReversionStrategy,
     OpeningRangeBreakoutStrategy,
+    OpeningBreakoutUSStrategy,
     PairsTradingStrategy,
     LatencyArbitrageStrategy,
     IndexFuturesArbitrageStrategy,
@@ -51,6 +53,7 @@ __all__ = [
     "TrendFollowingStrategy",
     "MeanReversionStrategy",
     "OpeningRangeBreakoutStrategy",
+    "OpeningBreakoutUSStrategy",
     "PairsTradingStrategy",
     "LatencyArbitrageStrategy",
     "IndexFuturesArbitrageStrategy",

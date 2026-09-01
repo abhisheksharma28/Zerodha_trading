@@ -11,6 +11,7 @@ can be re-priced under different assumptions.
 from dataclasses import dataclass, field
 
 from app.backtesting.costs import CostModel
+from app.backtesting.diagnostics import RunDiagnostics
 from app.strategies.base import Bar, BaseStrategy, StrategyContext
 
 
@@ -35,6 +36,7 @@ class BacktestRunResult:
     final_positions: dict[str, int]
     total_costs: float = 0.0
     cost_breakdown: dict[str, float] = field(default_factory=dict)
+    diagnostics: RunDiagnostics = field(default_factory=RunDiagnostics)
 
 
 class BacktestEngine:
@@ -55,10 +57,19 @@ class BacktestEngine:
         strategy = self.strategy_cls(context)
         strategy.on_start()
 
+        diag = RunDiagnostics(
+            instruments=sorted(candles_by_instrument),
+            bars_by_instrument={s: len(b) for s, b in candles_by_instrument.items()},
+        )
+        diag.total_bars = sum(diag.bars_by_instrument.values())
+
         merged_bars = sorted(
             (bar for bars in candles_by_instrument.values() for bar in bars),
             key=lambda b: b.timestamp,
         )
+        if merged_bars:
+            diag.first_bar_ts = str(merged_bars[0].timestamp)
+            diag.last_bar_ts = str(merged_bars[-1].timestamp)
 
         cash = self.initial_capital
         positions: dict[str, int] = {}
@@ -75,8 +86,15 @@ class BacktestEngine:
             strategy.on_bar(bar)
 
             for order in context.drain_pending_orders():
+                diag.orders_submitted += 1
+                if order.quantity <= 0:
+                    diag.reject("zero/negative quantity")
+                    continue
                 ref_price = float(bar.close)
                 side = order.transaction_type
+                if ref_price <= 0:
+                    diag.reject("non-positive bar price")
+                    continue
                 segment = ""
                 fill_price = ref_price
                 cost = 0.0
@@ -95,6 +113,7 @@ class BacktestEngine:
                 signed_qty = order.quantity if side == "BUY" else -order.quantity
                 cash -= signed_qty * fill_price + cost
                 total_costs += cost
+                diag.fills += 1
                 positions[order.tradingsymbol] = positions.get(order.tradingsymbol, 0) + signed_qty
                 fills.append(
                     SimulatedFill(
@@ -118,10 +137,13 @@ class BacktestEngine:
 
         strategy.on_stop()
 
+        diag.signals = dict(context.signals)
+
         return BacktestRunResult(
             equity_curve=equity_curve,
             fills=fills,
             final_positions=positions,
             total_costs=total_costs,
             cost_breakdown={k: round(v, 4) for k, v in cost_breakdown.items()},
+            diagnostics=diag,
         )
