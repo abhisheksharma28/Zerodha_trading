@@ -1,0 +1,48 @@
+# --- Python / backend ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+*.db
+*.sqlite3
+
+# --- Node / frontend ---
+node_modules/
+frontend/dist/
+frontend/.vite/
+*.local
+
+# --- Env & secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!backend/app/**/*.key
+
+# --- Data / instruments cache ---
+data/
+*.csv
+!frontend/**/*.csv
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+.DS_Store
+
+# --- Docker ---
+*.override.yml
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Alembic (keep versions, ignore local sqlite artifacts) ---
+backend/alembic/*.sqlite3
