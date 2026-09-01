@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     zerodha_static_ip: str = ""
     zerodha_redirect_url: str = "http://localhost:8000/api/v1/broker/callback"
 
+    # --- Fundamentals data provider (Stock Intelligence) ---
+    # "none" (default) | "indianapi". Adapters live in app/providers/fundamentals.
+    fundamentals_provider: str = "none"
+    fundamentals_api_key: str = ""
+    fundamentals_api_base: str = ""
+
     # --- Risk limits (internal ceiling, intentionally tighter than Kite's own) ---
     risk_max_orders_per_second: int = 5
     risk_max_orders_per_minute: int = 200

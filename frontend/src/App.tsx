@@ -28,7 +28,8 @@ export default function App() {
   return (
     <Routes>
       <Route element={<AppLayout />}>
-        <Route index element={<DashboardPage />} />
+        <Route index element={<MarketScannerPage />} />
+        <Route path="dashboard" element={<DashboardPage />} />
         <Route path="strategy-library" element={<StrategyLibraryPage />} />
         <Route path="strategy-library/:slug" element={<StrategyTemplateDetailPage />} />
         <Route path="options-hni" element={<OptionsHniPage />} />

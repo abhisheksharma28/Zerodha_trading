@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { RefreshCw } from "lucide-react";
 
 import { DataTable, type Column } from "@/components/DataTable";
@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { SectionCard } from "@/components/SectionCard";
 import { Card, CardContent } from "@/components/ui/card";
 import { useMarketOverview } from "@/hooks/useMarket";
+import { useStockDrawer } from "@/lib/stockDrawer";
 import type { MarketQuoteRow, SectorRow } from "@/types/api";
 import { cn } from "@/lib/utils";
 
@@ -23,19 +24,26 @@ const heatStyle = (p: number): React.CSSProperties => {
   return { backgroundColor: t >= 0 ? `rgba(52,211,153,${a})` : `rgba(248,113,113,${a})` };
 };
 
+function useSym() {
+  const { open } = useStockDrawer();
+  return (sym: string) => open("NSE", sym);
+}
+
 function SymLink({ sym }: { sym: string }) {
+  const openStock = useSym();
   return (
-    <Link
-      to={`/charting?symbol=NSE:${encodeURIComponent(sym)}`}
+    <button
+      type="button"
+      onClick={() => openStock(sym)}
       className="font-medium text-fg hover:text-accent hover:underline"
     >
       {sym}
-    </Link>
+    </button>
   );
 }
 
 export default function MarketScannerPage() {
-  const navigate = useNavigate();
+  const openStock = useSym();
   const [tab, setTab] = useState<(typeof TABS)[number]>("Movers");
   const { data, isFetching, refetch, dataUpdatedAt } = useMarketOverview("nifty50");
 
@@ -98,7 +106,7 @@ export default function MarketScannerPage() {
               <button
                 key={ix.symbol}
                 type="button"
-                onClick={() => navigate(`/charting?symbol=NSE:${encodeURIComponent(ix.symbol)}`)}
+                onClick={() => openStock(ix.symbol)}
                 className="min-w-[9rem] shrink-0 rounded-lg border border-line bg-surface px-3 py-2 text-left hover:border-line-strong"
               >
                 <p className="truncate text-[11px] text-fg-faint">{ix.name}</p>
@@ -222,18 +230,20 @@ function Breadth({ b }: { b: { advances: number; declines: number; unchanged: nu
 }
 
 function SignalCard({ label, tone, syms }: { label: string; tone: "pos" | "neg"; syms: string[] }) {
+  const openStock = useSym();
   return (
     <SectionCard title={`${label} (${syms.length})`}>
       <div className="flex flex-wrap gap-1">
         {syms.length === 0 && <span className="text-xs text-fg-faint">—</span>}
         {syms.map((s) => (
-          <Link
+          <button
             key={s}
-            to={`/charting?symbol=NSE:${encodeURIComponent(s)}`}
+            type="button"
+            onClick={() => openStock(s)}
             className={cn("rounded px-1.5 py-0.5 text-[11px] hover:underline", tone === "pos" ? "bg-pos/10 text-pos" : "bg-neg/10 text-neg")}
           >
             {s}
-          </Link>
+          </button>
         ))}
       </div>
     </SectionCard>
@@ -259,6 +269,7 @@ function SectorBar({ s }: { s: SectorRow }) {
 }
 
 function Heatmap({ rows }: { rows: { symbol: string; sector: string; change_pct: number }[] }) {
+  const openStock = useSym();
   const bySector = useMemo(() => {
     const m = new Map<string, typeof rows>();
     for (const r of rows) {
@@ -275,16 +286,17 @@ function Heatmap({ rows }: { rows: { symbol: string; sector: string; change_pct:
           <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-fg-faint">{sector}</p>
           <div className="grid grid-cols-3 gap-1 sm:grid-cols-5 md:grid-cols-8">
             {items.map((it) => (
-              <Link
+              <button
                 key={it.symbol}
-                to={`/charting?symbol=NSE:${encodeURIComponent(it.symbol)}`}
+                type="button"
+                onClick={() => openStock(it.symbol)}
                 style={heatStyle(it.change_pct)}
                 className="rounded p-1.5 text-center hover:ring-1 hover:ring-accent"
                 title={`${it.symbol} ${sign(it.change_pct)}`}
               >
                 <p className="truncate text-[11px] font-medium text-fg">{it.symbol}</p>
                 <p className="text-[11px] tabular-nums text-fg">{sign(it.change_pct, 1)}</p>
-              </Link>
+              </button>
             ))}
           </div>
         </div>

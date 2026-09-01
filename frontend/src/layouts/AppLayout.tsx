@@ -21,6 +21,7 @@ import {
   Wallet,
 } from "lucide-react";
 
+import { StockDrawer } from "@/components/StockDrawer";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { cn } from "@/lib/utils";
 import { useBrokerStatus } from "@/hooks/useBroker";
@@ -28,7 +29,8 @@ import { useBrokerStatus } from "@/hooks/useBroker";
 type Item = { to: string; label: string; icon: typeof Gauge; desc?: string };
 
 const PRIMARY: Item[] = [
-  { to: "/", label: "Dashboard", icon: Gauge },
+  { to: "/", label: "Scanner", icon: Radar },
+  { to: "/dashboard", label: "Dashboard", icon: Gauge },
   { to: "/charting", label: "Charting", icon: CandlestickChart },
 ];
 
@@ -40,7 +42,6 @@ const MENUS: { label: string; items: Item[] }[] = [
       { to: "/strategy-library", label: "Strategy Library", icon: LibraryBig, desc: "Research-backed templates" },
       { to: "/strategies", label: "My Strategies", icon: ListChecks, desc: "Your saved strategies" },
       { to: "/options-hni", label: "NIFTY Monthly HNI", icon: Layers, desc: "1:3:2 CALL ratio spread" },
-      { to: "/market-scanner", label: "Market Scanner", icon: Radar, desc: "Breadth, movers, sectors" },
       { to: "/analytics", label: "Analytics", icon: BarChart3, desc: "Aggregate performance" },
     ],
   },
@@ -166,6 +167,8 @@ export function AppLayout() {
           <Outlet />
         </div>
       </main>
+
+      <StockDrawer />
     </div>
   );
 }

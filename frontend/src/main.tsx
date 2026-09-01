@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 
 import App from "@/App";
+import { StockDrawerProvider } from "@/lib/stockDrawer";
 import { ThemeProvider } from "@/lib/theme";
 import "@/index.css";
 
@@ -22,7 +23,9 @@ createRoot(document.getElementById("root")!).render(
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <BrowserRouter>
-          <App />
+          <StockDrawerProvider>
+            <App />
+          </StockDrawerProvider>
         </BrowserRouter>
       </ThemeProvider>
       <ReactQueryDevtools initialIsOpen={false} />
