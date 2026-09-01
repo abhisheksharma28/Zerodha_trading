@@ -94,3 +94,19 @@ class AuditAction(str, enum.Enum):
     LOGIN = "login"
     LOGOUT = "logout"
     RISK_BREACH = "risk_breach"
+
+
+class OptionsStrategyStatus(str, enum.Enum):
+    CREATED = "CREATED"
+    VALIDATING = "VALIDATING"
+    ENTRY_PENDING = "ENTRY_PENDING"
+    ENTERED = "ENTERED"
+    ACTIVE = "ACTIVE"
+    TARGET_HIT = "TARGET_HIT"
+    STOP_LOSS = "STOP_LOSS"
+    SHORT_STRIKE_EXIT = "SHORT_STRIKE_EXIT"
+    TIME_EXIT = "TIME_EXIT"
+    EXPIRY_EXIT = "EXPIRY_EXIT"
+    MANUAL_EXIT = "MANUAL_EXIT"
+    FAILED = "FAILED"
+    CLOSED = "CLOSED"

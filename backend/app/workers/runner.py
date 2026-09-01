@@ -136,6 +136,26 @@ class DeploymentWorker:
         finally:
             db.close()
 
+        self._run_options_scheduler()
+
+    def _run_options_scheduler(self) -> None:
+        """Drive scheduled options-basket strategies (NIFTY Monthly HNI):
+        enter qualifying paper instances at their entry minute, monitor
+        ACTIVE ones for exits. Isolated from the bar loop above."""
+        db = self._session_factory()
+        try:
+            from app.workers.options_scheduler import run_once
+
+            result = run_once(db, self._settings)
+            if result.get("entered") or result.get("exited"):
+                logger.info("options_scheduler_tick", **{
+                    k: v for k, v in result.items() if k in ("entered", "exited")
+                })
+        except Exception:  # noqa: BLE001 - never let this kill the worker loop
+            logger.exception("options_scheduler_failed")
+        finally:
+            db.close()
+
     # --- internals ----------------------------------------------------
 
     def _default_feed_factory(self, db: Session) -> LiveCandleFeed | None:

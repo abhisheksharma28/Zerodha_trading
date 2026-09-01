@@ -29,7 +29,8 @@ class Order(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "orders"
     __table_args__ = (
         CheckConstraint(
-            "(deployment_id IS NOT NULL) OR (backtest_id IS NOT NULL)",
+            "(deployment_id IS NOT NULL) OR (backtest_id IS NOT NULL) "
+            "OR (options_instance_id IS NOT NULL)",
             name="ck_orders_has_deployment_or_backtest",
         ),
     )
@@ -40,6 +41,9 @@ class Order(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
     backtest_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("backtests.id", ondelete="CASCADE")
+    )
+    options_instance_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("options_strategy_instances.id", ondelete="CASCADE")
     )
 
     broker_order_id: Mapped[str | None] = mapped_column(String(50), index=True)
