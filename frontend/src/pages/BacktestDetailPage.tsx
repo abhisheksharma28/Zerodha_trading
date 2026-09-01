@@ -1,4 +1,6 @@
+import { useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
+import type { SeriesMarker, Time } from "lightweight-charts";
 import {
   Area,
   AreaChart,
@@ -14,10 +16,13 @@ import {
   YAxis,
 } from "recharts";
 
+import { PriceChart } from "@/components/PriceChart";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useBacktest, useBacktestReport, useRunBacktest } from "@/hooks/useBacktests";
+import { useCandles } from "@/hooks/useCandles";
+import { useTheme } from "@/lib/theme";
 import type { BacktestDiagnostics, BacktestReport } from "@/types/api";
 
 // CSS vars so charts re-colour with the light/dark theme (see src/index.css).
@@ -129,9 +134,88 @@ export default function BacktestDetailPage() {
         )}
       </ChartCard>
 
+      {report && backtest && report.trades.length > 0 && (
+        <PriceTradesChart report={report} timeframe={backtest.timeframe} />
+      )}
       {report && <ReportCharts report={report} />}
       {report && report.trades.length > 0 && <TradesTable report={report} />}
     </div>
+  );
+}
+
+function PriceTradesChart({
+  report,
+  timeframe,
+}: {
+  report: BacktestReport;
+  timeframe: string;
+}) {
+  const { theme } = useTheme();
+  const symbols = useMemo(
+    () => [...new Set(report.trades.map((t) => t.instrument))],
+    [report.trades],
+  );
+  const [sym, setSym] = useState(symbols[0]);
+  const { data } = useCandles(sym ? `NSE:${sym}` : undefined, timeframe);
+  const candles = data?.available ? (data.candles ?? []) : [];
+
+  const markers = useMemo<SeriesMarker<Time>[]>(() => {
+    const out: SeriesMarker<Time>[] = [];
+    for (const t of report.trades) {
+      if (t.instrument !== sym) continue;
+      const long = t.direction === "long";
+      if (t.entry_time) {
+        out.push({
+          time: Math.floor(Date.parse(t.entry_time) / 1000) as Time,
+          position: long ? "belowBar" : "aboveBar",
+          color: long ? "var(--color-pos)" : "var(--color-neg)",
+          shape: long ? "arrowUp" : "arrowDown",
+          text: `${long ? "BUY" : "SELL"} ${t.entry_price}`,
+        });
+      }
+      if (t.exit_time && !t.is_open) {
+        out.push({
+          time: Math.floor(Date.parse(t.exit_time) / 1000) as Time,
+          position: long ? "aboveBar" : "belowBar",
+          color: "var(--color-fg-faint)",
+          shape: long ? "arrowDown" : "arrowUp",
+          text: `exit ${t.exit_price}`,
+        });
+      }
+    }
+    return out.sort((a, b) => (a.time as number) - (b.time as number));
+  }, [report.trades, sym]);
+
+  return (
+    <ChartCard title="Price & trades">
+      {symbols.length > 1 && (
+        <div className="mb-2">
+          <select
+            value={sym}
+            onChange={(e) => setSym(e.target.value)}
+            className="h-8 rounded-md border border-line-strong bg-surface px-2 text-xs text-fg"
+          >
+            {symbols.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      {data && !data.available ? (
+        <p className="py-8 text-center text-xs text-fg-faint">{data.reason}</p>
+      ) : candles.length === 0 ? (
+        <p className="py-8 text-center text-xs text-fg-faint">Loading price history…</p>
+      ) : (
+        <PriceChart
+          candles={candles}
+          markers={markers}
+          themeKey={`${theme}-${sym}-${timeframe}`}
+          height={420}
+        />
+      )}
+    </ChartCard>
   );
 }
 

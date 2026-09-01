@@ -35,6 +35,7 @@ const NAV: NavGroup[] = [
   {
     heading: "Research",
     items: [
+      { to: "/charting", label: "Charting", icon: CandlestickChart },
       { to: "/backtests", label: "Backtest", icon: FlaskConical },
       { to: "/strategy-library", label: "Strategy Library", icon: LibraryBig },
       { to: "/strategies", label: "My Strategies", icon: ListChecks },

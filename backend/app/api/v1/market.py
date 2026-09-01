@@ -23,3 +23,14 @@ def overview(
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     return market_data_service.market_overview(db, settings, universe=universe)
+
+
+@router.get("/candles")
+def candles(
+    symbol: str = Query(..., description="e.g. NSE:INFY or INFY"),
+    timeframe: str = Query("5m"),
+    days: int | None = Query(None, ge=1, le=4000),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    return market_data_service.candles(db, settings, symbol=symbol, timeframe=timeframe, days=days)

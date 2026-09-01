@@ -10,20 +10,31 @@ a reason — it never fabricates prices or serves a stale/mock fallback.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.backtesting.timeframes import UnknownTimeframeError, kite_interval, resolve
 from app.config import Settings
-from app.core.exceptions import BrokerNotConnectedError
+from app.core.exceptions import BrokerNotConnectedError, ValidationError
 from app.core.logging import get_logger
+from app.market_data.instruments import resolve_instrument_token
 from app.market_data.nse_universe import BROAD_INDICES, SECTOR_INDICES, UNIVERSES
 from app.models.instrument import Instrument
 from app.services import broker_service
 
 logger = get_logger(__name__)
+
+# Sensible lookback per timeframe for a chart (also respects Kite's per-call
+# range ceilings for intraday intervals).
+_CHART_DEFAULT_DAYS: dict[str, int] = {
+    "1m": 5, "3m": 12, "5m": 30, "10m": 45, "15m": 75, "30m": 120, "1h": 200, "1d": 1500,
+}
+_CHART_MAX_DAYS: dict[str, int] = {
+    "1m": 30, "3m": 60, "5m": 90, "10m": 100, "15m": 180, "30m": 365, "1h": 730, "1d": 4000,
+}
 
 _QUOTE_BATCH = 200
 _GAP_PCT = 1.0          # |open vs prev close| beyond this = gap up / down
@@ -201,4 +212,75 @@ def market_overview(db: Session, settings: Settings, *, universe: str = "nifty50
             for s in by_change
         ],
         "signals": signals,
+    }
+
+
+def _epoch(ts: Any) -> int:
+    if isinstance(ts, datetime):
+        dt = ts
+    else:
+        s = str(ts).strip().replace("Z", "+00:00")
+        if len(s) >= 5 and s[-5] in "+-" and s[-3] != ":":
+            s = s[:-2] + ":" + s[-2:]
+        dt = datetime.fromisoformat(s)
+    return int(dt.timestamp())
+
+
+def candles(
+    db: Session,
+    settings: Settings,
+    *,
+    symbol: str,
+    timeframe: str = "5m",
+    days: int | None = None,
+) -> dict[str, Any]:
+    """Historical OHLCV for one instrument, shaped for a lightweight-charts
+    candlestick + volume series. Real data from the connected Zerodha
+    session; ``available: false`` when there is none."""
+    try:
+        tf = resolve(timeframe)
+    except UnknownTimeframeError as exc:
+        raise ValidationError(str(exc)) from exc
+
+    span = days or _CHART_DEFAULT_DAYS.get(tf.token, 60)
+    span = min(span, _CHART_MAX_DAYS.get(tf.token, 365))
+
+    try:
+        client = broker_service.build_authenticated_client(db, settings)
+    except BrokerNotConnectedError as exc:
+        return {"available": False, "reason": str(exc), "symbol": symbol, "timeframe": tf.token}
+
+    try:
+        token, tradingsymbol = resolve_instrument_token(symbol)
+    except Exception as exc:  # noqa: BLE001
+        raise ValidationError(f"Unknown instrument '{symbol}'.") from exc
+
+    to_dt = datetime.now()
+    from_dt = to_dt - timedelta(days=span)
+    try:
+        rows = client.get_historical_candles(token, kite_interval(tf.token), from_dt, to_dt)
+    except Exception as exc:  # noqa: BLE001 - surface Kite's message (e.g. historical add-on)
+        return {
+            "available": False,
+            "reason": f"Historical data unavailable: {exc}",
+            "symbol": tradingsymbol,
+            "timeframe": tf.token,
+        }
+
+    out = [
+        {
+            "time": _epoch(r[0]),
+            "open": r[1],
+            "high": r[2],
+            "low": r[3],
+            "close": r[4],
+            "volume": r[5] if len(r) > 5 else 0,
+        }
+        for r in rows
+    ]
+    return {
+        "available": True,
+        "symbol": tradingsymbol,
+        "timeframe": tf.token,
+        "candles": out,
     }
