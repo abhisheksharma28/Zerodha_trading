@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.audit.service import record as record_audit
 from app.backtesting.costs import CostConfig, CostModel
+from app.backtesting.data_quality import validate_candles
 from app.backtesting.engine import BacktestEngine, SimulatedFill
 from app.backtesting.performance import build_charts, compute_performance
 from app.backtesting.trades import reconstruct_trades
@@ -141,6 +142,13 @@ def execute_backtest(
                 "No candles to run against. Supply `candles` in the request body, "
                 "or connect a broker session on the paid Kite Connect plan."
             )
+
+        dq = validate_candles(candles_by_instrument)
+        if not dq["ok"]:
+            raise ValidationError(
+                "Data-quality check failed — refusing to backtest on bad candles: "
+                + "; ".join(dq["errors"])
+            )
     except Exception as exc:  # noqa: BLE001 - surface every failure onto the row
         backtest.status = BacktestStatus.FAILED
         backtest.error_message = str(exc)[:2000]
@@ -151,7 +159,10 @@ def execute_backtest(
         return backtest
 
     try:
-        return run_backtest(db, backtest_id, candles_by_instrument, cost_config=cost_config)
+        return run_backtest(
+            db, backtest_id, candles_by_instrument,
+            cost_config=cost_config, data_quality=dq,
+        )
     except Exception:  # noqa: BLE001 - run_backtest already recorded FAILED + committed
         db.refresh(backtest)
         return backtest
@@ -214,6 +225,7 @@ def run_backtest(
     candles_by_instrument: dict[str, list],
     *,
     cost_config: dict[str, Any] | None = None,
+    data_quality: dict[str, Any] | None = None,
 ) -> Backtest:
     """`candles_by_instrument` is pre-fetched by the caller (typically via
     app.market_data.cache.get_candles per instrument) so this function has
@@ -271,6 +283,8 @@ def run_backtest(
             "trades": [t.to_dict() for t in trades][:2000],
             "cost_config": cost_model.config.to_dict(),
             "orders_persisted": orders_persisted,
+            "data_quality": data_quality or {"ok": True, "errors": [], "warnings": [],
+                                             "per_symbol": []},
         }
         backtest.status = BacktestStatus.COMPLETED
         backtest.completed_at = datetime.now(UTC)
@@ -309,6 +323,7 @@ def backtest_report(db: Session, backtest_id) -> dict[str, Any]:
     trades = m.pop("trades", [])
     cost_config = m.pop("cost_config", {})
     cost_breakdown = m.pop("cost_breakdown", {})
+    data_quality = m.pop("data_quality", {"ok": True, "errors": [], "warnings": [], "per_symbol": []})
     return {
         "backtest_id": str(backtest.id),
         "status": backtest.status.value,
@@ -319,6 +334,7 @@ def backtest_report(db: Session, backtest_id) -> dict[str, Any]:
         "metrics": m,
         "cost_config": cost_config,
         "cost_breakdown": cost_breakdown,
+        "data_quality": data_quality,
         "equity_curve": backtest.equity_curve or [],
         "charts": charts,
         "trades": trades,

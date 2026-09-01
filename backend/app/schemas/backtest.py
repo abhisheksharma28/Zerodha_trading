@@ -45,6 +45,7 @@ class BacktestReport(BaseModel):
     metrics: dict[str, Any]
     cost_config: dict[str, Any]
     cost_breakdown: dict[str, Any]
+    data_quality: dict[str, Any]
     equity_curve: list[list[Any]]
     charts: dict[str, Any]
     trades: list[dict[str, Any]]
