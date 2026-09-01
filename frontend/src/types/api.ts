@@ -251,6 +251,64 @@ export interface TimeframeInfo {
   bars_per_year: number;
 }
 
+// --- Market overview (Market Scanner) --------------------------------
+
+export interface MarketQuoteRow {
+  symbol: string;
+  name?: string;
+  sector?: string;
+  ltp: number | null;
+  change: number | null;
+  change_pct: number | null;
+  volume: number | null;
+  value?: number;
+}
+
+export interface MarketIndexRow extends MarketQuoteRow {
+  name: string;
+  group: "broad" | "sector";
+  open?: number | null;
+  high?: number | null;
+  low?: number | null;
+  prev_close?: number | null;
+}
+
+export interface SectorRow {
+  sector: string;
+  count: number;
+  advances: number;
+  declines: number;
+  avg_change_pct: number;
+}
+
+export type MarketOverview =
+  | { available: false; reason: string; universe: string }
+  | {
+      available: true;
+      as_of: string;
+      universe: string;
+      constituent_count: number;
+      indices: MarketIndexRow[];
+      breadth: {
+        advances: number;
+        declines: number;
+        unchanged: number;
+        total: number;
+        ad_ratio: number | null;
+      };
+      gainers: MarketQuoteRow[];
+      losers: MarketQuoteRow[];
+      most_active: MarketQuoteRow[];
+      sectors: SectorRow[];
+      heatmap: { symbol: string; sector: string; change_pct: number; value: number }[];
+      signals: {
+        gap_up: string[];
+        gap_down: string[];
+        near_day_high: string[];
+        near_day_low: string[];
+      };
+    };
+
 // --- NIFTY Monthly HNI options strategy --------------------------------
 
 export interface OptionsTemplate {

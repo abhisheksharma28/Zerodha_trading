@@ -7,6 +7,7 @@ from app.api.v1 import (
     deployments,
     health,
     instruments,
+    market,
     options_strategies,
     orders,
     strategies,
@@ -22,5 +23,6 @@ api_router.include_router(backtests.router)
 api_router.include_router(deployments.router)
 api_router.include_router(broker.router)
 api_router.include_router(instruments.router)
+api_router.include_router(market.router)
 api_router.include_router(audit.router)
 api_router.include_router(orders.router)
