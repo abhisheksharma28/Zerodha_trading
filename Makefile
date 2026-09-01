@@ -1,5 +1,5 @@
 .PHONY: help up down build logs backend-shell frontend-shell migrate revision \
-        test lint fmt typecheck seed reset-db
+        test lint fmt typecheck seed sync-instruments reset-db
 
 help:
 	@echo "Common developer commands:"
@@ -14,6 +14,7 @@ help:
 	@echo "  make fmt             - ruff format backend"
 	@echo "  make typecheck       - mypy backend"
 	@echo "  make seed            - seed the strategy library (idempotent)"
+	@echo "  make sync-instruments - refresh the NSE/NFO instrument master from Zerodha"
 	@echo "  make reset-db        - drop and recreate the dev database (destructive)"
 
 up:
@@ -54,6 +55,9 @@ typecheck:
 
 seed:
 	docker compose exec backend python -m app.seed
+
+sync-instruments:
+	docker compose exec backend python -m app.sync_instruments
 
 reset-db:
 	docker compose down -v

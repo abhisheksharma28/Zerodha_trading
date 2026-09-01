@@ -38,6 +38,15 @@ def _load_csv(exchange: str) -> str:
     return resp.text
 
 
+def fetch_instrument_dump(exchange: str) -> str:
+    """Raw Kite instrument-dump CSV for an exchange (disk-cached, ~daily).
+
+    Public entry point used by app.services.instrument_service to build the
+    canonical instrument master.
+    """
+    return _load_csv(exchange.strip().upper())
+
+
 def resolve_instrument_token(symbol: str, *, default_exchange: str = "NSE") -> tuple[str, str]:
     """``"RELIANCE"`` or ``"NSE:RELIANCE"`` -> ``("738561", "RELIANCE")``.
 
