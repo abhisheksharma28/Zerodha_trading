@@ -10,12 +10,13 @@ the logic it ran change out from under it after the fact.
 from sqlalchemy.orm import Session
 
 from app.audit.service import record as record_audit
-from app.changelog.service import record_change
-from app.core.exceptions import NotFoundError
+from app.changelog.service import record_change, record_changes
+from app.core.exceptions import NotFoundError, ValidationError
 from app.models.enums import AuditAction, ChangeEntityType
 from app.models.strategy import Strategy, StrategyVersion
 from app.repositories.strategy_repository import StrategyRepository, StrategyVersionRepository
-from app.schemas.strategy import StrategyCreate, StrategyVersionCreate
+from app.schemas.strategy import StrategyCreate, StrategyReviseRequest, StrategyVersionCreate
+from app.strategies.library.base import ParamError, TemplateStrategy
 from app.strategies.registry import load_strategy_class
 
 
@@ -93,6 +94,76 @@ def add_version(db: Session, strategy_id, payload: StrategyVersionCreate) -> Str
         entity_type=ChangeEntityType.STRATEGY_VERSION,
         entity_id=version.id,
         summary=f"Added version {next_number} to strategy '{strategy.name}'",
+    )
+
+    db.commit()
+    db.refresh(version)
+    return version
+
+
+def revise_strategy(db: Session, strategy_id, payload: StrategyReviseRequest) -> StrategyVersion:
+    """Create a new version by overriding only some parameters of the
+    current one. Records one change-log entry per changed parameter."""
+    strategy = db.get(Strategy, strategy_id)
+    if strategy is None:
+        raise NotFoundError(f"Strategy {strategy_id} not found")
+    current = db.get(StrategyVersion, strategy.current_version_id)
+    if current is None:
+        raise NotFoundError(f"Strategy {strategy_id} has no current version to revise")
+
+    merged = {**current.parameters, **payload.parameter_overrides}
+
+    strategy_cls = load_strategy_class(current.source_code, current.entry_point)
+    if isinstance(strategy_cls, type) and issubclass(strategy_cls, TemplateStrategy):
+        try:
+            merged = strategy_cls.resolve_params(merged)
+        except ParamError as exc:
+            raise ValidationError(f"Invalid parameter change: {exc}") from exc
+
+    version_repo = StrategyVersionRepository(db)
+    next_number = version_repo.next_version_number(strategy_id)
+    version = StrategyVersion(
+        strategy_id=strategy_id,
+        version_number=next_number,
+        source_code=current.source_code,
+        parameters=merged,
+        entry_point=current.entry_point,
+        change_summary=payload.change_summary,
+        cloned_from_version_id=current.id,
+    )
+    db.add(version)
+    db.flush()
+
+    old_current = strategy.current_version_id
+    strategy.current_version_id = version.id
+
+    record_changes(
+        db,
+        entity_type=ChangeEntityType.STRATEGY,
+        entity_id=strategy.id,
+        before={k: current.parameters.get(k) for k in payload.parameter_overrides},
+        after={k: merged.get(k) for k in payload.parameter_overrides},
+        reason=payload.reason or payload.change_summary,
+    )
+    record_change(
+        db,
+        entity_type=ChangeEntityType.STRATEGY,
+        entity_id=strategy.id,
+        field="current_version_id",
+        old_value=str(old_current) if old_current else None,
+        new_value=str(version.id),
+        reason=payload.change_summary,
+    )
+    record_audit(
+        db,
+        action=AuditAction.UPDATE,
+        entity_type=ChangeEntityType.STRATEGY_VERSION,
+        entity_id=version.id,
+        summary=(
+            f"Revised strategy '{strategy.name}' to v{next_number}: {payload.change_summary}"
+        ),
+        before={"version": current.version_number},
+        after={"version": next_number, "changed_params": sorted(payload.parameter_overrides)},
     )
 
     db.commit()

@@ -8,6 +8,7 @@ from app.schemas.strategy import (
     StrategyCreate,
     StrategyDetail,
     StrategyRead,
+    StrategyReviseRequest,
     StrategyVersionCompare,
     StrategyVersionCreate,
     StrategyVersionRead,
@@ -35,6 +36,11 @@ def get_strategy(strategy_id: uuid.UUID, db: Session = Depends(get_db)):
 @router.post("/{strategy_id}/versions", response_model=StrategyVersionRead, status_code=201)
 def add_version(strategy_id: uuid.UUID, payload: StrategyVersionCreate, db: Session = Depends(get_db)):
     return strategy_service.add_version(db, strategy_id, payload)
+
+
+@router.post("/{strategy_id}/revise", response_model=StrategyVersionRead, status_code=201)
+def revise(strategy_id: uuid.UUID, payload: StrategyReviseRequest, db: Session = Depends(get_db)):
+    return strategy_service.revise_strategy(db, strategy_id, payload)
 
 
 @router.get("/versions/compare", response_model=StrategyVersionCompare)

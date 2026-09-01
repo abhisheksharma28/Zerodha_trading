@@ -27,6 +27,17 @@ class StrategyVersionCreate(BaseModel):
     change_summary: str | None = None
 
 
+class StrategyReviseRequest(BaseModel):
+    """Create a new version by changing only some parameters of the current
+    one. The service merges these onto the current version's parameters,
+    re-validates (against the template schema for library strategies), and
+    writes one field-level change-log entry per changed parameter."""
+
+    parameter_overrides: dict = Field(..., min_length=1)
+    change_summary: str = Field(..., min_length=1, max_length=2000)
+    reason: str | None = None
+
+
 class StrategyRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

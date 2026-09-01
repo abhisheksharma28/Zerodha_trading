@@ -13,6 +13,7 @@ help:
 	@echo "  make lint            - ruff check backend"
 	@echo "  make fmt             - ruff format backend"
 	@echo "  make typecheck       - mypy backend"
+	@echo "  make seed            - seed the strategy library (idempotent)"
 	@echo "  make reset-db        - drop and recreate the dev database (destructive)"
 
 up:
@@ -50,6 +51,9 @@ fmt:
 
 typecheck:
 	docker compose exec backend mypy app
+
+seed:
+	docker compose exec backend python -m app.seed
 
 reset-db:
 	docker compose down -v

@@ -1,0 +1,99 @@
+"""Unit tests for the reusable indicator library (no DB, no engine)."""
+
+import math
+
+from app.strategies.indicators import (
+    adf_tstat,
+    atr,
+    bollinger,
+    crossed_above,
+    crossed_below,
+    ema,
+    max_drawdown,
+    roc,
+    rolling_beta,
+    rolling_std,
+    rolling_volatility,
+    rsi,
+    sma,
+    zscore,
+)
+
+
+def test_sma_and_ema_basic():
+    assert sma([1, 2, 3, 4, 5], 5) == 3
+    assert sma([1, 2], 5) is None
+    # EMA seeded with SMA of first `period`, then recursed.
+    e = ema([1, 2, 3, 4, 5, 6], 3)
+    assert e is not None and 3.5 < e < 6
+
+
+def test_rolling_std_and_zscore():
+    vals = [10, 12, 14, 16, 18]  # mean 14, population-ish spread
+    sd = rolling_std(vals, 5)
+    assert sd is not None and abs(sd - math.sqrt(sum((v - 14) ** 2 for v in vals) / 4)) < 1e-9
+    z = zscore(vals + [22], 5)  # last window [12,14,16,18,22], mean 16.4
+    assert z is not None and z > 1
+
+
+def test_roc_and_volatility():
+    assert abs(roc([100, 110], 1) - 0.1) < 1e-9
+    v = rolling_volatility([100, 101, 100, 101, 100, 101, 100], 6)
+    assert v is not None and v > 0
+
+
+def test_atr_needs_period_plus_one_and_is_positive():
+    highs = [11, 12, 13, 12, 14, 15]
+    lows = [9, 10, 11, 10, 12, 13]
+    closes = [10, 11, 12, 11, 13, 14]
+    assert atr(highs, lows, closes, 10) is None
+    a = atr(highs, lows, closes, 3)
+    assert a is not None and a > 0
+
+
+def test_rsi_bounds_and_direction():
+    rising = list(range(1, 40))
+    falling = list(range(40, 1, -1))
+    assert rsi(rising, 14) > 90
+    assert rsi(falling, 14) < 10
+
+
+def test_bollinger_ordering():
+    band = bollinger([10, 11, 12, 13, 14, 13, 12, 11, 10, 11] * 3, 20, 2.0)
+    assert band is not None
+    lo, mid, hi = band
+    assert lo < mid < hi
+
+
+def test_rolling_beta_recovers_known_slope():
+    x = [float(i) for i in range(50)]
+    y = [3.0 * xi + 7.0 for xi in x]  # exact slope 3
+    b = rolling_beta(y, x, 30)
+    assert b is not None and abs(b - 3.0) < 1e-6
+
+
+def test_crossed_helpers():
+    assert crossed_above(9, 10, 11, 10.5)
+    assert not crossed_above(11, 10, 12, 10.5)
+    assert crossed_below(11, 10, 9, 10.5)
+
+
+def test_max_drawdown():
+    assert abs(max_drawdown([100, 120, 90, 110]) - (30 / 120)) < 1e-9
+    assert max_drawdown([100, 101, 102]) == 0.0
+
+
+def test_adf_more_negative_for_stationary_series():
+    import random
+
+    random.seed(0)
+    # Mean-reverting (AR(1) with phi ~ 0.2) vs a random walk.
+    stat = [0.0]
+    walk = [0.0]
+    for _ in range(300):
+        stat.append(0.2 * stat[-1] + random.gauss(0, 1))
+        walk.append(walk[-1] + random.gauss(0, 1))
+    t_stat = adf_tstat(stat)
+    t_walk = adf_tstat(walk)
+    assert t_stat is not None and t_walk is not None
+    assert t_stat < t_walk  # stationary series has the more negative t-stat
