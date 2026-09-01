@@ -28,7 +28,7 @@ export default function BacktestsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold">Backtests</h1>
-          <p className="text-sm text-neutral-400">
+          <p className="text-sm text-fg-muted">
             Runs the exact same strategy code that simulation/paper/live use, against historical
             candles.
           </p>
@@ -38,27 +38,27 @@ export default function BacktestsPage() {
 
       {showForm && <CreateBacktestForm onDone={() => setShowForm(false)} />}
 
-      {isLoading && <p className="text-sm text-neutral-500">Loading…</p>}
+      {isLoading && <p className="text-sm text-fg-faint">Loading…</p>}
 
       <div className="flex flex-col gap-2">
         {backtests?.map((bt) => (
           <Link
             key={bt.id}
             to={`/backtests/${bt.id}`}
-            className="flex items-center justify-between rounded-md border border-neutral-800 px-4 py-3 hover:bg-neutral-800/50"
+            className="flex items-center justify-between rounded-md border border-line px-4 py-3 hover:bg-elevated/60"
           >
             <div>
               <p className="text-sm font-medium">
                 {bt.instrument_universe.join(", ")} · {bt.timeframe}
               </p>
-              <p className="text-xs text-neutral-500">
+              <p className="text-xs text-fg-faint">
                 {new Date(bt.start_date).toLocaleDateString()} –{" "}
                 {new Date(bt.end_date).toLocaleDateString()} · ₹{bt.initial_capital.toLocaleString()}
               </p>
             </div>
             <div className="flex items-center gap-3">
               {bt.metrics && (
-                <span className="text-xs text-neutral-400">
+                <span className="text-xs text-fg-muted">
                   {bt.metrics.total_return_pct?.toFixed(2)}% return
                 </span>
               )}
@@ -67,7 +67,7 @@ export default function BacktestsPage() {
           </Link>
         ))}
         {backtests?.length === 0 && !isLoading && (
-          <p className="text-sm text-neutral-500">No backtests yet.</p>
+          <p className="text-sm text-fg-faint">No backtests yet.</p>
         )}
       </div>
     </div>
@@ -117,7 +117,7 @@ function CreateBacktestForm({ onDone }: { onDone: () => void }) {
               value={strategyId}
               onChange={(e) => setStrategyId(e.target.value)}
               required
-              className="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm text-neutral-100"
+              className="h-9 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg"
             >
               <option value="">Select a strategy…</option>
               {strategies?.map((s) => (
@@ -134,7 +134,7 @@ function CreateBacktestForm({ onDone }: { onDone: () => void }) {
           <div className="flex flex-col gap-1.5">
             <Label>Timeframe</Label>
             <TimeframeSelect value={timeframe} onChange={setTimeframe} />
-            <p className="text-xs text-neutral-500">
+            <p className="text-xs text-fg-faint">
               The backtest is rejected with a clear reason if the strategy doesn't support this
               timeframe.
             </p>

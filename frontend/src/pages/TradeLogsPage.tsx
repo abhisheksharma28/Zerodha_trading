@@ -20,7 +20,7 @@ export default function TradeLogsPage() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-xl font-semibold">Trade Logs</h1>
-        <p className="text-sm text-neutral-400">
+        <p className="text-sm text-fg-muted">
           Every order across every mode lives in one unified log — select a deployment to inspect
           its orders.
         </p>
@@ -29,7 +29,7 @@ export default function TradeLogsPage() {
       <select
         value={deploymentId}
         onChange={(e) => setDeploymentId(e.target.value)}
-        className="h-9 max-w-sm rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm text-neutral-100"
+        className="h-9 max-w-sm rounded-md border border-line-strong bg-surface px-3 text-sm text-fg"
       >
         <option value="">Select a deployment…</option>
         {deployments?.map((d) => (
@@ -44,17 +44,17 @@ export default function TradeLogsPage() {
           <CardTitle>Orders</CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading && <p className="text-sm text-neutral-500">Loading…</p>}
+          {isLoading && <p className="text-sm text-fg-faint">Loading…</p>}
           {!deploymentId && (
-            <p className="text-sm text-neutral-500">Select a deployment above to view its orders.</p>
+            <p className="text-sm text-fg-faint">Select a deployment above to view its orders.</p>
           )}
           {orders && orders.length === 0 && (
-            <p className="text-sm text-neutral-500">No orders for this deployment yet.</p>
+            <p className="text-sm text-fg-faint">No orders for this deployment yet.</p>
           )}
           {orders && orders.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
-                <thead className="text-xs uppercase text-neutral-500">
+                <thead className="text-xs uppercase text-fg-faint">
                   <tr>
                     <th className="py-2 pr-4">Mode</th>
                     <th className="py-2 pr-4">Symbol</th>
@@ -68,7 +68,7 @@ export default function TradeLogsPage() {
                 </thead>
                 <tbody>
                   {orders.map((o) => (
-                    <tr key={o.id} className="border-t border-neutral-800">
+                    <tr key={o.id} className="border-t border-line">
                       <td className="py-2 pr-4">
                         <ModeBadge mode={o.mode} />
                       </td>
@@ -79,8 +79,8 @@ export default function TradeLogsPage() {
                       <td className="py-2 pr-4">{o.quantity}</td>
                       <td className="py-2 pr-4">{o.price ?? "market"}</td>
                       <td className="py-2 pr-4">{o.status}</td>
-                      <td className="py-2 pr-4 text-neutral-500">{o.broker_order_id ?? "—"}</td>
-                      <td className="py-2 pr-4 text-neutral-500">
+                      <td className="py-2 pr-4 text-fg-faint">{o.broker_order_id ?? "—"}</td>
+                      <td className="py-2 pr-4 text-fg-faint">
                         {o.placed_at ? new Date(o.placed_at).toLocaleString() : "—"}
                       </td>
                     </tr>

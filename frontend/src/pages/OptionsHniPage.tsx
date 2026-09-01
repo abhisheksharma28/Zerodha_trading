@@ -26,7 +26,7 @@ export default function OptionsHniPage() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold">{template?.name ?? "NIFTY Monthly HNI Strategy"}</h1>
-          <p className="max-w-2xl text-sm text-neutral-400">
+          <p className="max-w-2xl text-sm text-fg-muted">
             {template?.structure} — Friday entry at 15:16 IST when the monthly expiry is 39–43 DTE.
             Exits on ±target/stop of deployed capital, the short strike being crossed while down more
             than the stop, a max holding period, or a pre-expiry safety exit.
@@ -51,7 +51,7 @@ export default function OptionsHniPage() {
 
       <div className="flex flex-col gap-3">
         {instances?.length === 0 && (
-          <p className="text-sm text-neutral-500">No instances yet.</p>
+          <p className="text-sm text-fg-faint">No instances yet.</p>
         )}
         {instances?.map((inst) => <InstanceCard key={inst.id} inst={inst} />)}
       </div>
@@ -64,7 +64,7 @@ export default function OptionsHniPage() {
           <CardContent>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
-                <thead className="text-neutral-500">
+                <thead className="text-fg-faint">
                   <tr>
                     <th className="py-1 pr-4">Name</th>
                     <th className="py-1 pr-4">Type</th>
@@ -72,13 +72,13 @@ export default function OptionsHniPage() {
                     <th className="py-1">Description</th>
                   </tr>
                 </thead>
-                <tbody className="text-neutral-300">
+                <tbody className="text-fg-muted">
                   {Object.entries(template.parameters).map(([name, spec]) => (
-                    <tr key={name} className="border-t border-neutral-800">
+                    <tr key={name} className="border-t border-line">
                       <td className="py-1.5 pr-4 font-mono text-[11px]">{name}</td>
                       <td className="py-1.5 pr-4">{spec.type}</td>
                       <td className="py-1.5 pr-4 font-mono text-[11px]">{String(spec.default)}</td>
-                      <td className="py-1.5 text-neutral-400">{spec.description}</td>
+                      <td className="py-1.5 text-fg-muted">{spec.description}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -126,7 +126,7 @@ function InstanceCard({ inst }: { inst: OptionsInstance }) {
           <p className="text-xs text-amber-400/90">Not eligible: {inst.not_eligible_reason}</p>
         )}
         {inst.strike_a != null && (
-          <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-neutral-300 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-fg-muted sm:grid-cols-3">
             <Field label="Structure" value={`BUY 1 ${fmt(inst.strike_a, 0)} / SELL 3 ${fmt(inst.strike_b, 0)} / BUY 2 ${fmt(inst.strike_c, 0)} CE`} />
             <Field label="Lot size" value={fmt(inst.lot_size, 0)} />
             <Field label="Spot @ entry" value={fmt(inst.spot_at_entry, 1)} />
@@ -179,7 +179,7 @@ function InstanceCard({ inst }: { inst: OptionsInstance }) {
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <span className="text-neutral-500">{label}: </span>
+      <span className="text-fg-faint">{label}: </span>
       {value}
     </div>
   );

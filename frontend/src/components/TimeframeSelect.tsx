@@ -18,7 +18,7 @@ export function TimeframeSelect({ value, onChange, allowed, className }: Props) 
   );
 
   return (
-    <div className={cn("inline-flex rounded-md border border-neutral-700 bg-neutral-900 p-0.5", className)}>
+    <div className={cn("inline-flex rounded-md border border-line-strong bg-surface p-0.5", className)}>
       {tokens.map((t) => (
         <button
           key={t}
@@ -28,7 +28,7 @@ export function TimeframeSelect({ value, onChange, allowed, className }: Props) 
             "rounded px-2.5 py-1 text-xs font-medium transition-colors",
             t === value
               ? "bg-emerald-600/20 text-emerald-300"
-              : "text-neutral-400 hover:text-neutral-100",
+              : "text-fg-muted hover:text-fg",
           )}
         >
           {t}

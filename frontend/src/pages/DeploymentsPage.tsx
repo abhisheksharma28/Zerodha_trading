@@ -31,7 +31,7 @@ export default function DeploymentsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold">Deployments</h1>
-          <p className="text-sm text-neutral-400">
+          <p className="text-sm text-fg-muted">
             Simulation, paper, and live are strictly separate — a deployment's mode never changes
             after creation.
           </p>
@@ -41,18 +41,18 @@ export default function DeploymentsPage() {
 
       {showForm && <CreateDeploymentForm onDone={() => setShowForm(false)} />}
 
-      {isLoading && <p className="text-sm text-neutral-500">Loading…</p>}
+      {isLoading && <p className="text-sm text-fg-faint">Loading…</p>}
 
       <div className="flex flex-col gap-2">
         {deployments?.map((d) => (
           <Link
             key={d.id}
             to={`/deployments/${d.id}`}
-            className="flex items-center justify-between rounded-md border border-neutral-800 px-4 py-3 hover:bg-neutral-800/50"
+            className="flex items-center justify-between rounded-md border border-line px-4 py-3 hover:bg-elevated/60"
           >
             <div>
               <p className="text-sm font-medium">{d.name}</p>
-              <p className="text-xs text-neutral-500">
+              <p className="text-xs text-fg-faint">
                 {d.instrument_universe.join(", ")}
               </p>
             </div>
@@ -63,7 +63,7 @@ export default function DeploymentsPage() {
           </Link>
         ))}
         {deployments?.length === 0 && !isLoading && (
-          <p className="text-sm text-neutral-500">No deployments yet.</p>
+          <p className="text-sm text-fg-faint">No deployments yet.</p>
         )}
       </div>
     </div>
@@ -113,7 +113,7 @@ function CreateDeploymentForm({ onDone }: { onDone: () => void }) {
               value={strategyId}
               onChange={(e) => setStrategyId(e.target.value)}
               required
-              className="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm text-neutral-100"
+              className="h-9 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg"
             >
               <option value="">Select a strategy…</option>
               {strategies?.map((s) => (
@@ -144,7 +144,7 @@ function CreateDeploymentForm({ onDone }: { onDone: () => void }) {
                       ? m === "live"
                         ? "border-red-500 bg-red-500/10 text-red-400"
                         : "border-emerald-500 bg-emerald-500/10 text-emerald-400"
-                      : "border-neutral-700 text-neutral-400 hover:bg-neutral-800"
+                      : "border-line-strong text-fg-muted hover:bg-elevated"
                   }`}
                 >
                   {m}

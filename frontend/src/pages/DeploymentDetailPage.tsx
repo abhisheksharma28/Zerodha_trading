@@ -29,8 +29,8 @@ export default function DeploymentDetailPage() {
   const resume = useResumeDeployment();
   const stop = useStopDeployment();
 
-  if (isLoading) return <p className="text-sm text-neutral-500">Loading…</p>;
-  if (!deployment) return <p className="text-sm text-neutral-500">Deployment not found.</p>;
+  if (isLoading) return <p className="text-sm text-fg-faint">Loading…</p>;
+  if (!deployment) return <p className="text-sm text-fg-faint">Deployment not found.</p>;
 
   const isLive = deployment.mode === "live";
 
@@ -39,7 +39,7 @@ export default function DeploymentDetailPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold">{deployment.name}</h1>
-          <p className="text-sm text-neutral-400">{deployment.instrument_universe.join(", ")}</p>
+          <p className="text-sm text-fg-muted">{deployment.instrument_universe.join(", ")}</p>
         </div>
         <div className="flex items-center gap-2">
           <Badge>{deployment.status}</Badge>
@@ -94,11 +94,11 @@ export default function DeploymentDetailPage() {
         </CardHeader>
         <CardContent>
           {!orders || orders.length === 0 ? (
-            <p className="text-sm text-neutral-500">No orders yet.</p>
+            <p className="text-sm text-fg-faint">No orders yet.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
-                <thead className="text-xs uppercase text-neutral-500">
+                <thead className="text-xs uppercase text-fg-faint">
                   <tr>
                     <th className="py-2 pr-4">Symbol</th>
                     <th className="py-2 pr-4">Side</th>
@@ -110,7 +110,7 @@ export default function DeploymentDetailPage() {
                 </thead>
                 <tbody>
                   {orders.map((o) => (
-                    <tr key={o.id} className="border-t border-neutral-800">
+                    <tr key={o.id} className="border-t border-line">
                       <td className="py-2 pr-4">{o.tradingsymbol}</td>
                       <td className={`py-2 pr-4 ${o.transaction_type === "BUY" ? "text-emerald-400" : "text-red-400"}`}>
                         {o.transaction_type}
@@ -118,7 +118,7 @@ export default function DeploymentDetailPage() {
                       <td className="py-2 pr-4">{o.quantity}</td>
                       <td className="py-2 pr-4">{o.price ?? "market"}</td>
                       <td className="py-2 pr-4">{o.status}</td>
-                      <td className="py-2 pr-4 text-neutral-500">
+                      <td className="py-2 pr-4 text-fg-faint">
                         {o.placed_at ? new Date(o.placed_at).toLocaleString() : "—"}
                       </td>
                     </tr>

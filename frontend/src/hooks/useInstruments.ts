@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 
 import { instrumentsApi } from "@/api/instruments";
 
@@ -41,5 +46,13 @@ export function useExpiries(underlying: string | undefined, exchange = "NFO") {
     queryFn: () => instrumentsApi.expiries(underlying as string, exchange),
     enabled: !!underlying,
     staleTime: 5 * 60_000,
+  });
+}
+
+export function useSyncInstruments() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (exchanges?: string[]) => instrumentsApi.sync(exchanges),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["instruments"] }),
   });
 }

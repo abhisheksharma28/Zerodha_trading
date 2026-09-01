@@ -30,7 +30,7 @@ export default function StrategiesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold">Strategies</h1>
-          <p className="text-sm text-neutral-400">
+          <p className="text-sm text-fg-muted">
             Each strategy is a stable identity; editing it always creates a new immutable version.
           </p>
         </div>
@@ -41,12 +41,12 @@ export default function StrategiesPage() {
 
       {showForm && <CreateStrategyForm onDone={() => setShowForm(false)} />}
 
-      {isLoading && <p className="text-sm text-neutral-500">Loading…</p>}
+      {isLoading && <p className="text-sm text-fg-faint">Loading…</p>}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {strategies?.map((strategy) => (
           <Link key={strategy.id} to={`/strategies/${strategy.id}`}>
-            <Card className="h-full transition-colors hover:border-neutral-700">
+            <Card className="h-full transition-colors hover:border-line-strong">
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle>{strategy.name}</CardTitle>
@@ -56,7 +56,7 @@ export default function StrategiesPage() {
                 </div>
               </CardHeader>
               <CardContent>
-                <p className="line-clamp-2 text-xs text-neutral-500">
+                <p className="line-clamp-2 text-xs text-fg-faint">
                   {strategy.description ?? "No description"}
                 </p>
               </CardContent>
@@ -66,7 +66,7 @@ export default function StrategiesPage() {
       </div>
 
       {strategies?.length === 0 && !isLoading && (
-        <p className="text-sm text-neutral-500">No strategies yet — create one to get started.</p>
+        <p className="text-sm text-fg-faint">No strategies yet — create one to get started.</p>
       )}
     </div>
   );
@@ -119,7 +119,7 @@ function CreateStrategyForm({ onDone }: { onDone: () => void }) {
               value={sourceCode}
               onChange={(e) => setSourceCode(e.target.value)}
               rows={12}
-              className="rounded-md border border-neutral-700 bg-neutral-900 p-3 font-mono text-xs text-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+              className="rounded-md border border-line-strong bg-surface p-3 font-mono text-xs text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
             />
           </div>
           {create.isError && (

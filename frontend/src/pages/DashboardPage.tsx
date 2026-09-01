@@ -20,7 +20,7 @@ export default function DashboardPage() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-xl font-semibold">Dashboard</h1>
-        <p className="text-sm text-neutral-400">
+        <p className="text-sm text-fg-muted">
           Overview of strategies, backtests, and deployments across every mode.
         </p>
       </div>
@@ -46,7 +46,7 @@ export default function DashboardPage() {
         <StatCard
           label="Broker"
           value={broker.data?.connected ? "Connected" : "Not connected"}
-          valueClassName={broker.data?.connected ? "text-emerald-400" : "text-neutral-400"}
+          valueClassName={broker.data?.connected ? "text-emerald-400" : "text-fg-muted"}
         />
       </div>
 
@@ -57,14 +57,14 @@ export default function DashboardPage() {
         </CardHeader>
         <CardContent>
           {running.length === 0 ? (
-            <p className="text-sm text-neutral-500">No deployments are currently running.</p>
+            <p className="text-sm text-fg-faint">No deployments are currently running.</p>
           ) : (
             <ul className="flex flex-col gap-2">
               {running.map((d) => (
                 <li key={d.id}>
                   <Link
                     to={`/deployments/${d.id}`}
-                    className="flex items-center justify-between rounded-md border border-neutral-800 px-3 py-2 hover:bg-neutral-800/50"
+                    className="flex items-center justify-between rounded-md border border-line px-3 py-2 hover:bg-elevated/60"
                   >
                     <span className="text-sm">{d.name}</span>
                     <ModeBadge mode={d.mode} />
@@ -91,7 +91,7 @@ function StatCard({
   return (
     <Card>
       <CardContent className="py-4">
-        <p className="text-xs uppercase tracking-wide text-neutral-500">{label}</p>
+        <p className="text-xs uppercase tracking-wide text-fg-faint">{label}</p>
         <p className={`mt-1 text-2xl font-semibold ${valueClassName ?? ""}`}>{value}</p>
       </CardContent>
     </Card>

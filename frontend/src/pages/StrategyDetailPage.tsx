@@ -12,14 +12,14 @@ export default function StrategyDetailPage() {
   const [editingSource, setEditingSource] = useState<string | null>(null);
   const addVersion = useAddStrategyVersion(strategyId ?? "");
 
-  if (isLoading) return <p className="text-sm text-neutral-500">Loading…</p>;
-  if (!strategy) return <p className="text-sm text-neutral-500">Strategy not found.</p>;
+  if (isLoading) return <p className="text-sm text-fg-faint">Loading…</p>;
+  if (!strategy) return <p className="text-sm text-fg-faint">Strategy not found.</p>;
 
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-xl font-semibold">{strategy.name}</h1>
-        <p className="text-sm text-neutral-400">{strategy.description}</p>
+        <p className="text-sm text-fg-muted">{strategy.description}</p>
       </div>
 
       <Card>
@@ -28,7 +28,7 @@ export default function StrategyDetailPage() {
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {[...strategy.versions].reverse().map((version) => (
-            <div key={version.id} className="rounded-md border border-neutral-800 p-3">
+            <div key={version.id} className="rounded-md border border-line p-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">v{version.version_number}</span>
@@ -47,10 +47,10 @@ export default function StrategyDetailPage() {
                 </Button>
               </div>
               {version.change_summary && (
-                <p className="mt-1 text-xs text-neutral-500">{version.change_summary}</p>
+                <p className="mt-1 text-xs text-fg-faint">{version.change_summary}</p>
               )}
               {editingSource === version.source_code && (
-                <pre className="mt-2 max-h-64 overflow-auto rounded bg-neutral-950 p-3 text-xs text-neutral-300">
+                <pre className="mt-2 max-h-64 overflow-auto rounded bg-bg p-3 text-xs text-fg-muted">
                   {version.source_code}
                 </pre>
               )}
@@ -102,13 +102,13 @@ function NewVersionForm({
             value={source}
             onChange={(e) => setSource(e.target.value)}
             rows={10}
-            className="rounded-md border border-neutral-700 bg-neutral-900 p-3 font-mono text-xs text-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+            className="rounded-md border border-line-strong bg-surface p-3 font-mono text-xs text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
           />
           <input
             placeholder="What changed and why?"
             value={summary}
             onChange={(e) => setSummary(e.target.value)}
-            className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+            className="rounded-md border border-line-strong bg-surface px-3 py-2 text-sm text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
           />
           {error && <p className="text-xs text-red-400">{error.message}</p>}
           <div>

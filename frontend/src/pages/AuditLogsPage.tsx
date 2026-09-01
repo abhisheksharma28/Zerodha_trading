@@ -9,7 +9,7 @@ export default function AuditLogsPage() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-xl font-semibold">Audit Logs</h1>
-        <p className="text-sm text-neutral-400">
+        <p className="text-sm text-fg-muted">
           Append-only record of every state-changing action — creates, mode transitions, order
           placements, risk breaches.
         </p>
@@ -20,16 +20,16 @@ export default function AuditLogsPage() {
           <CardTitle>Recent activity</CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading && <p className="text-sm text-neutral-500">Loading…</p>}
+          {isLoading && <p className="text-sm text-fg-faint">Loading…</p>}
           <ul className="flex flex-col gap-2">
             {logs?.map((log) => (
-              <li key={log.id} className="rounded-md border border-neutral-800 p-3">
+              <li key={log.id} className="rounded-md border border-line p-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Badge>{log.action}</Badge>
-                    <span className="text-xs text-neutral-500">{log.entity_type}</span>
+                    <span className="text-xs text-fg-faint">{log.entity_type}</span>
                   </div>
-                  <span className="text-xs text-neutral-500">
+                  <span className="text-xs text-fg-faint">
                     {new Date(log.created_at).toLocaleString()}
                   </span>
                 </div>
@@ -38,7 +38,7 @@ export default function AuditLogsPage() {
             ))}
           </ul>
           {logs?.length === 0 && !isLoading && (
-            <p className="text-sm text-neutral-500">No audit events yet.</p>
+            <p className="text-sm text-fg-faint">No audit events yet.</p>
           )}
         </CardContent>
       </Card>

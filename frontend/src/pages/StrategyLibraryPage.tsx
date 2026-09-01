@@ -21,10 +21,10 @@ export default function StrategyLibraryPage() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold">Strategy Library</h1>
-          <p className="max-w-2xl text-sm text-neutral-400">
+          <p className="max-w-2xl text-sm text-fg-muted">
             Research-backed strategy templates requiring validation, optimization and out-of-sample
             testing. These are established quantitative strategy families with academic and
-            institutional precedent — <span className="text-neutral-300">not</span> guaranteed,
+            institutional precedent — <span className="text-fg-muted">not</span> guaranteed,
             risk-free, or proven profitable.
           </p>
         </div>
@@ -38,13 +38,13 @@ export default function StrategyLibraryPage() {
       </div>
 
       {seed.data && (
-        <p className="text-xs text-neutral-500">
+        <p className="text-xs text-fg-faint">
           Created: {seed.data.created.join(", ") || "none"} · Skipped:{" "}
           {seed.data.skipped.join(", ") || "none"}
         </p>
       )}
 
-      {isLoading && <p className="text-sm text-neutral-500">Loading…</p>}
+      {isLoading && <p className="text-sm text-fg-faint">Loading…</p>}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {templates?.map((t) => <TemplateCard key={t.slug} template={t} />)}
@@ -75,14 +75,14 @@ function TemplateCard({ template: t }: { template: StrategyTemplateSummary }) {
         </div>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-3">
-        <p className="text-sm text-neutral-400">{t.description}</p>
-        <div className="flex flex-wrap gap-1.5 text-xs text-neutral-500">
+        <p className="text-sm text-fg-muted">{t.description}</p>
+        <div className="flex flex-wrap gap-1.5 text-xs text-fg-faint">
           {caps.map((c) => (
-            <span key={c} className="rounded bg-neutral-800 px-1.5 py-0.5">
+            <span key={c} className="rounded bg-elevated px-1.5 py-0.5">
               {c}
             </span>
           ))}
-          <span className="rounded bg-neutral-800 px-1.5 py-0.5">
+          <span className="rounded bg-elevated px-1.5 py-0.5">
             {t.min_instruments === t.max_instruments
               ? `${t.min_instruments} instrument${t.min_instruments > 1 ? "s" : ""}`
               : `${t.min_instruments}+ instruments`}

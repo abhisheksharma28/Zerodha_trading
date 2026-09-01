@@ -12,6 +12,7 @@ import {
   ScrollText,
 } from "lucide-react";
 
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { cn } from "@/lib/utils";
 import { useBrokerStatus } from "@/hooks/useBroker";
 
@@ -32,11 +33,14 @@ export function AppLayout() {
   const { data: brokerStatus } = useBrokerStatus();
 
   return (
-    <div className="flex min-h-screen bg-neutral-950 text-neutral-100">
-      <aside className="flex w-60 shrink-0 flex-col border-r border-neutral-800 bg-neutral-900/40">
-        <div className="border-b border-neutral-800 px-4 py-4">
-          <p className="text-sm font-semibold tracking-tight">Trading Strategy Platform</p>
-          <p className="text-xs text-neutral-500">Zerodha Kite Connect</p>
+    <div className="flex min-h-screen bg-bg text-fg">
+      <aside className="flex w-60 shrink-0 flex-col border-r border-line bg-surface/40">
+        <div className="flex items-start justify-between border-b border-line px-4 py-4">
+          <div>
+            <p className="text-sm font-semibold tracking-tight">Trading Strategy Platform</p>
+            <p className="text-xs text-fg-faint">Zerodha Kite Connect</p>
+          </div>
+          <ThemeToggle />
         </div>
         <nav className="flex flex-1 flex-col gap-0.5 p-2">
           {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
@@ -49,7 +53,7 @@ export function AppLayout() {
                   "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                   isActive
                     ? "bg-emerald-600/15 text-emerald-400"
-                    : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100",
+                    : "text-fg-muted hover:bg-elevated hover:text-fg",
                 )
               }
             >
@@ -58,15 +62,15 @@ export function AppLayout() {
             </NavLink>
           ))}
         </nav>
-        <div className="border-t border-neutral-800 p-3">
+        <div className="border-t border-line p-3">
           <div className="flex items-center gap-2 text-xs">
             <span
               className={cn(
                 "h-2 w-2 rounded-full",
-                brokerStatus?.connected ? "bg-emerald-500" : "bg-neutral-600",
+                brokerStatus?.connected ? "bg-emerald-500" : "bg-elevated",
               )}
             />
-            <span className="text-neutral-400">
+            <span className="text-fg-muted">
               {brokerStatus?.connected
                 ? `Connected as ${brokerStatus.kite_user_id ?? "Zerodha"}`
                 : "Broker not connected"}

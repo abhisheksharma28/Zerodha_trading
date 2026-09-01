@@ -20,8 +20,8 @@ export default function StrategyTemplateDetailPage() {
   const { data: t, isLoading } = useStrategyTemplate(slug);
   const [building, setBuilding] = useState(search.get("create") === "1");
 
-  if (isLoading) return <p className="text-sm text-neutral-500">Loading…</p>;
-  if (!t) return <p className="text-sm text-neutral-500">Template not found.</p>;
+  if (isLoading) return <p className="text-sm text-fg-faint">Loading…</p>;
+  if (!t) return <p className="text-sm text-fg-faint">Template not found.</p>;
 
   return (
     <div className="flex flex-col gap-6">
@@ -49,15 +49,15 @@ export default function StrategyTemplateDetailPage() {
       {building && <BuilderPanel template={t} />}
 
       <Section title="Overview">
-        <p className="text-sm text-neutral-300">{t.description}</p>
+        <p className="text-sm text-fg-muted">{t.description}</p>
       </Section>
 
       <Section title="Logic">
-        <p className="text-sm leading-relaxed text-neutral-300">{t.logic}</p>
+        <p className="text-sm leading-relaxed text-fg-muted">{t.logic}</p>
       </Section>
 
       <Section title="Risks / failure modes">
-        <ul className="list-disc space-y-1 pl-5 text-sm text-neutral-300">
+        <ul className="list-disc space-y-1 pl-5 text-sm text-fg-muted">
           {t.risks.map((r) => (
             <li key={r}>{r}</li>
           ))}
@@ -65,7 +65,7 @@ export default function StrategyTemplateDetailPage() {
       </Section>
 
       <Section title="Best suited for">
-        <p className="text-sm text-neutral-300">{t.best_for}</p>
+        <p className="text-sm text-fg-muted">{t.best_for}</p>
         <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
           {[
             t.supports_intraday && "Intraday",
@@ -74,7 +74,7 @@ export default function StrategyTemplateDetailPage() {
           ]
             .filter(Boolean)
             .map((x) => (
-              <span key={x as string} className="rounded bg-neutral-800 px-1.5 py-0.5">
+              <span key={x as string} className="rounded bg-elevated px-1.5 py-0.5">
                 {x}
               </span>
             ))}
@@ -82,11 +82,11 @@ export default function StrategyTemplateDetailPage() {
       </Section>
 
       <Section title="Example">
-        <p className="text-sm text-neutral-400">{t.example}</p>
+        <p className="text-sm text-fg-muted">{t.example}</p>
       </Section>
 
       <Section title="Required data">
-        <ul className="list-disc space-y-1 pl-5 text-sm text-neutral-400">
+        <ul className="list-disc space-y-1 pl-5 text-sm text-fg-muted">
           {t.required_data.map((r) => (
             <li key={r}>{r}</li>
           ))}
@@ -96,7 +96,7 @@ export default function StrategyTemplateDetailPage() {
       <Section title="Parameters">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="text-neutral-500">
+            <thead className="text-fg-faint">
               <tr>
                 <th className="py-1 pr-4">Name</th>
                 <th className="py-1 pr-4">Type</th>
@@ -105,9 +105,9 @@ export default function StrategyTemplateDetailPage() {
                 <th className="py-1">Description</th>
               </tr>
             </thead>
-            <tbody className="text-neutral-300">
+            <tbody className="text-fg-muted">
               {Object.entries(t.parameters).map(([name, spec]) => (
-                <tr key={name} className="border-t border-neutral-800">
+                <tr key={name} className="border-t border-line">
                   <td className="py-1.5 pr-4 font-mono text-[11px]">{name}</td>
                   <td className="py-1.5 pr-4">{spec.type}</td>
                   <td className="py-1.5 pr-4 font-mono text-[11px]">{String(spec.default)}</td>
@@ -118,7 +118,7 @@ export default function StrategyTemplateDetailPage() {
                         ? spec.choices.join(" | ")
                         : "—"}
                   </td>
-                  <td className="py-1.5 text-neutral-400">{spec.description}</td>
+                  <td className="py-1.5 text-fg-muted">{spec.description}</td>
                 </tr>
               ))}
             </tbody>
@@ -181,7 +181,7 @@ function BuilderPanel({ template: t }: { template: StrategyTemplateDetail }) {
               id="preset"
               value={preset}
               onChange={(e) => setPreset(e.target.value)}
-              className="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm text-neutral-100"
+              className="h-9 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg"
             >
               {presetNames.map((p) => (
                 <option key={p} value={p}>
@@ -191,7 +191,7 @@ function BuilderPanel({ template: t }: { template: StrategyTemplateDetail }) {
             </select>
           </div>
         </div>
-        <p className="text-xs text-neutral-500">
+        <p className="text-xs text-fg-faint">
           Preset parameters are starting points for research and should be validated using
           out-of-sample testing.
         </p>

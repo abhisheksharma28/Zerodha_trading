@@ -37,7 +37,7 @@ export function DynamicParamsForm({
     <div className="flex flex-col gap-6">
       {GROUP_ORDER.filter((g) => byGroup[g]?.length).map((group) => (
         <div key={group} className="flex flex-col gap-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+          <p className="text-xs font-semibold uppercase tracking-wide text-fg-faint">
             {GROUP_LABEL[group] ?? group}
           </p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -51,13 +51,13 @@ export function DynamicParamsForm({
                       {name}
                     </Label>
                     {spec.type === "boolean" ? (
-                      <label className="flex items-center gap-2 text-sm text-neutral-300">
+                      <label className="flex items-center gap-2 text-sm text-fg-muted">
                         <input
                           id={name}
                           type="checkbox"
                           checked={Boolean(value)}
                           onChange={(e) => set(name, e.target.checked)}
-                          className="h-4 w-4 rounded border-neutral-700 bg-neutral-900"
+                          className="h-4 w-4 rounded border-line-strong bg-surface"
                         />
                         enabled
                       </label>
@@ -66,7 +66,7 @@ export function DynamicParamsForm({
                         id={name}
                         value={String(value)}
                         onChange={(e) => set(name, e.target.value)}
-                        className="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm text-neutral-100"
+                        className="h-9 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg"
                       >
                         {spec.choices?.map((c) => (
                           <option key={String(c)} value={String(c)}>
@@ -93,10 +93,10 @@ export function DynamicParamsForm({
                         className={err ? "border-red-500/60" : undefined}
                       />
                     )}
-                    <p className="text-[11px] leading-tight text-neutral-500">
+                    <p className="text-[11px] leading-tight text-fg-faint">
                       {spec.description}
                       {spec.min != null || spec.max != null ? (
-                        <span className="text-neutral-600">
+                        <span className="text-fg-faint">
                           {" "}
                           ({spec.min ?? "-∞"}–{spec.max ?? "∞"})
                         </span>

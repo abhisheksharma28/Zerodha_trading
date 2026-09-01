@@ -17,7 +17,7 @@ export default function BrokerPage() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-xl font-semibold">Broker Connection</h1>
-        <p className="text-sm text-neutral-400">
+        <p className="text-sm text-fg-muted">
           Zerodha access tokens expire at ~6 AM IST every day (a regulatory requirement, not a bug)
           — reconnecting here each trading morning is expected. See docs/ZERODHA_API_NOTES.md.
         </p>
@@ -31,12 +31,12 @@ export default function BrokerPage() {
           {status?.connected ? (
             <div className="flex flex-col gap-1 text-sm">
               <p className="text-emerald-400">Connected as {status.kite_user_id}</p>
-              <p className="text-xs text-neutral-500">
+              <p className="text-xs text-fg-faint">
                 Session expires {status.expires_at ? new Date(status.expires_at).toLocaleString() : "—"}
               </p>
             </div>
           ) : (
-            <p className="text-sm text-neutral-400">Not connected.</p>
+            <p className="text-sm text-fg-muted">Not connected.</p>
           )}
         </CardContent>
       </Card>

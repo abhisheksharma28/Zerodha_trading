@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
 
-import { useInstrumentSearch } from "@/hooks/useInstruments";
+import { useInstrumentSearch, useSyncInstruments } from "@/hooks/useInstruments";
 import type { Instrument } from "@/types/api";
 import { cn } from "@/lib/utils";
 
@@ -62,6 +62,7 @@ export function InstrumentSearch({
     exchange,
     limit: 20,
   });
+  const sync = useSyncInstruments();
   const recent = useMemo(() => (open && !q ? readRecent() : []), [open, q]);
 
   useEffect(() => {
@@ -89,17 +90,17 @@ export function InstrumentSearch({
 
   return (
     <div ref={boxRef} className="relative">
-      <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1.5 focus-within:border-emerald-600">
+      <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-line-strong bg-surface px-2 py-1.5 focus-within:border-emerald-600">
         {value.map((ref) => (
           <span
             key={ref}
-            className="flex items-center gap-1 rounded bg-neutral-800 px-2 py-0.5 text-xs text-neutral-200"
+            className="flex items-center gap-1 rounded bg-elevated px-2 py-0.5 text-xs text-fg"
           >
             {ref}
             <button
               type="button"
               onClick={() => remove(ref)}
-              className="text-neutral-500 hover:text-neutral-200"
+              className="text-fg-faint hover:text-fg"
               aria-label={`Remove ${ref}`}
             >
               <X className="h-3 w-3" />
@@ -107,7 +108,7 @@ export function InstrumentSearch({
           </span>
         ))}
         <div className="flex min-w-[8rem] flex-1 items-center gap-1.5">
-          <Search className="h-3.5 w-3.5 shrink-0 text-neutral-500" />
+          <Search className="h-3.5 w-3.5 shrink-0 text-fg-faint" />
           <input
             value={q}
             onChange={(e) => {
@@ -116,16 +117,16 @@ export function InstrumentSearch({
             }}
             onFocus={() => setOpen(true)}
             placeholder={value.length && !multiple ? "" : placeholder}
-            className="h-6 w-full bg-transparent text-sm text-neutral-100 outline-none placeholder:text-neutral-600"
+            className="h-6 w-full bg-transparent text-sm text-fg outline-none placeholder:text-fg-faint"
           />
         </div>
       </div>
 
       {open && (
-        <div className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-md border border-neutral-700 bg-neutral-900 shadow-xl">
+        <div className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-md border border-line-strong bg-surface shadow-xl">
           {!q && recent.length > 0 && (
             <>
-              <p className="px-3 pt-2 text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+              <p className="px-3 pt-2 text-[10px] font-semibold uppercase tracking-wide text-fg-faint">
                 Recent
               </p>
               {recent.map((ref) => (
@@ -133,7 +134,7 @@ export function InstrumentSearch({
                   key={ref}
                   type="button"
                   onClick={() => add(ref)}
-                  className="block w-full px-3 py-1.5 text-left text-sm text-neutral-300 hover:bg-neutral-800"
+                  className="block w-full px-3 py-1.5 text-left text-sm text-fg-muted hover:bg-elevated"
                 >
                   {ref}
                 </button>
@@ -143,12 +144,27 @@ export function InstrumentSearch({
           {q && (
             <>
               {isFetching && !results && (
-                <p className="px-3 py-2 text-xs text-neutral-500">Searching…</p>
+                <p className="px-3 py-2 text-xs text-fg-faint">Searching…</p>
               )}
               {results?.length === 0 && (
-                <p className="px-3 py-2 text-xs text-neutral-500">
-                  No matches. Run “Sync instruments” if the master is empty.
-                </p>
+                <div className="px-3 py-2 text-xs text-fg-faint">
+                  <p>No matches for “{q}”.</p>
+                  <button
+                    type="button"
+                    onClick={() => sync.mutate(undefined)}
+                    disabled={sync.isPending}
+                    className="mt-1 rounded border border-line-strong px-2 py-1 text-fg-muted hover:bg-elevated disabled:opacity-50"
+                  >
+                    {sync.isPending
+                      ? "Syncing instrument master…"
+                      : sync.isSuccess
+                        ? "Synced — try again"
+                        : "Sync instrument master from Zerodha"}
+                  </button>
+                  {sync.isError && (
+                    <p className="mt-1 text-red-400">{(sync.error as Error).message}</p>
+                  )}
+                </div>
               )}
               {results?.map((i) => {
                 const ref = instrumentRef(i);
@@ -160,22 +176,22 @@ export function InstrumentSearch({
                     disabled={selected}
                     onClick={() => add(ref)}
                     className={cn(
-                      "flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left hover:bg-neutral-800",
+                      "flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left hover:bg-elevated",
                       selected && "opacity-40",
                     )}
                   >
                     <span className="min-w-0">
-                      <span className="text-sm text-neutral-100">{i.tradingsymbol}</span>
+                      <span className="text-sm text-fg">{i.tradingsymbol}</span>
                       {i.name && (
-                        <span className="ml-2 truncate text-xs text-neutral-500">{i.name}</span>
+                        <span className="ml-2 truncate text-xs text-fg-faint">{i.name}</span>
                       )}
                     </span>
-                    <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-neutral-500">
+                    <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-fg-faint">
                       {i.expiry && <span>{i.expiry}</span>}
                       <span
                         className={cn(
                           "rounded px-1 py-0.5",
-                          TYPE_BADGE[i.instrument_type] ?? "bg-neutral-800 text-neutral-400",
+                          TYPE_BADGE[i.instrument_type] ?? "bg-elevated text-fg-muted",
                         )}
                       >
                         {i.exchange} {i.instrument_type}
