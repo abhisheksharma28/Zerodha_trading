@@ -762,6 +762,9 @@ class OpeningBreakoutUSStrategy(TemplateStrategy):
         self._diagnostics[
             reason
         ] += 1
+        # mirror into the engine's run diagnostics (opt-in hook, no effect
+        # on strategy logic) so a zero-trade run can name the failing stage
+        self.context.note_signal(f"reject:{reason}")
 
     def _print_diagnostics(
         self,
@@ -1185,6 +1188,8 @@ class OpeningBreakoutUSStrategy(TemplateStrategy):
         )
 
         selected = scored[:top_n]
+        self.context.note_signal("rvol_qualified", len(scored))
+        self.context.note_signal("armed", len(selected))
 
         for _, sym in selected:
 
@@ -1454,6 +1459,7 @@ class OpeningBreakoutUSStrategy(TemplateStrategy):
             exchange=self.p["exchange"],
             product=self.p["product"],
         )
+        self.context.note_signal("breakout_entry")
 
         # ----------------------------------------------------
         # Save trade state

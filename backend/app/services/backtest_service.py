@@ -170,7 +170,7 @@ def execute_backtest(
                 "or connect a broker session on the paid Kite Connect plan."
             )
 
-        dq = validate_candles(candles_by_instrument)
+        dq = validate_candles(candles_by_instrument, timeframe=backtest.timeframe)
         if not dq["ok"]:
             raise ValidationError(
                 "Data-quality check failed — refusing to backtest on bad candles: "
