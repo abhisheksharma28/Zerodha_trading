@@ -45,6 +45,17 @@ class Settings(BaseSettings):
     risk_max_orders_per_day: int = 1000
     risk_max_live_order_value_inr: float = 100_000
 
+    # --- Strategy-evaluation worker (app.workers) ---
+    worker_poll_interval_seconds: int = 60
+    # How far back the worker pulls candles each poll; only bars newer than
+    # the last one already fed to a strategy are acted on, so this just needs
+    # to comfortably exceed one poll interval to survive a missed tick.
+    worker_candle_lookback_minutes: int = 120
+    # Bar interval fed to running PAPER/SIMULATION strategies when a
+    # deployment's config doesn't specify one (Kite intervals: "minute",
+    # "3minute", "5minute", "15minute", "30minute", "60minute", "day").
+    worker_default_timeframe: str = "5minute"
+
     # --- CORS ---
     cors_allow_origins: list[str] = ["http://localhost:5173"]
 
