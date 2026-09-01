@@ -4,6 +4,8 @@ import { AppLayout } from "@/layouts/AppLayout";
 import DashboardPage from "@/pages/DashboardPage";
 import StrategiesPage from "@/pages/StrategiesPage";
 import StrategyDetailPage from "@/pages/StrategyDetailPage";
+import StrategyLibraryPage from "@/pages/StrategyLibraryPage";
+import StrategyTemplateDetailPage from "@/pages/StrategyTemplateDetailPage";
 import BacktestsPage from "@/pages/BacktestsPage";
 import BacktestDetailPage from "@/pages/BacktestDetailPage";
 import DeploymentsPage from "@/pages/DeploymentsPage";
@@ -18,6 +20,8 @@ export default function App() {
     <Routes>
       <Route element={<AppLayout />}>
         <Route index element={<DashboardPage />} />
+        <Route path="strategy-library" element={<StrategyLibraryPage />} />
+        <Route path="strategy-library/:slug" element={<StrategyTemplateDetailPage />} />
         <Route path="strategies" element={<StrategiesPage />} />
         <Route path="strategies/:strategyId" element={<StrategyDetailPage />} />
         <Route path="backtests" element={<BacktestsPage />} />

@@ -1,5 +1,5 @@
 import { apiClient } from "@/api/client";
-import type { Backtest } from "@/types/api";
+import type { Backtest, BacktestReport } from "@/types/api";
 
 export interface CreateBacktestPayload {
   strategy_version_id: string;
@@ -12,6 +12,7 @@ export interface CreateBacktestPayload {
 
 export interface RunBacktestPayload {
   candles?: Record<string, Array<[string, number, number, number, number, number]>>;
+  costs?: Record<string, number>;
 }
 
 export const backtestsApi = {
@@ -21,4 +22,6 @@ export const backtestsApi = {
     apiClient.post<Backtest>("/backtests", payload).then((r) => r.data),
   run: (id: string, payload: RunBacktestPayload = {}) =>
     apiClient.post<Backtest>(`/backtests/${id}/run`, payload).then((r) => r.data),
+  report: (id: string) =>
+    apiClient.get<BacktestReport>(`/backtests/${id}/report`).then((r) => r.data),
 };

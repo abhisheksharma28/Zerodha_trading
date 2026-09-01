@@ -9,7 +9,16 @@ import {
 export const backtestKeys = {
   all: ["backtests"] as const,
   detail: (id: string) => ["backtests", id] as const,
+  report: (id: string) => ["backtests", id, "report"] as const,
 };
+
+export function useBacktestReport(id: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: backtestKeys.report(id ?? ""),
+    queryFn: () => backtestsApi.report(id as string),
+    enabled: !!id && enabled,
+  });
+}
 
 export function useBacktests() {
   return useQuery({ queryKey: backtestKeys.all, queryFn: backtestsApi.list });

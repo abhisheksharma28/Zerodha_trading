@@ -125,3 +125,85 @@ export interface BrokerStatus {
   connected_at: string | null;
   expires_at: string | null;
 }
+
+// --- Strategy Library ---------------------------------------------------
+
+export interface TemplateParamSpec {
+  type: "integer" | "number" | "string" | "boolean" | "enum";
+  default: unknown;
+  description: string;
+  group: "core" | "filter" | "risk" | "sizing";
+  min?: number;
+  max?: number;
+  choices?: unknown[];
+}
+
+export interface StrategyTemplateSummary {
+  slug: string;
+  name: string;
+  category: string;
+  description: string;
+  timeframe: string;
+  time_horizon: string;
+  complexity: "Low" | "Medium" | "High";
+  market_types: string[];
+  supports_long: boolean;
+  supports_short: boolean;
+  supports_intraday: boolean;
+  supports_swing: boolean;
+  supports_market_neutral: boolean;
+  warning: string;
+  min_instruments: number;
+  max_instruments: number | null;
+}
+
+export interface StrategyTemplateDetail extends StrategyTemplateSummary {
+  logic: string;
+  risks: string[];
+  best_for: string;
+  required_data: string[];
+  example: string;
+  parameters: Record<string, TemplateParamSpec>;
+  presets: Record<string, Record<string, unknown>>;
+}
+
+export interface BacktestReport {
+  backtest_id: string;
+  status: BacktestStatus;
+  instrument_universe: string[];
+  timeframe: string;
+  initial_capital: number;
+  error_message: string | null;
+  metrics: Record<string, number | null>;
+  cost_config: Record<string, number>;
+  cost_breakdown: Record<string, number>;
+  data_quality: {
+    ok: boolean;
+    errors: string[];
+    warnings: string[];
+    per_symbol: Record<string, unknown>[];
+  };
+  equity_curve: [string, number][];
+  charts: {
+    drawdown_curve: [string, number][];
+    monthly_returns: Record<string, number>;
+    daily_pnl: [string, number][];
+    exposure_curve: [string, number][];
+    trade_return_distribution: { bin_edges: number[]; counts: number[]; returns: number[] };
+  };
+  trades: {
+    instrument: string;
+    direction: "long" | "short";
+    quantity: number;
+    entry_time: string | null;
+    exit_time: string | null;
+    entry_price: number;
+    exit_price: number;
+    gross_pnl: number;
+    costs: number;
+    net_pnl: number;
+    bars_held: number;
+    return_pct: number;
+    is_open: boolean;
+  }[];
+}

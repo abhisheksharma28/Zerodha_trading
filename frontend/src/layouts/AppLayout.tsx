@@ -4,6 +4,7 @@ import {
   FileClock,
   Gauge,
   History,
+  Library,
   ListChecks,
   Plug,
   Rocket,
@@ -15,7 +16,8 @@ import { useBrokerStatus } from "@/hooks/useBroker";
 
 const NAV_ITEMS = [
   { to: "/", label: "Dashboard", icon: Gauge, end: true },
-  { to: "/strategies", label: "Strategies", icon: ListChecks },
+  { to: "/strategy-library", label: "Strategy Library", icon: Library },
+  { to: "/strategies", label: "My Strategies", icon: ListChecks },
   { to: "/backtests", label: "Backtests", icon: History },
   { to: "/deployments", label: "Deployments", icon: Rocket },
   { to: "/monitoring", label: "Monitoring", icon: Activity },
