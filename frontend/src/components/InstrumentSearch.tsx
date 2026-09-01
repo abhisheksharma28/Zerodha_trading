@@ -1,0 +1,193 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Search, X } from "lucide-react";
+
+import { useInstrumentSearch } from "@/hooks/useInstruments";
+import type { Instrument } from "@/types/api";
+import { cn } from "@/lib/utils";
+
+const RECENT_KEY = "instrument-search.recent";
+const RECENT_MAX = 8;
+
+function readRecent(): string[] {
+  try {
+    const raw = localStorage.getItem(RECENT_KEY);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function pushRecent(ref: string) {
+  try {
+    const next = [ref, ...readRecent().filter((r) => r !== ref)].slice(0, RECENT_MAX);
+    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+  } catch {
+    /* storage unavailable — recents are a convenience, not required */
+  }
+}
+
+function instrumentRef(i: Pick<Instrument, "exchange" | "tradingsymbol">): string {
+  return `${i.exchange}:${i.tradingsymbol}`;
+}
+
+const TYPE_BADGE: Record<string, string> = {
+  EQ: "bg-sky-500/15 text-sky-300",
+  FUT: "bg-violet-500/15 text-violet-300",
+  CE: "bg-emerald-500/15 text-emerald-300",
+  PE: "bg-rose-500/15 text-rose-300",
+};
+
+interface Props {
+  value: string[];
+  onChange: (next: string[]) => void;
+  multiple?: boolean;
+  instrumentType?: string;
+  exchange?: string;
+  placeholder?: string;
+}
+
+export function InstrumentSearch({
+  value,
+  onChange,
+  multiple = true,
+  instrumentType,
+  exchange,
+  placeholder = "Search by symbol, company name or underlying…",
+}: Props) {
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const { data: results, isFetching } = useInstrumentSearch(q, {
+    instrument_type: instrumentType,
+    exchange,
+    limit: 20,
+  });
+  const recent = useMemo(() => (open && !q ? readRecent() : []), [open, q]);
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  function add(ref: string) {
+    pushRecent(ref);
+    if (!multiple) {
+      onChange([ref]);
+    } else if (!value.includes(ref)) {
+      onChange([...value, ref]);
+    }
+    setQ("");
+    setOpen(multiple);
+  }
+
+  function remove(ref: string) {
+    onChange(value.filter((r) => r !== ref));
+  }
+
+  return (
+    <div ref={boxRef} className="relative">
+      <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1.5 focus-within:border-emerald-600">
+        {value.map((ref) => (
+          <span
+            key={ref}
+            className="flex items-center gap-1 rounded bg-neutral-800 px-2 py-0.5 text-xs text-neutral-200"
+          >
+            {ref}
+            <button
+              type="button"
+              onClick={() => remove(ref)}
+              className="text-neutral-500 hover:text-neutral-200"
+              aria-label={`Remove ${ref}`}
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
+        ))}
+        <div className="flex min-w-[8rem] flex-1 items-center gap-1.5">
+          <Search className="h-3.5 w-3.5 shrink-0 text-neutral-500" />
+          <input
+            value={q}
+            onChange={(e) => {
+              setQ(e.target.value);
+              setOpen(true);
+            }}
+            onFocus={() => setOpen(true)}
+            placeholder={value.length && !multiple ? "" : placeholder}
+            className="h-6 w-full bg-transparent text-sm text-neutral-100 outline-none placeholder:text-neutral-600"
+          />
+        </div>
+      </div>
+
+      {open && (
+        <div className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-md border border-neutral-700 bg-neutral-900 shadow-xl">
+          {!q && recent.length > 0 && (
+            <>
+              <p className="px-3 pt-2 text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+                Recent
+              </p>
+              {recent.map((ref) => (
+                <button
+                  key={ref}
+                  type="button"
+                  onClick={() => add(ref)}
+                  className="block w-full px-3 py-1.5 text-left text-sm text-neutral-300 hover:bg-neutral-800"
+                >
+                  {ref}
+                </button>
+              ))}
+            </>
+          )}
+          {q && (
+            <>
+              {isFetching && !results && (
+                <p className="px-3 py-2 text-xs text-neutral-500">Searching…</p>
+              )}
+              {results?.length === 0 && (
+                <p className="px-3 py-2 text-xs text-neutral-500">
+                  No matches. Run “Sync instruments” if the master is empty.
+                </p>
+              )}
+              {results?.map((i) => {
+                const ref = instrumentRef(i);
+                const selected = value.includes(ref);
+                return (
+                  <button
+                    key={i.id}
+                    type="button"
+                    disabled={selected}
+                    onClick={() => add(ref)}
+                    className={cn(
+                      "flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left hover:bg-neutral-800",
+                      selected && "opacity-40",
+                    )}
+                  >
+                    <span className="min-w-0">
+                      <span className="text-sm text-neutral-100">{i.tradingsymbol}</span>
+                      {i.name && (
+                        <span className="ml-2 truncate text-xs text-neutral-500">{i.name}</span>
+                      )}
+                    </span>
+                    <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-neutral-500">
+                      {i.expiry && <span>{i.expiry}</span>}
+                      <span
+                        className={cn(
+                          "rounded px-1 py-0.5",
+                          TYPE_BADGE[i.instrument_type] ?? "bg-neutral-800 text-neutral-400",
+                        )}
+                      >
+                        {i.exchange} {i.instrument_type}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

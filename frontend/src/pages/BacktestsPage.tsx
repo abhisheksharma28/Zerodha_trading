@@ -4,6 +4,8 @@ import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { InstrumentSearch } from "@/components/InstrumentSearch";
+import { TimeframeSelect } from "@/components/TimeframeSelect";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useBacktests, useCreateBacktest } from "@/hooks/useBacktests";
@@ -75,7 +77,8 @@ export default function BacktestsPage() {
 function CreateBacktestForm({ onDone }: { onDone: () => void }) {
   const { data: strategies } = useStrategies();
   const [strategyId, setStrategyId] = useState("");
-  const [universe, setUniverse] = useState("NSE:INFY");
+  const [universe, setUniverse] = useState<string[]>(["NSE:INFY"]);
+  const [timeframe, setTimeframe] = useState("1d");
   const [startDate, setStartDate] = useState("2024-01-01");
   const [endDate, setEndDate] = useState("2024-12-31");
   const [capital, setCapital] = useState(100000);
@@ -93,11 +96,12 @@ function CreateBacktestForm({ onDone }: { onDone: () => void }) {
           className="flex flex-col gap-4"
           onSubmit={(e) => {
             e.preventDefault();
-            if (!strategy?.current_version_id) return;
+            if (!strategy?.current_version_id || universe.length === 0) return;
             create.mutate(
               {
                 strategy_version_id: strategy.current_version_id,
-                instrument_universe: universe.split(",").map((s) => s.trim()),
+                instrument_universe: universe,
+                timeframe,
                 start_date: new Date(startDate).toISOString(),
                 end_date: new Date(endDate).toISOString(),
                 initial_capital: capital,
@@ -124,8 +128,16 @@ function CreateBacktestForm({ onDone }: { onDone: () => void }) {
             </select>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="universe">Instrument universe (comma-separated)</Label>
-            <Input id="universe" value={universe} onChange={(e) => setUniverse(e.target.value)} />
+            <Label>Instrument universe</Label>
+            <InstrumentSearch value={universe} onChange={setUniverse} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>Timeframe</Label>
+            <TimeframeSelect value={timeframe} onChange={setTimeframe} />
+            <p className="text-xs text-neutral-500">
+              The backtest is rejected with a clear reason if the strategy doesn't support this
+              timeframe.
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
@@ -160,7 +172,10 @@ function CreateBacktestForm({ onDone }: { onDone: () => void }) {
             <p className="text-xs text-red-400">{(create.error as Error).message}</p>
           )}
           <div>
-            <Button type="submit" disabled={create.isPending || !strategyId}>
+            <Button
+              type="submit"
+              disabled={create.isPending || !strategyId || universe.length === 0}
+            >
               {create.isPending ? "Creating…" : "Create backtest"}
             </Button>
           </div>

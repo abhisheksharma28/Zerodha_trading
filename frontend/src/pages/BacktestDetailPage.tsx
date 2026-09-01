@@ -18,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useBacktest, useBacktestReport, useRunBacktest } from "@/hooks/useBacktests";
-import type { BacktestReport } from "@/types/api";
+import type { BacktestDiagnostics, BacktestReport } from "@/types/api";
 
 const CHART_GRID = "#262626";
 const AXIS = "#737373";
@@ -91,6 +91,11 @@ export default function BacktestDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      {report && report.no_trades_analysis?.length > 0 && (
+        <NoTradesPanel report={report} />
+      )}
+      {report && <DiagnosticsCard report={report} />}
 
       {report?.metrics && <MetricsGrid m={report.metrics} />}
       {report && <CostBreakdown report={report} />}
@@ -182,6 +187,66 @@ function MetricsGrid({ m }: { m: Record<string, number | null> }) {
         </Card>
       ))}
     </div>
+  );
+}
+
+function NoTradesPanel({ report }: { report: BacktestReport }) {
+  return (
+    <Card className="border-amber-500/40 bg-amber-500/5">
+      <CardHeader>
+        <CardTitle className="text-amber-300">No trades were generated</CardTitle>
+      </CardHeader>
+      <CardContent className="text-sm text-neutral-300">
+        <ul className="list-disc space-y-1 pl-5">
+          {report.no_trades_analysis.map((r) => (
+            <li key={r}>{r}</li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DiagnosticsCard({ report }: { report: BacktestReport }) {
+  const d = report.diagnostics as BacktestDiagnostics;
+  if (!d || !("total_bars" in d)) return null;
+  const chip = (label: string, value: React.ReactNode) => (
+    <span className="rounded bg-neutral-800 px-2 py-0.5 text-xs text-neutral-300">
+      <span className="text-neutral-500">{label}</span> {value}
+    </span>
+  );
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Run diagnostics</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-2">
+        <div className="flex flex-wrap gap-1.5">
+          {chip("bars", fmt(d.total_bars, 0))}
+          {chip("instruments", d.instruments.length)}
+          {chip("orders", fmt(d.orders_submitted, 0))}
+          {chip("fills", fmt(d.fills, 0))}
+          {d.rejected_orders > 0 && chip("rejected", fmt(d.rejected_orders, 0))}
+          {d.first_bar_ts && chip("span", `${d.first_bar_ts.slice(0, 10)} → ${d.last_bar_ts?.slice(0, 10)}`)}
+        </div>
+        {Object.keys(d.signals).length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            <span className="text-xs text-neutral-500">signals:</span>
+            {Object.entries(d.signals).map(([k, v]) => chip(k, v))}
+          </div>
+        )}
+        {Object.keys(d.rejection_reasons).length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            <span className="text-xs text-neutral-500">rejections:</span>
+            {Object.entries(d.rejection_reasons).map(([k, v]) => chip(k, v))}
+          </div>
+        )}
+        <div className="flex flex-wrap gap-1.5">
+          <span className="text-xs text-neutral-500">bars / instrument:</span>
+          {Object.entries(d.bars_by_instrument).map(([k, v]) => chip(k, fmt(v, 0)))}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

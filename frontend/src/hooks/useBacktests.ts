@@ -24,6 +24,14 @@ export function useBacktests() {
   return useQuery({ queryKey: backtestKeys.all, queryFn: backtestsApi.list });
 }
 
+export function useTimeframes() {
+  return useQuery({
+    queryKey: ["backtests", "timeframes"],
+    queryFn: backtestsApi.timeframes,
+    staleTime: Infinity,
+  });
+}
+
 export function useBacktest(id: string | undefined) {
   return useQuery({
     queryKey: backtestKeys.detail(id ?? ""),

@@ -167,6 +167,19 @@ export interface StrategyTemplateDetail extends StrategyTemplateSummary {
   presets: Record<string, Record<string, unknown>>;
 }
 
+export interface BacktestDiagnostics {
+  instruments: string[];
+  bars_by_instrument: Record<string, number>;
+  total_bars: number;
+  first_bar_ts: string | null;
+  last_bar_ts: string | null;
+  orders_submitted: number;
+  fills: number;
+  rejected_orders: number;
+  rejection_reasons: Record<string, number>;
+  signals: Record<string, number>;
+}
+
 export interface BacktestReport {
   backtest_id: string;
   status: BacktestStatus;
@@ -183,6 +196,8 @@ export interface BacktestReport {
     warnings: string[];
     per_symbol: Record<string, unknown>[];
   };
+  diagnostics: BacktestDiagnostics | Record<string, never>;
+  no_trades_analysis: string[];
   equity_curve: [string, number][];
   charts: {
     drawdown_curve: [string, number][];
@@ -206,6 +221,34 @@ export interface BacktestReport {
     return_pct: number;
     is_open: boolean;
   }[];
+}
+
+// --- Instrument master ------------------------------------------------
+
+export interface Instrument {
+  id: string;
+  instrument_token: string;
+  tradingsymbol: string;
+  name: string | null;
+  exchange: string;
+  segment: string;
+  instrument_type: "EQ" | "FUT" | "CE" | "PE" | string;
+  expiry: string | null;
+  strike: number | null;
+  tick_size: number | null;
+  lot_size: number | null;
+  underlying: string | null;
+  active: boolean;
+  last_synced_at: string | null;
+}
+
+export interface TimeframeInfo {
+  token: string;
+  label: string;
+  kite_interval: string;
+  minutes: number;
+  intraday: boolean;
+  bars_per_year: number;
 }
 
 // --- NIFTY Monthly HNI options strategy --------------------------------

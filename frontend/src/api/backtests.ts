@@ -1,5 +1,5 @@
 import { apiClient } from "@/api/client";
-import type { Backtest, BacktestReport } from "@/types/api";
+import type { Backtest, BacktestReport, TimeframeInfo } from "@/types/api";
 
 export interface CreateBacktestPayload {
   strategy_version_id: string;
@@ -24,4 +24,6 @@ export const backtestsApi = {
     apiClient.post<Backtest>(`/backtests/${id}/run`, payload).then((r) => r.data),
   report: (id: string) =>
     apiClient.get<BacktestReport>(`/backtests/${id}/report`).then((r) => r.data),
+  timeframes: () =>
+    apiClient.get<TimeframeInfo[]>("/backtests/timeframes").then((r) => r.data),
 };
