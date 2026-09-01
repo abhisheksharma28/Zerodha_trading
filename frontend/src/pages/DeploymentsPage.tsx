@@ -142,8 +142,8 @@ function CreateDeploymentForm({ onDone }: { onDone: () => void }) {
                   className={`rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
                     mode === m
                       ? m === "live"
-                        ? "border-red-500 bg-red-500/10 text-red-400"
-                        : "border-emerald-500 bg-emerald-500/10 text-emerald-400"
+                        ? "border-red-500 bg-red-500/10 text-neg"
+                        : "border-pos/60 bg-pos/10 text-pos"
                       : "border-line-strong text-fg-muted hover:bg-elevated"
                   }`}
                 >
@@ -155,7 +155,7 @@ function CreateDeploymentForm({ onDone }: { onDone: () => void }) {
 
           {isLive && (
             <div className="flex flex-col gap-2 rounded-md border border-red-500/50 bg-red-500/5 p-3">
-              <div className="flex items-center gap-2 text-red-400">
+              <div className="flex items-center gap-2 text-neg">
                 <AlertTriangle className="h-4 w-4" />
                 <p className="text-sm font-semibold">
                   This deployment will place real orders with real money through your connected
@@ -177,7 +177,7 @@ function CreateDeploymentForm({ onDone }: { onDone: () => void }) {
           )}
 
           {create.isError && (
-            <p className="text-xs text-red-400">{(create.error as Error).message}</p>
+            <p className="text-xs text-neg">{(create.error as Error).message}</p>
           )}
 
           <div>

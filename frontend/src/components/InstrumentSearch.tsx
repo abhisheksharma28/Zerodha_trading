@@ -33,7 +33,7 @@ function instrumentRef(i: Pick<Instrument, "exchange" | "tradingsymbol">): strin
 const TYPE_BADGE: Record<string, string> = {
   EQ: "bg-sky-500/15 text-sky-300",
   FUT: "bg-violet-500/15 text-violet-300",
-  CE: "bg-emerald-500/15 text-emerald-300",
+  CE: "bg-pos/15 text-pos",
   PE: "bg-rose-500/15 text-rose-300",
 };
 
@@ -90,7 +90,7 @@ export function InstrumentSearch({
 
   return (
     <div ref={boxRef} className="relative">
-      <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-line-strong bg-surface px-2 py-1.5 focus-within:border-emerald-600">
+      <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-line-strong bg-surface px-2 py-1.5 focus-within:border-accent">
         {value.map((ref) => (
           <span
             key={ref}
@@ -162,7 +162,7 @@ export function InstrumentSearch({
                         : "Sync instrument master from Zerodha"}
                   </button>
                   {sync.isError && (
-                    <p className="mt-1 text-red-400">{(sync.error as Error).message}</p>
+                    <p className="mt-1 text-neg">{(sync.error as Error).message}</p>
                   )}
                 </div>
               )}

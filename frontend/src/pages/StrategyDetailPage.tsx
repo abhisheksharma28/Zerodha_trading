@@ -102,15 +102,15 @@ function NewVersionForm({
             value={source}
             onChange={(e) => setSource(e.target.value)}
             rows={10}
-            className="rounded-md border border-line-strong bg-surface p-3 font-mono text-xs text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+            className="rounded-md border border-line-strong bg-surface p-3 font-mono text-xs text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           />
           <input
             placeholder="What changed and why?"
             value={summary}
             onChange={(e) => setSummary(e.target.value)}
-            className="rounded-md border border-line-strong bg-surface px-3 py-2 text-sm text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+            className="rounded-md border border-line-strong bg-surface px-3 py-2 text-sm text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           />
-          {error && <p className="text-xs text-red-400">{error.message}</p>}
+          {error && <p className="text-xs text-neg">{error.message}</p>}
           <div>
             <Button type="submit" disabled={isPending}>
               {isPending ? "Saving…" : "Save as new version"}

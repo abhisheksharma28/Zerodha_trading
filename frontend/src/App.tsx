@@ -15,6 +15,13 @@ import MonitoringPage from "@/pages/MonitoringPage";
 import TradeLogsPage from "@/pages/TradeLogsPage";
 import AuditLogsPage from "@/pages/AuditLogsPage";
 import BrokerPage from "@/pages/BrokerPage";
+import MarketScannerPage from "@/pages/MarketScannerPage";
+import AnalyticsPage from "@/pages/AnalyticsPage";
+import AlertsPage from "@/pages/AlertsPage";
+import ReportsPage from "@/pages/ReportsPage";
+import PositionsPage from "@/pages/PositionsPage";
+import OrdersPage from "@/pages/OrdersPage";
+import SettingsPage from "@/pages/SettingsPage";
 
 export default function App() {
   return (
@@ -31,9 +38,16 @@ export default function App() {
         <Route path="deployments" element={<DeploymentsPage />} />
         <Route path="deployments/:deploymentId" element={<DeploymentDetailPage />} />
         <Route path="monitoring" element={<MonitoringPage />} />
+        <Route path="market-scanner" element={<MarketScannerPage />} />
+        <Route path="analytics" element={<AnalyticsPage />} />
+        <Route path="positions" element={<PositionsPage />} />
+        <Route path="orders" element={<OrdersPage />} />
+        <Route path="alerts" element={<AlertsPage />} />
+        <Route path="reports" element={<ReportsPage />} />
         <Route path="trade-logs" element={<TradeLogsPage />} />
         <Route path="audit-logs" element={<AuditLogsPage />} />
         <Route path="broker" element={<BrokerPage />} />
+        <Route path="settings" element={<SettingsPage />} />
       </Route>
     </Routes>
   );

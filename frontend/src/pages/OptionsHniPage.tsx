@@ -46,7 +46,7 @@ export default function OptionsHniPage() {
         </p>
       )}
       {create.isError && (
-        <p className="text-xs text-red-400">{(create.error as Error).message}</p>
+        <p className="text-xs text-neg">{(create.error as Error).message}</p>
       )}
 
       <div className="flex flex-col gap-3">
@@ -157,7 +157,7 @@ function InstanceCard({ inst }: { inst: OptionsInstance }) {
           )}
         </div>
         {evaluate.data && (
-          <p className={`text-xs ${evaluate.data.eligible ? "text-emerald-400" : "text-amber-400/90"}`}>
+          <p className={`text-xs ${evaluate.data.eligible ? "text-pos" : "text-amber-400/90"}`}>
             {evaluate.data.reason}
             {evaluate.data.spot != null && ` · spot ${fmt(evaluate.data.spot, 1)}`}
             {evaluate.data.dte != null && ` · DTE ${evaluate.data.dte}`}
@@ -166,7 +166,7 @@ function InstanceCard({ inst }: { inst: OptionsInstance }) {
         {[evaluate, enter, exit].map(
           (m, i) =>
             m.isError && (
-              <p key={i} className="text-xs text-red-400">
+              <p key={i} className="text-xs text-neg">
                 {(m.error as Error).message}
               </p>
             ),

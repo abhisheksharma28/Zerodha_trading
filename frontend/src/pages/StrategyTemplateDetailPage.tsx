@@ -165,7 +165,7 @@ function BuilderPanel({ template: t }: { template: StrategyTemplateDetail }) {
   const hasErrors = Object.keys(errors).length > 0;
 
   return (
-    <Card className="border-emerald-600/30">
+    <Card className="border-accent/40">
       <CardHeader>
         <CardTitle>Create a strategy from this template</CardTitle>
       </CardHeader>
@@ -199,7 +199,7 @@ function BuilderPanel({ template: t }: { template: StrategyTemplateDetail }) {
         <DynamicParamsForm schema={t.parameters} values={values} onChange={setValues} />
 
         {create.isError && (
-          <p className="text-xs text-red-400">{(create.error as Error).message}</p>
+          <p className="text-xs text-neg">{(create.error as Error).message}</p>
         )}
         <div>
           <Button

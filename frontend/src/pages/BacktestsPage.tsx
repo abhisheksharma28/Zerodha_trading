@@ -169,7 +169,7 @@ function CreateBacktestForm({ onDone }: { onDone: () => void }) {
             />
           </div>
           {create.isError && (
-            <p className="text-xs text-red-400">{(create.error as Error).message}</p>
+            <p className="text-xs text-neg">{(create.error as Error).message}</p>
           )}
           <div>
             <Button

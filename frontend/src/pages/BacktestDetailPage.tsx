@@ -85,7 +85,7 @@ export default function BacktestDetailPage() {
           <CardContent className="py-3 text-xs">
             <p className="font-semibold text-fg">Data quality</p>
             {report.data_quality.errors.map((e) => (
-              <p key={e} className="text-red-400">
+              <p key={e} className="text-neg">
                 • {e}
               </p>
             ))}
@@ -122,7 +122,7 @@ export default function BacktestDetailPage() {
                   contentStyle={TIP_STYLE}
                   labelFormatter={(_, p) => p?.[0]?.payload?.ts ?? ""}
                 />
-                <Line type="monotone" dataKey="equity" stroke="#10b981" dot={false} strokeWidth={2} />
+                <Line type="monotone" dataKey="equity" stroke="var(--color-accent)" dot={false} strokeWidth={2} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -138,7 +138,7 @@ export default function BacktestDetailPage() {
 function ErrorCard({ children }: { children: React.ReactNode }) {
   return (
     <Card className="border-red-500/40 bg-red-500/5">
-      <CardContent className="py-3 text-sm text-red-400">{children}</CardContent>
+      <CardContent className="py-3 text-sm text-neg">{children}</CardContent>
     </Card>
   );
 }
@@ -186,7 +186,7 @@ function MetricsGrid({ m }: { m: Record<string, number | null> }) {
         <Card key={label}>
           <CardContent className="py-3">
             <p className="text-[11px] uppercase tracking-wide text-fg-faint">{label}</p>
-            <p className={`mt-1 text-lg font-semibold ${neg ? "text-red-400" : "text-fg"}`}>
+            <p className={`mt-1 text-lg font-semibold ${neg ? "text-neg" : "text-fg"}`}>
               {value}
             </p>
           </CardContent>
@@ -319,7 +319,7 @@ function ReportCharts({ report }: { report: BacktestReport }) {
               <Tooltip contentStyle={TIP_STYLE} />
               <Bar dataKey="v">
                 {monthly.map((d, i) => (
-                  <Cell key={i} fill={d.v >= 0 ? "#10b981" : "#ef4444"} />
+                  <Cell key={i} fill={d.v >= 0 ? "var(--color-pos)" : "var(--color-neg)"} />
                 ))}
               </Bar>
             </BarChart>
@@ -338,7 +338,7 @@ function ReportCharts({ report }: { report: BacktestReport }) {
                 <Tooltip contentStyle={TIP_STYLE} />
                 <Bar dataKey="c">
                   {bars.map((d, i) => (
-                    <Cell key={i} fill={d.mid >= 0 ? "#10b981" : "#ef4444"} />
+                    <Cell key={i} fill={d.mid >= 0 ? "var(--color-pos)" : "var(--color-neg)"} />
                   ))}
                 </Bar>
               </BarChart>
@@ -397,10 +397,10 @@ function TradesTable({ report }: { report: BacktestReport }) {
                     {t.is_open && <span className="text-fg-faint"> (open)</span>}
                   </td>
                   <td className="py-1.5 pr-3">{t.bars_held}</td>
-                  <td className={`py-1.5 pr-3 ${t.net_pnl < 0 ? "text-red-400" : "text-emerald-400"}`}>
+                  <td className={`py-1.5 pr-3 ${t.net_pnl < 0 ? "text-neg" : "text-pos"}`}>
                     ₹{fmt(t.net_pnl, 0)}
                   </td>
-                  <td className={t.return_pct < 0 ? "text-red-400" : "text-emerald-400"}>
+                  <td className={t.return_pct < 0 ? "text-neg" : "text-pos"}>
                     {fmt(t.return_pct)}%
                   </td>
                 </tr>

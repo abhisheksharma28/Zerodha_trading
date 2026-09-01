@@ -102,7 +102,7 @@ export function DynamicParamsForm({
                         </span>
                       ) : null}
                     </p>
-                    {err && <p className="text-[11px] text-red-400">{err}</p>}
+                    {err && <p className="text-[11px] text-neg">{err}</p>}
                   </div>
                 </Fragment>
               );

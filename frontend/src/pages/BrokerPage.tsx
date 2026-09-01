@@ -30,7 +30,7 @@ export default function BrokerPage() {
         <CardContent>
           {status?.connected ? (
             <div className="flex flex-col gap-1 text-sm">
-              <p className="text-emerald-400">Connected as {status.kite_user_id}</p>
+              <p className="text-pos">Connected as {status.kite_user_id}</p>
               <p className="text-xs text-fg-faint">
                 Session expires {status.expires_at ? new Date(status.expires_at).toLocaleString() : "—"}
               </p>
@@ -78,7 +78,7 @@ export default function BrokerPage() {
               />
             </div>
             {exchange.isError && (
-              <p className="text-xs text-red-400">{(exchange.error as Error).message}</p>
+              <p className="text-xs text-neg">{(exchange.error as Error).message}</p>
             )}
             <div>
               <Button type="submit" disabled={exchange.isPending || !requestToken}>

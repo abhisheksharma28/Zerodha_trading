@@ -119,11 +119,11 @@ function CreateStrategyForm({ onDone }: { onDone: () => void }) {
               value={sourceCode}
               onChange={(e) => setSourceCode(e.target.value)}
               rows={12}
-              className="rounded-md border border-line-strong bg-surface p-3 font-mono text-xs text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+              className="rounded-md border border-line-strong bg-surface p-3 font-mono text-xs text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             />
           </div>
           {create.isError && (
-            <p className="text-xs text-red-400">{(create.error as Error).message}</p>
+            <p className="text-xs text-neg">{(create.error as Error).message}</p>
           )}
           <div className="flex gap-2">
             <Button type="submit" disabled={create.isPending}>

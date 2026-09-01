@@ -24,7 +24,7 @@ export default function MonitoringPage() {
       {attention.length > 0 && (
         <Card className="border-red-500/40 bg-red-500/5">
           <CardHeader>
-            <CardTitle className="text-red-400">Needs attention</CardTitle>
+            <CardTitle className="text-neg">Needs attention</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
             {attention.map((d) => (

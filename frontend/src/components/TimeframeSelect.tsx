@@ -27,7 +27,7 @@ export function TimeframeSelect({ value, onChange, allowed, className }: Props) 
           className={cn(
             "rounded px-2.5 py-1 text-xs font-medium transition-colors",
             t === value
-              ? "bg-emerald-600/20 text-emerald-300"
+              ? "bg-accent-soft text-accent"
               : "text-fg-muted hover:text-fg",
           )}
         >

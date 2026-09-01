@@ -73,7 +73,7 @@ export default function TradeLogsPage() {
                         <ModeBadge mode={o.mode} />
                       </td>
                       <td className="py-2 pr-4">{o.tradingsymbol}</td>
-                      <td className={`py-2 pr-4 ${o.transaction_type === "BUY" ? "text-emerald-400" : "text-red-400"}`}>
+                      <td className={`py-2 pr-4 ${o.transaction_type === "BUY" ? "text-pos" : "text-neg"}`}>
                         {o.transaction_type}
                       </td>
                       <td className="py-2 pr-4">{o.quantity}</td>

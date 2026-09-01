@@ -49,7 +49,7 @@ export default function DeploymentDetailPage() {
 
       {isLive && (
         <Card className="border-red-500/40 bg-red-500/5">
-          <CardContent className="py-3 text-sm text-red-400">
+          <CardContent className="py-3 text-sm text-neg">
             LIVE deployment — confirmed{" "}
             {deployment.live_trading_confirmed_at
               ? new Date(deployment.live_trading_confirmed_at).toLocaleString()
@@ -112,7 +112,7 @@ export default function DeploymentDetailPage() {
                   {orders.map((o) => (
                     <tr key={o.id} className="border-t border-line">
                       <td className="py-2 pr-4">{o.tradingsymbol}</td>
-                      <td className={`py-2 pr-4 ${o.transaction_type === "BUY" ? "text-emerald-400" : "text-red-400"}`}>
+                      <td className={`py-2 pr-4 ${o.transaction_type === "BUY" ? "text-pos" : "text-neg"}`}>
                         {o.transaction_type}
                       </td>
                       <td className="py-2 pr-4">{o.quantity}</td>
