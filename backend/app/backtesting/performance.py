@@ -68,9 +68,9 @@ def compute_performance(
     gross_pnl = net_pnl + total_costs
 
     rets = [
-        values[i] / values[i - 1] - 1.0
+        max(-1.0, values[i] / values[i - 1] - 1.0)
         for i in range(1, len(values))
-        if values[i - 1]
+        if values[i - 1] > 0 and values[i] > 0
     ]
     sortino = _sortino(rets, trading_days_per_year)
     cagr = base["cagr_pct"]

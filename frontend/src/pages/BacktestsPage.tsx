@@ -87,9 +87,26 @@ function CreateBacktestForm({ onDone }: { onDone: () => void }) {
   const [startDate, setStartDate] = useState("2024-01-01");
   const [endDate, setEndDate] = useState("2024-12-31");
   const [capital, setCapital] = useState(100000);
+  const [sizing, setSizing] = useState("");
+  const [qty, setQty] = useState(1);
+  const [riskPct, setRiskPct] = useState(1);
+  const [targetVolPct, setTargetVolPct] = useState(2);
+  const [maxPosPct, setMaxPosPct] = useState("");
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
   const create = useCreateBacktest();
+
+  function buildOverrides(): Record<string, unknown> {
+    const o: Record<string, unknown> = {};
+    if (sizing) {
+      o.sizing_method = sizing;
+      if (sizing === "fixed_quantity") o.fixed_quantity = qty;
+      if (sizing === "risk_per_trade") o.risk_per_trade_pct = riskPct;
+      if (sizing === "volatility_adjusted") o.target_volatility_pct = targetVolPct;
+    }
+    if (maxPosPct.trim() !== "") o.max_position_size_pct = Number(maxPosPct);
+    return o;
+  }
 
   const strategy = strategies?.find((s) => s.id === strategyId);
   const busy = create.isPending || running;
@@ -119,7 +136,11 @@ function CreateBacktestForm({ onDone }: { onDone: () => void }) {
                 onSuccess: async (bt) => {
                   setRunning(true);
                   try {
-                    await backtestsApi.run(bt.id);
+                    const overrides = buildOverrides();
+                    await backtestsApi.run(
+                      bt.id,
+                      Object.keys(overrides).length ? { parameter_overrides: overrides } : {},
+                    );
                   } catch (err) {
                     setRunError((err as Error).message);
                   } finally {
@@ -191,6 +212,81 @@ function CreateBacktestForm({ onDone }: { onDone: () => void }) {
               value={capital}
               onChange={(e) => setCapital(Number(e.target.value))}
             />
+          </div>
+
+          <div className="rounded-md border border-line bg-elevated/40 p-3">
+            <p className="mb-2 text-xs font-medium text-fg-muted">
+              Position sizing (overrides the strategy's saved parameters for this run only)
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="sizing">Method</Label>
+                <select
+                  id="sizing"
+                  value={sizing}
+                  onChange={(e) => setSizing(e.target.value)}
+                  className="h-9 rounded-md border border-line-strong bg-surface px-3 text-sm text-fg"
+                >
+                  <option value="">Strategy default</option>
+                  <option value="fixed_quantity">Fixed quantity</option>
+                  <option value="fixed_capital">Fixed capital (all-in)</option>
+                  <option value="equal_weight">Equal weight</option>
+                  <option value="volatility_adjusted">Volatility-adjusted</option>
+                  <option value="risk_per_trade">Risk % per trade</option>
+                </select>
+              </div>
+
+              {sizing === "fixed_quantity" && (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="qty">Quantity per order</Label>
+                  <Input
+                    id="qty"
+                    type="number"
+                    min={1}
+                    value={qty}
+                    onChange={(e) => setQty(Math.max(1, Number(e.target.value) || 1))}
+                  />
+                </div>
+              )}
+              {sizing === "risk_per_trade" && (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="riskpct">Risk % per trade</Label>
+                  <Input
+                    id="riskpct"
+                    type="number"
+                    step="0.1"
+                    min={0.01}
+                    value={riskPct}
+                    onChange={(e) => setRiskPct(Number(e.target.value) || 0)}
+                  />
+                </div>
+              )}
+              {sizing === "volatility_adjusted" && (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="tvol">Target volatility %</Label>
+                  <Input
+                    id="tvol"
+                    type="number"
+                    step="0.1"
+                    min={0.01}
+                    value={targetVolPct}
+                    onChange={(e) => setTargetVolPct(Number(e.target.value) || 0)}
+                  />
+                </div>
+              )}
+
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="maxpos">Max position size % (optional)</Label>
+                <Input
+                  id="maxpos"
+                  type="number"
+                  step="1"
+                  placeholder="strategy default"
+                  value={maxPosPct}
+                  onChange={(e) => setMaxPosPct(e.target.value)}
+                />
+              </div>
+            </div>
           </div>
           {create.isError && (
             <p className="text-xs text-neg">{(create.error as Error).message}</p>

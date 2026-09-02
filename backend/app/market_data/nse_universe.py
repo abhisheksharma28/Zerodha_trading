@@ -77,6 +77,52 @@ SECTOR_INDICES: list[str] = [
     "NIFTY HEALTHCARE", "NIFTY CONSUMPTION", "NIFTY COMMODITIES",
 ]
 
+# NIFTY Next 50 constituents (tradingsymbols only). NIFTY 100 = NIFTY 50 +
+# NIFTY Next 50. Hand-maintained best-effort; refresh from NSE's
+# ind_niftynext50list.csv at the semi-annual review.
+NIFTY_NEXT_50: list[str] = [
+    "ABB", "ADANIENSOL", "ADANIGREEN", "ADANIPOWER", "AMBUJACEM", "DMART",
+    "BAJAJHLDNG", "BANKBARODA", "BPCL", "BOSCHLTD", "BRITANNIA", "CANBK",
+    "CGPOWER", "CHOLAFIN", "DABUR", "DIVISLAB", "DLF", "GAIL", "GODREJCP",
+    "HAVELLS", "HAL", "ICICIGI", "ICICIPRULI", "INDIGO", "INDUSTOWER",
+    "IOC", "IRFC", "JINDALSTEL", "JSWENERGY", "LICI", "LODHA", "LTIM",
+    "MOTHERSON", "MARICO", "MANKIND", "NAUKRI", "PIDILITIND", "PFC", "PNB",
+    "RECLTD", "SIEMENS", "SRF", "TATAPOWER", "TIINDIA", "TORNTPHARM",
+    "TVSMOTOR", "UNITDSPR", "VBL", "VEDL", "ZYDUSLIFE",
+]
+
+# NIFTY 100 = NIFTY 50 + NIFTY Next 50.
+NIFTY_100: list[str] = sorted({sym for sym, _n, _s in NIFTY_50} | set(NIFTY_NEXT_50))
+
+# NIFTY 200 constituents (tradingsymbols only). Hand-maintained best-effort
+# list for cross-sectional backtests (e.g. the ORB "Stocks in Play" study);
+# a backtest run resolves each against the Zerodha master and silently drops
+# any that no longer list. Refresh from NSE's ind_nifty200list.csv at review.
+NIFTY_200: list[str] = sorted(
+    set(NIFTY_100)
+    | {
+        # NIFTY Midcap 100 / large mid-caps
+        "ABBOTINDIA", "ACC", "ALKEM", "APLAPOLLO", "APOLLOTYRE", "ASHOKLEY",
+        "ASTRAL", "AUBANK", "AUROPHARMA", "BALKRISIND", "BANDHANBNK",
+        "BHARATFORG", "BHEL", "BIOCON", "BSE", "CAMS", "CDSL", "COFORGE",
+        "COLPAL", "CONCOR", "COROMANDEL", "CUMMINSIND", "DALBHARAT",
+        "DEEPAKNTR", "DIXON", "ESCORTS", "EXIDEIND", "FEDERALBNK", "FLUOROCHEM",
+        "FORTIS", "GLENMARK", "GMRAIRPORT", "GODREJPROP", "GUJGASLTD",
+        "HDFCAMC", "HINDPETRO", "HUDCO", "IDEA", "IDFCFIRSTB", "IGL",
+        "INDHOTEL", "IPCALAB", "IRB", "IRCTC", "IREDA",
+        "JSWINFRA", "JUBLFOOD", "KALYANKJIL", "KEI", "KPITTECH", "LAURUSLABS",
+        "LICHSGFIN", "LTF", "LTTS", "LUPIN", "MAXHEALTH", "MAZDOCK", "MFSL",
+        "MPHASIS", "MRF", "MUTHOOTFIN", "NHPC", "NMDC", "NYKAA", "OBEROIRLTY",
+        "OFSS", "OIL", "PAGEIND", "PATANJALI", "PAYTM", "PERSISTENT",
+        "PETRONET", "PHOENIXLTD", "PIIND", "POLICYBZR", "POLYCAB", "POONAWALLA",
+        "PRESTIGE", "RVNL", "SAIL", "SBICARD", "SCHAEFFLER", "SHREECEM",
+        "SOLARINDS", "SONACOMS", "SUNDARMFIN", "SUNTV", "SUPREMEIND", "SUZLON",
+        "SYNGENE", "TATACHEM", "TATACOMM", "TATAELXSI", "TATATECH", "THERMAX",
+        "TITAGARH", "TORNTPOWER", "TRIDENT", "UPL", "VOLTAS", "YESBANK",
+        "ZFCVINDIA",
+    }
+)
+
 UNIVERSES: dict[str, list[tuple[str, str, str]]] = {
     "nifty50": NIFTY_50,
 }

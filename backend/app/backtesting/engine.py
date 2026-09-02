@@ -47,11 +47,22 @@ class BacktestEngine:
         parameters: dict,
         initial_capital: float,
         cost_model: CostModel | None = None,
+        *,
+        max_gross_exposure: float | None = None,
     ) -> None:
+        """``max_gross_exposure`` caps total position notional (Σ|qty·price|)
+        at ``multiple × initial_capital`` — the backtest's stand-in for a
+        broker margin limit. An order that would breach it is scaled down to
+        fit, or rejected if it cannot. ``None`` (default) leaves exposure
+        uncapped, preserving the pre-existing behaviour for callers that
+        don't opt in. Independently, once mark-to-market equity falls to
+        zero the engine stops accepting new orders (ruin halt) so a
+        bankrupt book can't keep "trading"."""
         self.strategy_cls = strategy_cls
         self.parameters = parameters
         self.initial_capital = initial_capital
         self.cost_model = cost_model
+        self.max_gross_exposure = max_gross_exposure
 
     def run(self, candles_by_instrument: dict[str, list[Bar]]) -> BacktestRunResult:
         context = StrategyContext(parameters=self.parameters)
@@ -79,10 +90,29 @@ class BacktestEngine:
         fills: list[SimulatedFill] = []
         total_costs = 0.0
         cost_breakdown: dict[str, float] = {}
+        exposure_cap = (
+            self.max_gross_exposure * self.initial_capital
+            if self.max_gross_exposure is not None and self.initial_capital > 0
+            else None
+        )
+
+        def gross_exposure() -> float:
+            return sum(
+                abs(q) * last_price.get(s, 0.0) for s, q in positions.items() if q
+            )
 
         for bar in merged_bars:
             last_price[bar.instrument] = bar.close
             context.positions = dict(positions)
+
+            if diag.ruined:
+                # bankrupt book: freeze trading, keep marking positions
+                context.drain_pending_orders()
+                mtm = sum(
+                    qty * last_price.get(inst, 0.0) for inst, qty in positions.items()
+                )
+                equity_curve.append((bar.timestamp, cash + mtm))
+                continue
 
             strategy.on_bar(bar)
 
@@ -103,6 +133,32 @@ class BacktestEngine:
                 if ref_price <= 0:
                     diag.reject("non-positive bar price")
                     continue
+
+                qty = int(order.quantity)
+                sym = order.tradingsymbol
+                cur = positions.get(sym, 0)
+                s = 1 if side == "BUY" else -1
+
+                # --- gross-exposure cap (broker-margin stand-in) ---
+                if exposure_cap is not None:
+                    added = (abs(cur + s * qty) - abs(cur)) * ref_price
+                    if added > 0:
+                        headroom = max(0.0, exposure_cap - gross_exposure())
+                        head_shares = int(headroom / ref_price)
+                        lo, hi = 0, qty
+                        while lo < hi:
+                            mid = (lo + hi + 1) // 2
+                            if (abs(cur + s * mid) - abs(cur)) <= head_shares:
+                                lo = mid
+                            else:
+                                hi = mid - 1
+                        if lo < qty:
+                            diag.exposure_capped_orders += 1
+                            qty = lo
+                        if qty <= 0:
+                            diag.reject("gross exposure cap")
+                            continue
+
                 segment = ""
                 fill_price = ref_price
                 cost = 0.0
@@ -112,23 +168,23 @@ class BacktestEngine:
                         side, ref_price, segment=segment
                     )
                     cb = self.cost_model.charge(
-                        side, fill_price, order.quantity, segment, reference_price=ref_price
+                        side, fill_price, qty, segment, reference_price=ref_price
                     )
                     cost = cb.total
                     for k, v in cb.to_dict().items():
                         cost_breakdown[k] = cost_breakdown.get(k, 0.0) + v
 
-                signed_qty = order.quantity if side == "BUY" else -order.quantity
+                signed_qty = qty if side == "BUY" else -qty
                 cash -= signed_qty * fill_price + cost
                 total_costs += cost
                 diag.fills += 1
-                positions[order.tradingsymbol] = positions.get(order.tradingsymbol, 0) + signed_qty
+                positions[sym] = cur + signed_qty
                 fills.append(
                     SimulatedFill(
                         bar_timestamp=bar.timestamp,
-                        instrument=order.tradingsymbol,
+                        instrument=sym,
                         transaction_type=side,
-                        quantity=order.quantity,
+                        quantity=qty,
                         price=fill_price,
                         reference_price=ref_price,
                         segment=segment,
@@ -141,7 +197,16 @@ class BacktestEngine:
             mark_to_market = sum(
                 qty * last_price.get(instrument, 0.0) for instrument, qty in positions.items()
             )
-            equity_curve.append((bar.timestamp, cash + mark_to_market))
+            equity = cash + mark_to_market
+            equity_curve.append((bar.timestamp, equity))
+            if self.initial_capital > 0:
+                diag.peak_gross_exposure_pct = max(
+                    diag.peak_gross_exposure_pct,
+                    gross_exposure() / self.initial_capital * 100.0,
+                )
+            if equity <= 0 and not diag.ruined:
+                diag.ruined = True
+                diag.ruin_ts = str(bar.timestamp)
 
         strategy.on_stop()
 

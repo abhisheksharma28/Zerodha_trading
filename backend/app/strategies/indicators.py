@@ -41,6 +41,41 @@ def rolling_mean(values: Sequence[float], period: int) -> float | None:
     return sma(values, period)
 
 
+def _ema_series(values: Sequence[float], period: int) -> list[float]:
+    """Full EMA series (one value per input point once seeded), aligned to
+    ``values[period-1:]``. Empty if there is not enough data."""
+    if period <= 0 or len(values) < period:
+        return []
+    k = 2.0 / (period + 1.0)
+    e = sum(values[:period]) / period
+    out = [e]
+    for v in values[period:]:
+        e = v * k + e * (1.0 - k)
+        out.append(e)
+    return out
+
+
+def macd(
+    values: Sequence[float], fast: int = 12, slow: int = 26, signal: int = 9
+) -> tuple[float, float, float] | None:
+    """Latest (macd_line, signal_line, histogram). Needs ``slow + signal``
+    points. ``histogram = macd_line - signal_line``."""
+    if fast >= slow or len(values) < slow + signal:
+        return None
+    fast_s = _ema_series(values, fast)
+    slow_s = _ema_series(values, slow)
+    # align the tails (fast series is longer by slow-fast)
+    macd_line = [f - s for f, s in zip(fast_s[slow - fast:], slow_s, strict=True)]
+    if len(macd_line) < signal:
+        return None
+    sig_s = _ema_series(macd_line, signal)
+    if not sig_s:
+        return None
+    m = macd_line[-1]
+    sg = sig_s[-1]
+    return m, sg, m - sg
+
+
 def rolling_std(values: Sequence[float], period: int, *, ddof: int = 1) -> float | None:
     if period <= 1 or len(values) < period:
         return None
@@ -123,6 +158,61 @@ def rsi(values: Sequence[float], period: int = 14) -> float | None:
         return 100.0
     rs = avg_gain / avg_loss
     return 100.0 - 100.0 / (1.0 + rs)
+
+
+def adx(
+    highs: Sequence[float],
+    lows: Sequence[float],
+    closes: Sequence[float],
+    period: int = 14,
+) -> float | None:
+    """Wilder's Average Directional Index (latest value only).
+
+    Trend-strength gauge, direction-agnostic: ~0-20 weak / no trend,
+    25+ trending, 40+ strong. Needs about ``2 * period + 1`` bars to be
+    meaningful; returns ``None`` before ``period + 1``.
+    """
+    n = len(closes)
+    if period <= 0 or n < period + 1 or len(highs) != n or len(lows) != n:
+        return None
+    plus_dm: list[float] = []
+    minus_dm: list[float] = []
+    trs: list[float] = []
+    for i in range(1, n):
+        up = highs[i] - highs[i - 1]
+        down = lows[i - 1] - lows[i]
+        plus_dm.append(up if (up > down and up > 0) else 0.0)
+        minus_dm.append(down if (down > up and down > 0) else 0.0)
+        trs.append(true_range(highs[i], lows[i], closes[i - 1]))
+    if len(trs) < period:
+        return None
+
+    def _wilder_smooth(seq: list[float]) -> list[float]:
+        out = [sum(seq[:period])]
+        for v in seq[period:]:
+            out.append(out[-1] - out[-1] / period + v)
+        return out
+
+    atr_s = _wilder_smooth(trs)
+    plus_s = _wilder_smooth(plus_dm)
+    minus_s = _wilder_smooth(minus_dm)
+    dx: list[float] = []
+    for a, p, m in zip(atr_s, plus_s, minus_s, strict=True):
+        if a <= 0:
+            dx.append(0.0)
+            continue
+        pdi = 100.0 * p / a
+        mdi = 100.0 * m / a
+        denom = pdi + mdi
+        dx.append(0.0 if denom == 0 else 100.0 * abs(pdi - mdi) / denom)
+    if not dx:
+        return None
+    if len(dx) < period:
+        return sum(dx) / len(dx)
+    adx_v = sum(dx[:period]) / period
+    for d in dx[period:]:
+        adx_v = (adx_v * (period - 1) + d) / period
+    return adx_v
 
 
 def bollinger(

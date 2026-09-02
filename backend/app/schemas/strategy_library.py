@@ -30,6 +30,8 @@ class TemplateDetail(TemplateSummary):
     example: str
     parameters: dict[str, Any]
     presets: dict[str, dict[str, Any]]
+    supported_timeframes: list[str] = []
+    min_bars_required: int = 0
 
 
 class StrategyFromTemplateRequest(BaseModel):
@@ -41,3 +43,13 @@ class StrategyFromTemplateRequest(BaseModel):
 class SeedResult(BaseModel):
     created: list[str]
     skipped: list[str]
+
+
+class BacktestReportRequest(BaseModel):
+    symbols: list[str] = Field(min_length=1, max_length=30)
+    timeframe: str = "1d"
+    start: str | None = None
+    end: str | None = None
+    preset: str = "balanced"
+    capital: float = Field(default=1_000_000.0, gt=0)
+    parameters: dict[str, Any] | None = None

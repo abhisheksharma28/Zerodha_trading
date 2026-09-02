@@ -11,6 +11,15 @@ const StrategiesPage = lazy(() => import("@/pages/StrategiesPage"));
 const StrategyDetailPage = lazy(() => import("@/pages/StrategyDetailPage"));
 const StrategyLibraryPage = lazy(() => import("@/pages/StrategyLibraryPage"));
 const StrategyTemplateDetailPage = lazy(() => import("@/pages/StrategyTemplateDetailPage"));
+const LeaderboardPage = lazy(() => import("@/pages/LeaderboardPage"));
+const ArbitrageLibraryPage = lazy(() => import("@/pages/ArbitrageLabPages").then((m) => ({ default: m.ArbitrageLibraryPage })));
+const ArbScannerPage = lazy(() => import("@/pages/ArbitrageLabPages").then((m) => ({ default: m.ArbScannerPage })));
+const ArbPairDiscoveryPage = lazy(() => import("@/pages/ArbitrageLabPages").then((m) => ({ default: m.ArbPairDiscoveryPage })));
+const ArbBacktestPage = lazy(() => import("@/pages/ArbitrageLabPages").then((m) => ({ default: m.ArbBacktestPage })));
+const ArbPaperPage = lazy(() => import("@/pages/ArbitrageLabPages").then((m) => ({ default: m.ArbPaperPage })));
+const ArbLiveMonitorPage = lazy(() => import("@/pages/ArbitrageLabPages").then((m) => ({ default: m.ArbLiveMonitorPage })));
+const ArbPortfolioPage = lazy(() => import("@/pages/ArbitrageLabPages").then((m) => ({ default: m.ArbPortfolioPage })));
+const ArbAnalyticsPage = lazy(() => import("@/pages/ArbitrageLabPages").then((m) => ({ default: m.ArbAnalyticsPage })));
 const OptionsHniPage = lazy(() => import("@/pages/OptionsHniPage"));
 const BacktestsPage = lazy(() => import("@/pages/BacktestsPage"));
 const BacktestDetailPage = lazy(() => import("@/pages/BacktestDetailPage"));
@@ -40,6 +49,15 @@ export default function App() {
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="strategy-library" element={<StrategyLibraryPage />} />
         <Route path="strategy-library/:slug" element={<StrategyTemplateDetailPage />} />
+        <Route path="leaderboard" element={<LeaderboardPage />} />
+        <Route path="arbitrage" element={<ArbitrageLibraryPage />} />
+        <Route path="arbitrage/scanner" element={<ArbScannerPage />} />
+        <Route path="arbitrage/pair-discovery" element={<ArbPairDiscoveryPage />} />
+        <Route path="arbitrage/backtest" element={<ArbBacktestPage />} />
+        <Route path="arbitrage/paper" element={<ArbPaperPage />} />
+        <Route path="arbitrage/live" element={<ArbLiveMonitorPage />} />
+        <Route path="arbitrage/portfolio" element={<ArbPortfolioPage />} />
+        <Route path="arbitrage/analytics" element={<ArbAnalyticsPage />} />
         <Route path="options-hni" element={<OptionsHniPage />} />
         <Route path="strategies" element={<StrategiesPage />} />
         <Route path="strategies/:strategyId" element={<StrategyDetailPage />} />

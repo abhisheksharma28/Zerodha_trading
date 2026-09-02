@@ -29,6 +29,11 @@ class RunDiagnostics:
     rejected_orders: int = 0
     rejection_reasons: dict[str, int] = field(default_factory=dict)
     signals: dict[str, int] = field(default_factory=dict)
+    # risk / solvency
+    ruined: bool = False
+    ruin_ts: str | None = None
+    peak_gross_exposure_pct: float = 0.0  # max Σ|qty·price| as % of initial capital
+    exposure_capped_orders: int = 0
 
     def reject(self, reason: str) -> None:
         self.rejected_orders += 1
@@ -46,6 +51,10 @@ class RunDiagnostics:
             "rejected_orders": self.rejected_orders,
             "rejection_reasons": self.rejection_reasons,
             "signals": self.signals,
+            "ruined": self.ruined,
+            "ruin_ts": self.ruin_ts,
+            "peak_gross_exposure_pct": round(self.peak_gross_exposure_pct, 2),
+            "exposure_capped_orders": self.exposure_capped_orders,
         }
 
 

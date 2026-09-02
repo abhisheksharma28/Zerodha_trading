@@ -20,7 +20,10 @@ def compute_metrics(equity_curve: list[tuple[str, float]], *, trading_days_per_y
 
     values = [v for _, v in equity_curve]
     start, end = values[0], values[-1]
-    total_return_pct = (end / start - 1) * 100 if start else 0.0
+    # a reported return can't be worse than -100% (total wipeout); a leveraged
+    # book that goes negative would otherwise print numbers like -593%. The
+    # `ruined` flag in RunDiagnostics carries the "it blew up" detail.
+    total_return_pct = max(-100.0, (end / start - 1) * 100) if start and start > 0 else 0.0
 
     n_periods = len(values) - 1
     years = n_periods / trading_days_per_year if trading_days_per_year else 1
@@ -41,13 +44,15 @@ def compute_metrics(equity_curve: list[tuple[str, float]], *, trading_days_per_y
         peak = max(peak, v)
         if peak > 0:
             dd = (peak - v) / peak
-            max_dd = max(max_dd, dd)
+            max_dd = max(max_dd, min(1.0, dd))  # clamp: a >100% "drawdown" is nonsense
 
     returns = []
     for i in range(1, len(values)):
         prev = values[i - 1]
-        if prev:
-            returns.append((values[i] - prev) / prev)
+        # only meaningful while the book is solvent; once equity <= 0 the
+        # ratio explodes and pollutes vol / Sharpe. Clamp each period to -100%.
+        if prev and prev > 0 and values[i] > 0:
+            returns.append(max(-1.0, (values[i] - prev) / prev))
 
     if returns:
         mean_r = sum(returns) / len(returns)

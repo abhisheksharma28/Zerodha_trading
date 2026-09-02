@@ -28,6 +28,7 @@ from app.live.market_stream import HUB
 from app.market_data.instruments import resolve_instrument_token
 from app.market_data.kite_ticker import KiteTicker
 from app.market_data.nse_universe import NIFTY_50
+from app.orderflow import ORDERFLOW_DELTA
 from app.services import broker_service
 
 logger = get_logger(__name__)
@@ -88,6 +89,7 @@ async def _create_ticker(settings: Settings, tokens: list[int]) -> bool:
     def _fan_out(tick: dict[str, Any]) -> None:
         HUB.publish(tick)
         INDICATOR_ENGINE.on_tick(tick)
+        ORDERFLOW_DELTA.on_tick(tick)
 
     _ticker = KiteTicker(
         api_key,

@@ -8,9 +8,11 @@ import { InstrumentSearch } from "@/components/InstrumentSearch";
 import { PageHeader } from "@/components/PageHeader";
 import { PriceChart, type Overlay, type SubPane } from "@/components/PriceChart";
 import { TimeframeSelect } from "@/components/TimeframeSelect";
+import { OrderFlowPanel } from "@/components/orderflow/OrderFlowPanel";
 import { Card, CardContent } from "@/components/ui/card";
 import { useCandles } from "@/hooks/useCandles";
 import { useLiveTick } from "@/hooks/useLiveTick";
+import { useAnchoredVwap } from "@/hooks/useOrderFlow";
 import { useNow } from "@/hooks/useNow";
 import { atr, bollinger, ema, macd, rsi, sma, vwap, type Candle } from "@/lib/indicators";
 import { useTheme } from "@/lib/theme";
@@ -42,6 +44,7 @@ export default function ChartingPage() {
   const [lookbackIdx, setLookbackIdx] = useState(LOOKBACKS.length - 1); // Default
   const [indicators, setIndicators] = useState<Indicator[]>([]);
   const [hover, setHover] = useState<Candle | null>(null);
+  const [showOrderFlow, setShowOrderFlow] = useState(false);
   const { theme } = useTheme();
 
   const drawKey = `${symbol}:${timeframe}`;
@@ -60,6 +63,29 @@ export default function ChartingPage() {
   );
   const now = useNow(1000);
   const agoSecs = dataUpdatedAt ? Math.max(0, Math.round((now - dataUpdatedAt) / 1000)) : null;
+
+  // Anchored VWAP + std-dev bands (order-flow module) — anchored at the last
+  // session open server-side. Only fetched when the Order Flow panel is on.
+  const vwapQ = useAnchoredVwap(symbol, { timeframe, days: lookbackDays, enabled: showOrderFlow });
+  const ofOverlays = useMemo<Overlay[]>(() => {
+    const pts = vwapQ.data?.available ? (vwapQ.data.vwap?.points ?? []) : [];
+    if (!showOrderFlow || pts.length === 0) return [];
+    const line = (key: string, color: string, lineWidth = 1) => ({
+      id: `avwap-${key}`,
+      data: pts
+        .filter((p) => p[key] != null)
+        .map((p) => ({ time: p.ts as Time, value: p[key] })),
+      color,
+      lineWidth,
+    });
+    return [
+      line("vwap", "#e0b64d", 2),
+      line("upper1", "rgba(224,182,77,0.45)"),
+      line("lower1", "rgba(224,182,77,0.45)"),
+      line("upper2", "rgba(224,182,77,0.28)"),
+      line("lower2", "rgba(224,182,77,0.28)"),
+    ];
+  }, [vwapQ.data, showOrderFlow]);
 
   // --- live last-candle updates from the tick stream ---
   const { tick, status: streamStatus } = useLiveTick(symbol);
@@ -158,6 +184,18 @@ export default function ChartingPage() {
         </div>
         <TimeframeSelect value={timeframe} onChange={setTimeframe} />
         <IndicatorMenu value={indicators} onChange={setIndicators} />
+        <button
+          type="button"
+          onClick={() => setShowOrderFlow((v) => !v)}
+          className={cn(
+            "rounded-md border px-3 py-1.5 text-xs font-medium",
+            showOrderFlow
+              ? "border-accent bg-accent-soft text-accent"
+              : "border-line-strong bg-surface text-fg-muted hover:text-fg",
+          )}
+        >
+          Order Flow
+        </button>
         <div className="inline-flex rounded-md border border-line-strong bg-surface p-0.5">
           {LOOKBACKS.map((lb, i) => (
             <button
@@ -231,7 +269,7 @@ export default function ChartingPage() {
               <div className="relative">
                 <PriceChart
                   candles={candles}
-                  overlays={overlays}
+                  overlays={[...overlays, ...ofOverlays]}
                   subPanes={subPanes}
                   themeKey={`${theme}-${symbol}-${timeframe}`}
                   onHover={setHover}
@@ -249,6 +287,15 @@ export default function ChartingPage() {
           )}
         </CardContent>
       </Card>
+
+      {showOrderFlow && candles.length > 0 && (
+        <OrderFlowPanel
+          symbol={symbol}
+          timeframe={timeframe}
+          days={lookbackDays}
+          lastPrice={last?.close ?? null}
+        />
+      )}
     </div>
   );
 }

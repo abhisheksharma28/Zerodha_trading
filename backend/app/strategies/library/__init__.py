@@ -15,19 +15,31 @@ before it is considered for live deployment.
 """
 
 from app.strategies.library.base import TemplateStrategy
+from app.strategies.library.chinese_transformer import ChineseTransformerStrategy
+from app.strategies.library.donchian_breakout import DonchianBreakoutStrategy
 from app.strategies.library.index_futures_arbitrage import IndexFuturesArbitrageStrategy
 from app.strategies.library.latency_arbitrage import LatencyArbitrageStrategy
 from app.strategies.library.mean_reversion import MeanReversionStrategy
 from app.strategies.library.momentum import CrossSectionalMomentumStrategy
+from app.strategies.library.multi_factor import MultiFactorStrategy
 from app.strategies.library.opening_breakout_us import OpeningBreakoutUSStrategy
 from app.strategies.library.opening_range_breakout import OpeningRangeBreakoutStrategy
 from app.strategies.library.pairs_trading import PairsTradingStrategy
+from app.strategies.library.regime_adaptive import RegimeAdaptiveStrategy
 from app.strategies.library.trend_following import TrendFollowingStrategy
+from app.strategies.library.volatility_regime import VolatilityRegimeStrategy
+from app.strategies.library.weapon_candle import WeaponCandleStrategy
 
 TEMPLATES: list[type[TemplateStrategy]] = [
+    ChineseTransformerStrategy,
     CrossSectionalMomentumStrategy,
     TrendFollowingStrategy,
+    DonchianBreakoutStrategy,
     MeanReversionStrategy,
+    MultiFactorStrategy,
+    WeaponCandleStrategy,
+    VolatilityRegimeStrategy,
+    RegimeAdaptiveStrategy,
     OpeningRangeBreakoutStrategy,
     OpeningBreakoutUSStrategy,
     PairsTradingStrategy,
@@ -49,9 +61,15 @@ __all__ = [
     "TEMPLATES",
     "TemplateStrategy",
     "get_template",
+    "ChineseTransformerStrategy",
     "CrossSectionalMomentumStrategy",
     "TrendFollowingStrategy",
+    "DonchianBreakoutStrategy",
     "MeanReversionStrategy",
+    "MultiFactorStrategy",
+    "WeaponCandleStrategy",
+    "VolatilityRegimeStrategy",
+    "RegimeAdaptiveStrategy",
     "OpeningRangeBreakoutStrategy",
     "OpeningBreakoutUSStrategy",
     "PairsTradingStrategy",

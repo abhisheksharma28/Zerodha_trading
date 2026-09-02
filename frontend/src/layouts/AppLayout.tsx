@@ -17,6 +17,8 @@ import {
   Radar,
   Rocket,
   Settings as SettingsIcon,
+  Scale,
+  Trophy,
   Wallet,
 } from "lucide-react";
 
@@ -42,9 +44,23 @@ const MENUS: { label: string; items: Item[] }[] = [
     items: [
       { to: "/backtests", label: "Backtest", icon: FlaskConical, desc: "Run & analyse strategies" },
       { to: "/strategy-library", label: "Strategy Library", icon: LibraryBig, desc: "Research-backed templates" },
+      { to: "/leaderboard", label: "Leaderboard", icon: Trophy, desc: "Strategy ranking — backtest & paper" },
       { to: "/strategies", label: "My Strategies", icon: ListChecks, desc: "Your saved strategies" },
       { to: "/options-hni", label: "NIFTY Monthly HNI", icon: Layers, desc: "1:3:2 CALL ratio spread" },
       { to: "/analytics", label: "Analytics", icon: BarChart3, desc: "Aggregate performance" },
+    ],
+  },
+  {
+    label: "Arbitrage Lab",
+    items: [
+      { to: "/arbitrage", label: "Strategy Library", icon: Scale, desc: "Honesty-classified arb strategies" },
+      { to: "/arbitrage/pair-discovery", label: "Pair Discovery", icon: Radar, desc: "Cointegrated tradeable pairs" },
+      { to: "/arbitrage/backtest", label: "Backtesting", icon: FlaskConical, desc: "Dedicated multi-leg engine" },
+      { to: "/arbitrage/scanner", label: "Opportunity Scanner", icon: Activity, desc: "Live net-edge screening" },
+      { to: "/arbitrage/paper", label: "Paper Trading", icon: Rocket, desc: "Multi-leg paper execution" },
+      { to: "/arbitrage/live", label: "Live Monitor", icon: Activity, desc: "Open structures & hedge state" },
+      { to: "/arbitrage/portfolio", label: "Portfolio", icon: Wallet, desc: "Arb runs — separate from leaderboard" },
+      { to: "/arbitrage/analytics", label: "Analytics", icon: BarChart3, desc: "Backtest vs paper, edge capture" },
     ],
   },
   {

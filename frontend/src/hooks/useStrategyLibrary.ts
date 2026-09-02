@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   strategyLibraryApi,
+  type BacktestReportPayload,
   type CreateFromTemplatePayload,
 } from "@/api/strategyLibrary";
 import { strategyKeys } from "@/hooks/useStrategies";
@@ -32,6 +33,28 @@ export function useCreateStrategyFromTemplate(slug: string) {
     mutationFn: (payload: CreateFromTemplatePayload) =>
       strategyLibraryApi.createFromTemplate(slug, payload),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: strategyKeys.all }),
+  });
+}
+
+export function useNifty200Universe() {
+  return useQuery({
+    queryKey: ["strategy-library", "universe", "nifty200"],
+    queryFn: strategyLibraryApi.nifty200,
+    staleTime: 24 * 60 * 60_000,
+  });
+}
+
+export function useBacktestReport(slug: string) {
+  return useMutation({
+    mutationFn: (payload: BacktestReportPayload) =>
+      strategyLibraryApi.backtestReport(slug, payload),
+  });
+}
+
+export function useDownloadBacktestReportPdf(slug: string) {
+  return useMutation({
+    mutationFn: (payload: BacktestReportPayload) =>
+      strategyLibraryApi.downloadBacktestReportPdf(slug, payload),
   });
 }
 

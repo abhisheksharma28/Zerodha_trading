@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { DynamicParamsForm } from "@/components/DynamicParamsForm";
+import { StrategyBacktestReport } from "@/components/StrategyBacktestReport";
 import { schemaErrors } from "@/lib/paramValidation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,6 +48,8 @@ export default function StrategyTemplateDetailPage() {
       </p>
 
       {building && <BuilderPanel template={t} />}
+
+      <StrategyBacktestReport template={t} />
 
       <Section title="Overview">
         <p className="text-sm text-fg-muted">{t.description}</p>

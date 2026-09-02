@@ -70,11 +70,13 @@ def test_compute_metrics_detects_drawdown():
 
 def test_compute_metrics_survives_negative_terminal_equity():
     """A blown-up backtest (equity goes negative on leverage/shorts) must not
-    raise 'type complex doesn't define __round__'."""
+    raise, and must floor the reported return at -100% (total wipeout) rather
+    than printing nonsense like -593%."""
     m = compute_metrics([("t0", 100_000.0), ("t1", 40_000.0), ("t2", -12_000.0)])
     assert isinstance(m["cagr_pct"], float)
     assert m["cagr_pct"] == -100.0
-    assert m["total_return_pct"] < -100.0
+    assert m["total_return_pct"] == -100.0
+    assert m["max_drawdown_pct"] <= 100.0
 
 
 def test_compute_performance_survives_negative_terminal_equity():

@@ -13,6 +13,9 @@ export interface CreateBacktestPayload {
 export interface RunBacktestPayload {
   candles?: Record<string, Array<[string, number, number, number, number, number]>>;
   costs?: Record<string, number>;
+  /** Per-run strategy parameter overrides (e.g. fixed quantity / sizing method).
+   *  The saved strategy version is not modified. */
+  parameter_overrides?: Record<string, unknown>;
 }
 
 export const backtestsApi = {
@@ -24,6 +27,12 @@ export const backtestsApi = {
     apiClient.post<Backtest>(`/backtests/${id}/run`, payload).then((r) => r.data),
   report: (id: string) =>
     apiClient.get<BacktestReport>(`/backtests/${id}/report`).then((r) => r.data),
+  paramSim: (id: string, pct = 5, n = 24) =>
+    apiClient
+      .post(`/backtests/${id}/param-sim`, null, { params: { pct, n_samples: n } })
+      .then((r) => r.data),
+  monteCarlo: (id: string) =>
+    apiClient.post(`/backtests/${id}/robustness`).then((r) => r.data),
   timeframes: () =>
     apiClient.get<TimeframeInfo[]>("/backtests/timeframes").then((r) => r.data),
 };

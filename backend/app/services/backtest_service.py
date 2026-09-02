@@ -49,6 +49,21 @@ _MAX_PERSISTED_ORDERS = 5000
 logger = get_logger(__name__)
 
 
+def merge_parameter_overrides(
+    strategy_cls: type, base_params: dict[str, Any] | None, overrides: dict[str, Any]
+) -> dict[str, Any]:
+    """Layer per-run parameter overrides on the saved version parameters.
+    For library templates the result is re-validated against the template
+    schema (unknown keys / out-of-range values are rejected as a 400)."""
+    merged: dict[str, Any] = {**(base_params or {}), **(overrides or {})}
+    if overrides and hasattr(strategy_cls, "resolve_params"):
+        try:
+            merged = strategy_cls.resolve_params(merged)
+        except Exception as exc:  # ParamError and friends
+            raise ValidationError(f"Invalid parameter override: {exc}") from exc
+    return merged
+
+
 def create_backtest(db: Session, payload: BacktestCreate) -> Backtest:
     version = db.get(StrategyVersion, payload.strategy_version_id)
     if version is None:
@@ -139,6 +154,7 @@ def execute_backtest(
     settings: Settings,
     inline_candles: dict[str, list[list[Any]]] | None = None,
     cost_config: dict[str, Any] | None = None,
+    parameter_overrides: dict[str, Any] | None = None,
 ) -> Backtest:
     """Resolve candle data for a PENDING/FAILED backtest, then run the engine.
 
@@ -189,6 +205,7 @@ def execute_backtest(
         return run_backtest(
             db, backtest_id, candles_by_instrument,
             cost_config=cost_config, data_quality=dq,
+            parameter_overrides=parameter_overrides,
         )
     except Exception:  # noqa: BLE001 - run_backtest already recorded FAILED + committed
         db.refresh(backtest)
@@ -253,6 +270,7 @@ def run_backtest(
     *,
     cost_config: dict[str, Any] | None = None,
     data_quality: dict[str, Any] | None = None,
+    parameter_overrides: dict[str, Any] | None = None,
 ) -> Backtest:
     """`candles_by_instrument` is pre-fetched by the caller (typically via
     app.market_data.cache.get_candles per instrument) so this function has
@@ -260,7 +278,9 @@ def run_backtest(
     data — see backend/tests/test_backtesting.py.
 
     A realistic Indian cost model is applied by default; pass an explicit
-    `cost_config` (e.g. all-zero rates) to see gross P&L instead."""
+    `cost_config` (e.g. all-zero rates) to see gross P&L instead.
+    `parameter_overrides` layers on top of the saved version parameters for
+    this run only (e.g. a fixed quantity per order)."""
 
     backtest = db.get(Backtest, backtest_id)
     if backtest is None:
@@ -270,6 +290,9 @@ def run_backtest(
     if version is None:
         raise NotFoundError(f"Strategy version {backtest.strategy_version_id} not found")
     strategy_cls = load_strategy_class(version.source_code, version.entry_point)
+
+    overrides = {k: v for k, v in (parameter_overrides or {}).items() if v is not None}
+    effective_params = merge_parameter_overrides(strategy_cls, version.parameters, overrides)
 
     try:
         cost_model = CostModel(CostConfig.from_dict(cost_config))
@@ -282,8 +305,8 @@ def run_backtest(
 
     try:
         initial_capital = float(backtest.initial_capital)
-        engine = BacktestEngine(strategy_cls, version.parameters, initial_capital,
-                                cost_model=cost_model)
+        engine = BacktestEngine(strategy_cls, effective_params, initial_capital,
+                                cost_model=cost_model, max_gross_exposure=4.0)
         result = engine.run(candles_by_instrument)
 
         mark_prices = {
@@ -326,6 +349,7 @@ def run_backtest(
             "charts": charts,
             "trades": [t.to_dict() for t in trades][:2000],
             "cost_config": cost_model.config.to_dict(),
+            "parameter_overrides": overrides,
             "orders_persisted": orders_persisted,
             "data_quality": dq,
             "diagnostics": diagnostics,

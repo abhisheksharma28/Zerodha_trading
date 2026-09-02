@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 import type { SeriesMarker, Time } from "lightweight-charts";
 import {
@@ -21,6 +22,7 @@ import { PriceChart } from "@/components/PriceChart";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { backtestsApi } from "@/api/backtests";
 import { useBacktest, useBacktestReport, useRunBacktest } from "@/hooks/useBacktests";
 import { useCandles } from "@/hooks/useCandles";
 import { inr } from "@/lib/format";
@@ -155,6 +157,10 @@ export default function BacktestDetailPage() {
         <NoTradesPanel report={report} />
       )}
       {report && <DiagnosticsCard report={report} />}
+
+      {report && backtestId && report.trades.length > 0 && (
+        <RobustnessCard backtestId={backtestId} />
+      )}
 
       {report?.metrics && <MetricsGrid m={report.metrics} />}
       {report && <CostBreakdown report={report} />}
@@ -398,8 +404,20 @@ function DiagnosticsCard({ report }: { report: BacktestReport }) {
           {chip("orders", fmt(d.orders_submitted, 0))}
           {chip("fills", fmt(d.fills, 0))}
           {d.rejected_orders > 0 && chip("rejected", fmt(d.rejected_orders, 0))}
+          {d.ruined && chip("⚠ ruined", d.ruin_ts?.slice(0, 16) ?? "yes")}
+          {d.peak_gross_exposure_pct != null &&
+            chip("peak exposure", `${fmt(d.peak_gross_exposure_pct, 0)}%`)}
           {d.first_bar_ts && chip("span", `${d.first_bar_ts.slice(0, 10)} → ${d.last_bar_ts?.slice(0, 10)}`)}
         </div>
+        {report.metrics?.parameter_overrides &&
+          Object.keys(report.metrics.parameter_overrides as object).length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              <span className="text-xs text-fg-faint">param overrides:</span>
+              {Object.entries(report.metrics.parameter_overrides as Record<string, unknown>).map(
+                ([k, v]) => chip(k, String(v)),
+              )}
+            </div>
+          )}
         {Object.keys(d.signals).length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             <span className="text-xs text-fg-faint">signals:</span>
@@ -605,6 +623,153 @@ function TradesTable({ report }: { report: BacktestReport }) {
             </tbody>
           </table>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+interface McResult {
+  available?: boolean;
+  n_trades?: number;
+  bootstrap?: {
+    return_pct: { p5: number; p50: number; p95: number };
+    prob_loss: number;
+    prob_ruin: number;
+    prob_dd_beyond_threshold: number;
+  };
+}
+interface SimResult {
+  available?: boolean;
+  reason?: string;
+  verdict?: "stable" | "fragile";
+  n_samples?: number;
+  pct?: number;
+  perturbed_params?: string[];
+  ruined_fraction?: number;
+  base?: Record<string, number>;
+  distribution?: Record<string, { p5: number; p50: number; p95: number; std: number }>;
+  notes?: string[];
+}
+
+function RobustnessCard({ backtestId }: { backtestId: string }) {
+  const mc = useMutation({ mutationFn: () => backtestsApi.monteCarlo(backtestId) as Promise<McResult> });
+  const sim = useMutation({ mutationFn: () => backtestsApi.paramSim(backtestId) as Promise<SimResult> });
+
+  const KROWS: { key: string; label: string; s?: string; d?: number }[] = [
+    { key: "return_pct", label: "Return", s: "%", d: 1 },
+    { key: "sharpe_ratio", label: "Sharpe", d: 2 },
+    { key: "max_drawdown_pct", label: "Max DD", s: "%", d: 1 },
+    { key: "calmar_ratio", label: "Calmar", d: 2 },
+    { key: "win_rate_pct", label: "Win %", s: "%", d: 1 },
+    { key: "total_trades", label: "Trades", d: 0 },
+  ];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Robustness</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" disabled={mc.isPending} onClick={() => mc.mutate()}>
+            {mc.isPending ? "Running…" : "Monte Carlo (trade resample)"}
+          </Button>
+          <Button
+            variant="outline"
+            disabled={sim.isPending}
+            onClick={() => {
+              if (window.confirm("Re-run this backtest ~24 times with every numeric parameter jittered ±5%? A few minutes."))
+                sim.mutate();
+            }}
+          >
+            {sim.isPending ? "Simulating…" : "±5% parameter sim"}
+          </Button>
+        </div>
+        {(mc.error || sim.error) && (
+          <p className="text-xs text-neg">{((mc.error || sim.error) as Error).message}</p>
+        )}
+
+        {mc.data?.available && mc.data.bootstrap && (
+          <div className="text-xs">
+            <div className="mb-1 font-semibold text-fg-muted">
+              Monte Carlo · {mc.data.n_trades} trades resampled
+            </div>
+            <div className="flex flex-wrap gap-x-6 gap-y-1 text-fg-muted">
+              <span>
+                Return p5/p50/p95:{" "}
+                <span className="tabular-nums">
+                  {mc.data.bootstrap.return_pct.p5.toFixed(1)} /{" "}
+                  {mc.data.bootstrap.return_pct.p50.toFixed(1)} /{" "}
+                  {mc.data.bootstrap.return_pct.p95.toFixed(1)}%
+                </span>
+              </span>
+              <span>P(lose): {(mc.data.bootstrap.prob_loss * 100).toFixed(1)}%</span>
+              <span className={mc.data.bootstrap.prob_ruin > 0 ? "text-neg" : "text-pos"}>
+                P(ruin): {(mc.data.bootstrap.prob_ruin * 100).toFixed(2)}%
+              </span>
+              <span>
+                P(DD&gt;20%): {(mc.data.bootstrap.prob_dd_beyond_threshold * 100).toFixed(1)}%
+              </span>
+            </div>
+          </div>
+        )}
+        {mc.data && !mc.data.available && (
+          <p className="text-xs text-fg-faint">Not enough closed trades for a resample.</p>
+        )}
+
+        {sim.data && (
+          <div className="text-xs">
+            <div className="mb-1 font-semibold text-fg-muted">
+              ±{sim.data.pct}% parameter sim ·{" "}
+              <span className={sim.data.verdict === "fragile" ? "text-neg" : "text-pos"}>
+                {sim.data.verdict ?? "—"}
+              </span>{" "}
+              · {sim.data.n_samples} samples
+            </div>
+            {sim.data.notes && (
+              <ul className="mb-2 list-disc space-y-0.5 pl-5 text-fg-muted">
+                {sim.data.notes.map((n) => (
+                  <li key={n}>{n}</li>
+                ))}
+              </ul>
+            )}
+            {sim.data.distribution && sim.data.base && (
+              <table className="w-full text-left text-[11px]">
+                <thead className="text-fg-faint">
+                  <tr>
+                    <th className="py-1 pr-3">KPI</th>
+                    <th className="py-1 pr-3">Base</th>
+                    <th className="py-1 pr-3">p5</th>
+                    <th className="py-1 pr-3">Median</th>
+                    <th className="py-1 pr-3">p95</th>
+                    <th className="py-1">Std</th>
+                  </tr>
+                </thead>
+                <tbody className="text-fg-muted">
+                  {KROWS.map(({ key, label, s = "", d = 2 }) => {
+                    const dd = sim.data!.distribution![key];
+                    const base = sim.data!.base![key];
+                    if (!dd) return null;
+                    const oob = base < dd.p5 || base > dd.p95;
+                    return (
+                      <tr key={key} className="border-t border-line">
+                        <td className="py-1 pr-3">{label}</td>
+                        <td className={`py-1 pr-3 font-semibold tabular-nums ${oob ? "text-neg" : ""}`}>
+                          {base.toFixed(d)}
+                          {s}
+                        </td>
+                        <td className="py-1 pr-3 tabular-nums">{dd.p5.toFixed(d)}{s}</td>
+                        <td className="py-1 pr-3 tabular-nums">{dd.p50.toFixed(d)}{s}</td>
+                        <td className="py-1 pr-3 tabular-nums">{dd.p95.toFixed(d)}{s}</td>
+                        <td className="py-1 tabular-nums">{dd.std.toFixed(d)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

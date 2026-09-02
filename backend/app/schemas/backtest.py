@@ -29,10 +29,17 @@ class BacktestRunRequest(BaseModel):
     app.backtesting.costs.CostConfig): e.g. ``{"slippage_bps": 0,
     "brokerage_flat": 0, ...}`` to approximate gross P&L. Unknown keys are
     rejected.
+
+    ``parameter_overrides`` overrides individual strategy parameters for
+    this run only (the saved strategy version is untouched) — e.g.
+    ``{"sizing_method": "fixed_quantity", "fixed_quantity": 10}`` to fix the
+    quantity per order. For library templates the merged parameters are
+    re-validated against the template schema and unknown keys are rejected.
     """
 
     candles: dict[str, list[list[Any]]] | None = None
     costs: dict[str, float] | None = None
+    parameter_overrides: dict[str, Any] | None = None
 
 
 class BacktestReport(BaseModel):

@@ -32,6 +32,16 @@ data/
 *.csv
 !frontend/**/*.csv
 
+# --- Local research/backtest run artifacts (regenerable) ---
+backend/.arbitrage_cache/
+backend/.chinese_transformer_cache/
+backend/.leaderboard_cache/
+backend/.robustness_cache/
+backend/.tuning_cache/
+backend/.market_data_cache/
+backend/*.xlsx
+backend/*.pdf
+
 # --- Editors / OS ---
 .vscode/
 .idea/

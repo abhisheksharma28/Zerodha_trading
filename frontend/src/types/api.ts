@@ -165,6 +165,8 @@ export interface StrategyTemplateDetail extends StrategyTemplateSummary {
   example: string;
   parameters: Record<string, TemplateParamSpec>;
   presets: Record<string, Record<string, unknown>>;
+  supported_timeframes?: string[];
+  min_bars_required?: number;
 }
 
 export interface BacktestDiagnostics {
@@ -178,6 +180,10 @@ export interface BacktestDiagnostics {
   rejected_orders: number;
   rejection_reasons: Record<string, number>;
   signals: Record<string, number>;
+  ruined?: boolean;
+  ruin_ts?: string | null;
+  peak_gross_exposure_pct?: number;
+  exposure_capped_orders?: number;
 }
 
 export interface BacktestReport {

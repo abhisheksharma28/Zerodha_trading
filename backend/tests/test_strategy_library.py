@@ -15,13 +15,18 @@ from app.strategies.base import Bar, StrategyContext
 from app.strategies.library import (
     TEMPLATES,
     CrossSectionalMomentumStrategy,
+    DonchianBreakoutStrategy,
     IndexFuturesArbitrageStrategy,
     LatencyArbitrageStrategy,
     MeanReversionStrategy,
+    MultiFactorStrategy,
     OpeningBreakoutUSStrategy,
     OpeningRangeBreakoutStrategy,
     PairsTradingStrategy,
+    RegimeAdaptiveStrategy,
     TrendFollowingStrategy,
+    VolatilityRegimeStrategy,
+    WeaponCandleStrategy,
 )
 from app.strategies.library.base import ParamError
 
@@ -150,6 +155,214 @@ def test_trend_following_atr_stop_forces_exit():
 
 
 # --------------------------------------------------------------------------
+# donchian breakout
+# --------------------------------------------------------------------------
+
+def _donchian_params(**over):
+    p = dict(DonchianBreakoutStrategy.presets()["balanced"])
+    p.update(entry_period=20, exit_period=10, breakout_on="close", allow_short=False,
+             atr_period=5, atr_stop_mult=2.0, trailing_atr_mult=0.0, max_holding_bars=0,
+             rvol_min=0.0, atr_expansion_min=0.0, adx_min=0.0, regime_filter_enabled=False,
+             sizing_method="fixed_quantity", fixed_quantity=10)
+    p.update(over)
+    return DonchianBreakoutStrategy.resolve_params(p)
+
+
+def test_donchian_enters_long_on_channel_breakout():
+    # 30 bars ranging 99-101, then a decisive close above the 20-bar high.
+    closes = [100 + (i % 3 - 1) for i in range(30)] + [108.0]
+    bars = [_bar("INFY", float(c), daily_ts(i)) for i, c in enumerate(closes)]
+    emitted, positions = run(DonchianBreakoutStrategy, _donchian_params(), bars)
+    assert emitted, "expected a breakout entry"
+    assert emitted[-1][1][0].transaction_type == "BUY"
+    assert positions.get("INFY", 0) == 10
+
+
+def test_donchian_exits_on_opposite_channel():
+    closes = [100 + (i % 3 - 1) for i in range(30)] + [108.0, 109.0, 110.0]
+    closes += [92.0]  # decisive close below the 10-bar low -> channel exit
+    bars = [_bar("INFY", float(c), daily_ts(i)) for i, c in enumerate(closes)]
+    emitted, positions = run(DonchianBreakoutStrategy, _donchian_params(atr_stop_mult=0.0), bars)
+    assert emitted and emitted[-1][1][-1].transaction_type == "SELL"
+    assert positions.get("INFY", 0) == 0
+
+
+def test_donchian_atr_stop_forces_exit():
+    closes = [100 + (i % 3 - 1) for i in range(30)] + [108.0, 109.0]
+    closes += [95.0]  # sharp drop below entry - 2*ATR
+    bars = [_bar("INFY", float(c), daily_ts(i)) for i, c in enumerate(closes)]
+    emitted, positions = run(DonchianBreakoutStrategy, _donchian_params(atr_stop_mult=2.0), bars)
+    assert emitted and positions.get("INFY", 0) == 0
+    assert emitted[-1][1][-1].transaction_type == "SELL"
+
+
+def test_donchian_rvol_filter_blocks_a_thin_breakout():
+    closes = [100 + (i % 3 - 1) for i in range(30)] + [108.0]
+    # breakout bar has only 10% of the recent average volume
+    bars = [
+        _bar("INFY", float(c), daily_ts(i), vol=100_000.0 if i < 30 else 10_000.0)
+        for i, c in enumerate(closes)
+    ]
+    emitted, _ = run(DonchianBreakoutStrategy, _donchian_params(rvol_min=1.5), bars)
+    assert not emitted, "thin-volume breakout should be filtered out"
+
+
+# --------------------------------------------------------------------------
+# weapon candle
+# --------------------------------------------------------------------------
+
+def _weapon_params(**over):
+    p = dict(WeaponCandleStrategy.presets()["aggressive"])  # classic mode, no filters
+    p.update(mode="classic", require_prev_below=True, allow_short=False, arm_expiry_bars=3,
+             ema_period=9, macd_fast=6, macd_slow=13, macd_signal=5, atr_stop_mult=0.0,
+             trailing_atr_mult=0.0, take_profit_r=0.0, max_holding_bars=0, product="CNC",
+             regime_filter_enabled=False, sizing_method="fixed_quantity", fixed_quantity=10)
+    p.update(over)
+    return WeaponCandleStrategy.resolve_params(p)
+
+
+def _weapon_bars(closes: list[float]) -> list[Bar]:
+    # give each bar a high/low a touch beyond the close so break/stop logic has room
+    out = []
+    for i, c in enumerate(closes):
+        hi = c + 1.0
+        lo = c - 1.0
+        out.append(_bar("INFY", float(c), daily_ts(i), high=hi, low=lo))
+    return out
+
+
+def test_weapon_candle_enters_on_break_of_the_reclaim_bar():
+    # 30 bars sliding DOWN (price + MACD below EMA9), then a sharp reclaim bar,
+    # then a bar that takes out the reclaim bar's high -> entry.
+    closes = [100 - i for i in range(30)] + [92.0, 120.0, 121.0, 122.0]
+    emitted, positions = run(WeaponCandleStrategy, _weapon_params(), _weapon_bars(closes))
+    assert emitted, "expected a weapon-candle breakout entry"
+    assert emitted[-1][1][0].transaction_type == "BUY"
+    assert positions.get("INFY", 0) == 10
+
+
+def test_weapon_candle_stop_is_the_reclaim_bar_low():
+    closes = [100 - i for i in range(30)] + [92.0, 120.0, 121.0]  # entry on the 121 bar
+    closes += [90.0]  # collapses below the reclaim bar's low (~119) -> stop out
+    emitted, positions = run(WeaponCandleStrategy, _weapon_params(), _weapon_bars(closes))
+    assert emitted and positions.get("INFY", 0) == 0
+    assert emitted[-1][1][-1].transaction_type == "SELL"
+
+
+def test_weapon_candle_arm_expires_without_a_break():
+    # reclaim bar closes 92 (high ~93); following bars stay well below that high
+    closes = [100 - i for i in range(30)] + [92.0, 89.0, 89.0, 89.0, 89.0, 89.0]
+    emitted, _ = run(WeaponCandleStrategy, _weapon_params(arm_expiry_bars=2), _weapon_bars(closes))
+    assert not emitted, "arm should expire before any break"
+
+
+def test_weapon_candle_enhanced_mode_blocks_low_alpha_signals():
+    closes = [100 - i for i in range(30)] + [92.0, 120.0, 121.0, 122.0]
+    p = _weapon_params(mode="enhanced", alpha_score_min=99.0, use_vwap_align=False,
+                       use_volume_expansion=False)
+    emitted, _ = run(WeaponCandleStrategy, p, _weapon_bars(closes))
+    assert not emitted, "alpha score below threshold must block the entry"
+
+
+# --------------------------------------------------------------------------
+# volatility regime
+# --------------------------------------------------------------------------
+
+def _volreg_params(**over):
+    p = dict(VolatilityRegimeStrategy.presets()["balanced"])
+    p.update(mode="trend_only", allow_short=False, vol_lookback=10, vol_percentile_lookback=40,
+             breakout_period=10, bollinger_period=10, trend_ma_period=15, trend_ma_type="sma",
+             atr_period=5, atr_stop_mult=2.0, trailing_atr_mult=0.0, no_trade_in_extreme=True,
+             regime_filter_enabled=False, sizing_method="fixed_quantity", fixed_quantity=10)
+    p.update(over)
+    return VolatilityRegimeStrategy.resolve_params(p)
+
+
+def _wobble(base: list[float], amp: float, seed: int) -> list[Bar]:
+    import random
+
+    rng = random.Random(seed)
+    out = []
+    for i, c in enumerate(base):
+        c2 = c + rng.uniform(-amp, amp)
+        out.append(_bar("INFY", max(1.0, c2), daily_ts(i), high=c2 + amp + 1, low=c2 - amp - 1))
+    return out
+
+
+def test_volatility_regime_takes_a_trend_cross_in_calm_vol():
+    # phase 1: noisy & flat (high vol history); phase 2: calm smooth ramp up
+    base = [100.0] * 45 + [100 + 1.2 * i for i in range(25)]
+    bars = _wobble(base[:45], 6.0, 1) + _wobble(base[45:], 0.3, 2)
+    # fix instrument/time continuity
+    bars = [
+        _bar("INFY", b.close, daily_ts(i), high=b.high, low=b.low)
+        for i, b in enumerate(bars)
+    ]
+    emitted, positions = run(VolatilityRegimeStrategy, _volreg_params(), bars)
+    assert emitted, "expected a trend entry once vol calms and price crosses the MA"
+    assert emitted[-1][1][0].transaction_type == "BUY"
+
+
+def test_volatility_regime_blocks_entries_in_extreme_vol():
+    # phase 1 calm, phase 2 very noisy ramp -> current vol percentile is EXTREME
+    base = [100.0] * 45 + [100 + 1.2 * i for i in range(25)]
+    bars = _wobble(base[:45], 0.3, 3) + _wobble(base[45:], 9.0, 4)
+    bars = [_bar("INFY", b.close, daily_ts(i), high=b.high, low=b.low) for i, b in enumerate(bars)]
+    emitted, _ = run(VolatilityRegimeStrategy, _volreg_params(no_trade_in_extreme=True), bars)
+    emitted_off, _ = run(
+        VolatilityRegimeStrategy, _volreg_params(no_trade_in_extreme=False), bars
+    )
+    assert len(emitted) <= len(emitted_off)
+
+
+# --------------------------------------------------------------------------
+# regime adaptive
+# --------------------------------------------------------------------------
+
+def _regime_params(**over):
+    p = dict(RegimeAdaptiveStrategy.presets()["balanced"])
+    p.update(benchmark_symbol="", adx_period=7, adx_trend_min=22.0, er_period=10,
+             er_trend_min=0.35, slope_ma_period=15, slope_lookback=5, vol_lookback=10,
+             vol_percentile_lookback=40, high_vol_pct=95.0, breakout_period=10,
+             breakout_exit_period=5, mr_lookback=10, mr_entry_z=1.5, mr_exit_z=0.3,
+             atr_period=5, atr_stop_mult=2.5, trailing_atr_mult=0.0, allow_short=False,
+             exit_on_regime_flip=True, regime_filter_enabled=False,
+             sizing_method="fixed_quantity", fixed_quantity=10)
+    p.update(over)
+    return RegimeAdaptiveStrategy.resolve_params(p)
+
+
+def test_regime_adaptive_breaks_out_in_a_trend():
+    closes = [100 + (i % 3 - 1) for i in range(25)] + [100 + 2.5 * i for i in range(1, 30)]
+    bars = [_bar("INFY", float(c), daily_ts(i), high=c + 1, low=c - 1) for i, c in enumerate(closes)]
+    emitted, positions = run(RegimeAdaptiveStrategy, _regime_params(trade_ranging=False), bars)
+    assert emitted, "expected a trend breakout entry in the TRENDING regime"
+    assert emitted[-1][1][0].transaction_type == "BUY"
+    assert positions.get("INFY", 0) == 10
+
+
+def test_regime_adaptive_mean_reverts_in_a_range():
+    import math
+
+    base = [100 + 4 * math.sin(i / 2.0) for i in range(55)]
+    base += [82.0]  # sharp dip -> z well below -1.5 while regime is RANGING
+    bars = [_bar("INFY", float(c), daily_ts(i), high=c + 1.2, low=c - 1.2)
+            for i, c in enumerate(base)]
+    emitted, positions = run(RegimeAdaptiveStrategy, _regime_params(trade_trending=False), bars)
+    assert emitted, "expected a mean-reversion entry in the RANGING regime"
+    sides = [o.transaction_type for _, orders in emitted for o in orders]
+    assert sides[0] == "BUY", "first mean-reversion order should be a long on the dip"
+
+
+def test_regime_adaptive_no_short_when_disabled():
+    closes = [200 - 2.0 * i for i in range(55)]  # steady downtrend
+    bars = [_bar("INFY", max(1.0, float(c)), daily_ts(i), high=c + 1, low=c - 1)
+            for i, c in enumerate(closes)]
+    _, positions = run(RegimeAdaptiveStrategy, _regime_params(allow_short=False), bars)
+    assert all(q >= 0 for q in positions.values())
+
+
+# --------------------------------------------------------------------------
 # mean reversion
 # --------------------------------------------------------------------------
 
@@ -216,6 +429,96 @@ def test_momentum_longs_the_strongest_names_on_rebalance():
     longs = {s for s, q in positions.items() if q > 0}
     assert "AAA" in longs and "DDD" not in longs
     assert all(q >= 0 for q in positions.values())  # long-only
+
+
+# --------------------------------------------------------------------------
+# multi-factor investing
+# --------------------------------------------------------------------------
+
+def _mf_params(**over):
+    p = dict(MultiFactorStrategy.presets()["balanced"])
+    p.update(
+        mom_lookback_short=15, mom_lookback_mid=30, mom_lookback_long=55, mom_skip_recent=2,
+        volatility_lookback=20, trend_quality_lookback=30, liquidity_lookback=10,
+        weight_momentum=1.0, weight_low_volatility=0.0, weight_trend_quality=0.0,
+        weight_liquidity=0.0, num_long_positions=2, num_short_positions=0, allow_short=False,
+        weighting="equal_weight", rebalance_frequency="monthly", min_avg_turnover=0.0,
+        min_history_bars=0, max_volatility_pct=5000.0, capital_allocation=1_000_000.0,
+    )
+    p.update(over)
+    return MultiFactorStrategy.resolve_params(p)
+
+
+def test_multi_factor_holds_top_ranked_names_on_rebalance():
+    names = ["AAA", "BBB", "CCC", "DDD", "EEE", "FFF"]
+    slopes = {"AAA": 3.0, "BBB": 2.5, "CCC": 0.1, "DDD": 0.0, "EEE": -0.5, "FFF": -1.5}
+    steps: list[Bar] = []
+    for day in range(90):
+        for n in names:
+            steps.append(_bar(n, max(1.0, 500.0 + slopes[n] * day), daily_ts(day), vol=1_000_000))
+    emitted, positions = run(MultiFactorStrategy, _mf_params(), steps)
+    assert emitted, "expected a rebalance to fire"
+    longs = {s for s, q in positions.items() if q > 0}
+    assert longs == {"AAA", "BBB"}
+    assert all(q >= 0 for q in positions.values())
+
+
+def test_multi_factor_low_vol_weight_prefers_the_calm_name():
+    import random
+
+    random.seed(7)
+    names = ["CALM", "WILD", "MID1", "MID2", "MID3"]
+    steps: list[Bar] = []
+    for day in range(90):
+        for n in names:
+            drift = 500.0 + 1.0 * day  # identical upward drift for all
+            noise = {"CALM": 0.4, "WILD": 22.0, "MID1": 6.0, "MID2": 6.0, "MID3": 6.0}[n]
+            px = max(1.0, drift + random.uniform(-noise, noise))
+            steps.append(_bar(n, px, daily_ts(day), vol=1_000_000))
+    params = _mf_params(weight_momentum=0.0, weight_low_volatility=1.0,
+                        weight_trend_quality=0.0, num_long_positions=1)
+    _, positions = run(MultiFactorStrategy, params, steps)
+    longs = {s for s, q in positions.items() if q > 0}
+    assert longs == {"CALM"}
+
+
+def test_multi_factor_turnover_filter_excludes_thin_names():
+    names = ["LIQ1", "LIQ2", "THIN"]
+    steps: list[Bar] = []
+    for day in range(90):
+        for n in names:
+            vol = 200.0 if n == "THIN" else 5_000_000.0
+            steps.append(_bar(n, max(1.0, 500.0 + 2.0 * day), daily_ts(day), vol=vol))
+    params = _mf_params(num_long_positions=3, min_avg_turnover=1_000_000.0)
+    _, positions = run(MultiFactorStrategy, params, steps)
+    assert "THIN" not in {s for s, q in positions.items() if q > 0}
+
+
+def test_multi_factor_no_lookahead_future_days_cannot_change_past_orders():
+    import random
+
+    random.seed(3)
+    names = ["A", "B", "C", "D", "E"]
+    prices = dict.fromkeys(names, 400.0)
+    steps: list[Bar] = []
+    for day in range(95):
+        for n in names:
+            prices[n] *= 1 + random.uniform(-0.03, 0.035)
+            steps.append(_bar(n, round(prices[n], 2), daily_ts(day), vol=2_000_000))
+
+    per_day = len(names)
+    cutoff_days = 70
+    short = run(MultiFactorStrategy, _mf_params(), steps[: cutoff_days * per_day])
+    long = run(MultiFactorStrategy, _mf_params(), steps)
+
+    def norm(res, limit):
+        return [
+            (i, [(o.tradingsymbol, o.transaction_type, o.quantity) for o in orders])
+            for i, orders in res[0]
+            if i < limit
+        ]
+
+    assert norm(short, cutoff_days * per_day) == norm(long, cutoff_days * per_day)
 
 
 # --------------------------------------------------------------------------
@@ -617,10 +920,15 @@ def test_index_futures_arb_flattens_before_expiry():
     "cls, params_fn, sym",
     [
         (TrendFollowingStrategy, _trend_params, "INFY"),
+        (DonchianBreakoutStrategy, _donchian_params, "INFY"),
         (MeanReversionStrategy, _mr_params, "SBIN"),
+        (WeaponCandleStrategy, _weapon_params, "INFY"),
+        (VolatilityRegimeStrategy, _volreg_params, "INFY"),
+        (RegimeAdaptiveStrategy, _regime_params, "INFY"),
     ],
-    ids=["trend-following", "mean-reversion"],
-)
+    ids=["trend-following", "donchian-breakout", "mean-reversion", "weapon-candle",
+         "volatility-regime", "regime-adaptive"],
+)  # multi-factor look-ahead is covered separately (needs a multi-name universe)
 def test_no_lookahead_future_bars_cannot_change_past_signals(cls, params_fn, sym):
     import random
 

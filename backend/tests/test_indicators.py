@@ -4,6 +4,7 @@ import math
 
 from app.strategies.indicators import (
     adf_tstat,
+    adx,
     atr,
     bollinger,
     crossed_above,
@@ -50,6 +51,23 @@ def test_atr_needs_period_plus_one_and_is_positive():
     assert atr(highs, lows, closes, 10) is None
     a = atr(highs, lows, closes, 3)
     assert a is not None and a > 0
+
+
+def test_adx_low_in_chop_high_in_trend():
+    # choppy: alternating up/down bars around a flat level
+    n = 60
+    chop_c = [100 + (i % 2) for i in range(n)]
+    chop_h = [c + 0.5 for c in chop_c]
+    chop_l = [c - 0.5 for c in chop_c]
+    assert adx(chop_h, chop_l, chop_c, 5) is None or adx(chop_h, chop_l, chop_c, 14) < 30
+
+    # clean uptrend
+    tr_c = [100 + 2 * i for i in range(n)]
+    tr_h = [c + 1 for c in tr_c]
+    tr_l = [c - 1 for c in tr_c]
+    strong = adx(tr_h, tr_l, tr_c, 14)
+    assert strong is not None and strong > 40
+    assert adx(tr_h, tr_l, tr_c, 100) is None  # not enough bars
 
 
 def test_rsi_bounds_and_direction():

@@ -1,15 +1,19 @@
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    arbitrage,
     audit,
     backtests,
     broker,
+    chinese_transformer,
     deployments,
     health,
     instruments,
+    leaderboard,
     market,
     monitoring,
     options_strategies,
+    orderflow,
     orders,
     stocks,
     strategies,
@@ -18,6 +22,8 @@ from app.api.v1 import (
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(health.router)
+api_router.include_router(arbitrage.router)
+api_router.include_router(chinese_transformer.router)
 api_router.include_router(strategies.router)
 api_router.include_router(strategy_library.router)
 api_router.include_router(options_strategies.router)
@@ -26,6 +32,8 @@ api_router.include_router(deployments.router)
 api_router.include_router(broker.router)
 api_router.include_router(instruments.router)
 api_router.include_router(market.router)
+api_router.include_router(leaderboard.router)
+api_router.include_router(orderflow.router)
 api_router.include_router(monitoring.router)
 api_router.include_router(audit.router)
 api_router.include_router(orders.router)
