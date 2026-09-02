@@ -5,11 +5,14 @@ app.execution.guard for the invariants this depends on.
 """
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from app.audit.service import record as record_audit
 from app.brokers.base import BrokerClient, OrderRequest
 from app.brokers.zerodha.order_builder import build_order_payload
+from app.config import get_settings
 from app.core.logging import get_logger
 from app.execution import guard
 from app.execution.paper_executor import PaperExecutor
@@ -19,9 +22,11 @@ from app.live.latency import (
     STAGE_BROKER_RTT,
     STAGE_ORDER_DISPATCH,
     STAGE_ORDER_PREP,
+    STAGE_RISK,
 )
+from app.live.risk import RISK, RiskLimits
 from app.models.deployment import Deployment
-from app.models.enums import OrderStatus, TradingMode
+from app.models.enums import AuditAction, ChangeEntityType, OrderStatus, TradingMode
 from app.models.order import Order
 
 logger = get_logger(__name__)
@@ -76,17 +81,41 @@ class OrderRouter:
             quantity=order_request.quantity,
         )
 
+        # --- pre-trade risk (in-memory, measured). Runs for every mode so
+        # PAPER/SIMULATION stay a faithful rehearsal of LIVE risk behaviour.
+        deployment_id = str(self.deployment.id)
+        limits = RiskLimits.from_settings(
+            get_settings(), (self.deployment.config or {}).get("risk")
+        )
+        with LATENCY.span(STAGE_RISK):
+            decision = RISK.evaluate(deployment_id, order_request, limits)
+        if not decision.approved:
+            return self._record_rejected(order_request, decision.reason or "risk check failed")
+        RISK.record_submitted(deployment_id, order_request)
+
         if self.deployment.mode == TradingMode.LIVE:
             return self._execute_live(order_request)
+
         with LATENCY.span(STAGE_ORDER_DISPATCH):
             if self.deployment.mode == TradingMode.PAPER:
                 guard.assert_mode_matches_deployment(self.deployment, TradingMode.PAPER)
-                return self._paper_executor.execute(self.deployment, order_request)
-            if self.deployment.mode == TradingMode.SIMULATION:
+                result = self._paper_executor.execute(self.deployment, order_request)
+            elif self.deployment.mode == TradingMode.SIMULATION:
                 guard.assert_mode_matches_deployment(self.deployment, TradingMode.SIMULATION)
-                return self._sim_executor.execute(self.deployment, order_request)
+                result = self._sim_executor.execute(self.deployment, order_request)
+            else:
+                raise RuntimeError(f"Unhandled deployment mode: {self.deployment.mode}")
 
-        raise RuntimeError(f"Unhandled deployment mode: {self.deployment.mode}")
+        # PAPER/SIMULATION fill instantly — reflect it in the risk engine's
+        # in-memory position book so subsequent position caps are accurate.
+        if result.order.status == OrderStatus.COMPLETE:
+            RISK.record_fill(
+                deployment_id,
+                order_request.tradingsymbol,
+                order_request.transaction_type,
+                int(order_request.quantity),
+            )
+        return result
 
     def _execute_live(self, order_request: OrderRequest) -> ExecutionResult:
         # Re-checked here, immediately before the broker call, even though
@@ -136,3 +165,49 @@ class OrderRouter:
             broker_order_id=result.broker_order_id,
         )
         return ExecutionResult(order=order_row, broker_order_id=result.broker_order_id)
+
+    def _record_rejected(self, order_request: OrderRequest, reason: str) -> ExecutionResult:
+        """A risk breach: persist a REJECTED order + audit, and return it so
+        the deployment keeps running rather than erroring out."""
+        deployment_id = str(self.deployment.id)
+        RISK.record_rejected(deployment_id, reason)
+        order_row = Order(
+            mode=self.deployment.mode,
+            deployment_id=self.deployment.id,
+            tradingsymbol=order_request.tradingsymbol,
+            exchange=order_request.exchange,
+            transaction_type=order_request.transaction_type,
+            order_type=order_request.order_type,
+            product=order_request.product,
+            variety=order_request.variety,
+            quantity=order_request.quantity,
+            price=order_request.price,
+            trigger_price=order_request.trigger_price,
+            market_protection=order_request.market_protection,
+            status=OrderStatus.REJECTED,
+            status_message=f"risk: {reason}"[:1000],
+            raw_request=order_request.__dict__,
+            placed_at=datetime.now(UTC),
+        )
+        self.db.add(order_row)
+        self.db.flush()
+        record_audit(
+            self.db,
+            action=AuditAction.ORDER_REJECTED,
+            entity_type=ChangeEntityType.DEPLOYMENT,
+            entity_id=self.deployment.id,
+            mode=self.deployment.mode,
+            summary=(
+                f"Risk engine rejected {order_request.transaction_type} "
+                f"{order_request.quantity} {order_request.tradingsymbol}: {reason}"
+            ),
+            after={"order_id": str(order_row.id), "reason": reason},
+            actor="risk-engine",
+        )
+        logger.warning(
+            "order_rejected_by_risk",
+            deployment_id=deployment_id,
+            tradingsymbol=order_request.tradingsymbol,
+            reason=reason,
+        )
+        return ExecutionResult(order=order_row, broker_order_id=None)

@@ -7,11 +7,15 @@ never synthesizes values.
 """
 
 from fastapi import APIRouter
+from pydantic import BaseModel
 
 from app.config import get_settings
+from app.core.logging import get_logger
 from app.live import engine as live_engine
 from app.live import telemetry
+from app.live.risk import RISK
 
+logger = get_logger(__name__)
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
 
 
@@ -52,6 +56,33 @@ def market_state() -> dict:
     from app.live.market_state import MARKET_STATE
 
     return MARKET_STATE.snapshot()
+
+
+@router.get("/risk")
+def risk_snapshot() -> dict:
+    """In-memory pre-trade risk state: per-deployment order counts, open
+    positions, realized P&L and kill-switch status."""
+    return RISK.snapshot()
+
+
+class KillSwitchBody(BaseModel):
+    scope: str = "all"           # "all" or a deployment id
+    engaged: bool = True         # True = stop new orders; False = resume
+
+
+@router.post("/risk/kill-switch")
+def kill_switch(body: KillSwitchBody) -> dict:
+    """Engage / release the kill switch. Engaging is always safe — it only
+    stops NEW orders reaching an executor or the broker; open positions are
+    untouched. Releasing resumes normal risk checks."""
+    if body.scope == "all":
+        (RISK.kill_all if body.engaged else RISK.resume_all)()
+    else:
+        (RISK.kill if body.engaged else RISK.resume)(body.scope)
+    logger.warning(
+        "risk_kill_switch", scope=body.scope, engaged=body.engaged, source="api"
+    )
+    return RISK.snapshot(None if body.scope == "all" else body.scope)
 
 
 @router.get("/indicators")

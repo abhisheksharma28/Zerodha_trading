@@ -80,8 +80,27 @@ export interface IndicatorsResponse {
   instruments: Record<string, LiveIndicators>;
 }
 
+export interface DeploymentRisk {
+  killed: boolean;
+  orders_today: number;
+  orders_last_minute: number;
+  open_positions: Record<string, number>;
+  day_realized_pnl: number;
+  last_reject: string | null;
+}
+
+export interface RiskSnapshot {
+  global_kill: boolean;
+  deployments: Record<string, DeploymentRisk>;
+}
+
 export const monitoringApi = {
   latency: () => apiClient.get<LatencySnapshot>("/monitoring/latency").then((r) => r.data),
   indicators: () =>
     apiClient.get<IndicatorsResponse>("/monitoring/indicators").then((r) => r.data),
+  risk: () => apiClient.get<RiskSnapshot>("/monitoring/risk").then((r) => r.data),
+  killSwitch: (scope: string, engaged: boolean) =>
+    apiClient
+      .post<RiskSnapshot | DeploymentRisk>("/monitoring/risk/kill-switch", { scope, engaged })
+      .then((r) => r.data),
 };
