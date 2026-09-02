@@ -44,6 +44,7 @@ STAGE_ORDER_PREP = "order_prep"
 STAGE_ORDER_DISPATCH = "order_dispatch"
 STAGE_BROKER_RTT = "broker_rtt"
 STAGE_INTERNAL_DECISION = "internal_decision"
+STAGE_API = "api"
 
 INTERNAL_STAGES = (
     STAGE_MARKET_DATA,
@@ -163,6 +164,7 @@ class LatencyRegistry:
 
         internal = self.stats(STAGE_INTERNAL_DECISION)
         broker = self.stats(STAGE_BROKER_RTT)
+        api = self.stats(STAGE_API)
         # "Idle" headline = the always-on cost of just processing data and
         # evaluating strategies, even when no order is produced.
         md = self.stats(STAGE_MARKET_DATA)
@@ -177,6 +179,10 @@ class LatencyRegistry:
                 "internal_decision_ms": round(internal.last_ms, 4) if internal else None,
                 "internal_decision_p95_ms": round(internal.p95_ms, 4) if internal else None,
                 "broker_rtt_ms": round(broker.last_ms, 4) if broker else None,
+                # server-side handler time for the last API request — always
+                # populated as long as the app is being used.
+                "api_ms": round(api.last_ms, 4) if api else None,
+                "api_p95_ms": round(api.p95_ms, 4) if api else None,
             },
         }
 

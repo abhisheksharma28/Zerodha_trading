@@ -25,6 +25,8 @@ export interface LatencySnapshot {
       internal_decision_ms: number | null;
       internal_decision_p95_ms: number | null;
       broker_rtt_ms: number | null;
+      api_ms: number | null;
+      api_p95_ms: number | null;
     };
   };
   engine: {
