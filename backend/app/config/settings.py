@@ -52,6 +52,14 @@ class Settings(BaseSettings):
     risk_max_orders_per_day: int = 1000
     risk_max_live_order_value_inr: float = 100_000
 
+    # --- Live-engine latency widget thresholds (milliseconds, advisory) ---
+    # Bands for colouring the "⚡ x.x ms" indicator. Deployment-specific:
+    # broker RTT dominates end-to-end, so these describe INTERNAL latency.
+    latency_threshold_excellent_ms: float = 1.0
+    latency_threshold_fast_ms: float = 5.0
+    latency_threshold_moderate_ms: float = 20.0
+    latency_threshold_high_ms: float = 100.0
+
     # --- Strategy-evaluation worker (app.workers) ---
     worker_poll_interval_seconds: int = 60
     # How far back the worker pulls candles each poll; only bars newer than

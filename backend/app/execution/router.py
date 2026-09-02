@@ -14,6 +14,12 @@ from app.core.logging import get_logger
 from app.execution import guard
 from app.execution.paper_executor import PaperExecutor
 from app.execution.sim_executor import SimulationExecutor
+from app.live.latency import (
+    LATENCY,
+    STAGE_BROKER_RTT,
+    STAGE_ORDER_DISPATCH,
+    STAGE_ORDER_PREP,
+)
 from app.models.deployment import Deployment
 from app.models.enums import OrderStatus, TradingMode
 from app.models.order import Order
@@ -72,12 +78,13 @@ class OrderRouter:
 
         if self.deployment.mode == TradingMode.LIVE:
             return self._execute_live(order_request)
-        if self.deployment.mode == TradingMode.PAPER:
-            guard.assert_mode_matches_deployment(self.deployment, TradingMode.PAPER)
-            return self._paper_executor.execute(self.deployment, order_request)
-        if self.deployment.mode == TradingMode.SIMULATION:
-            guard.assert_mode_matches_deployment(self.deployment, TradingMode.SIMULATION)
-            return self._sim_executor.execute(self.deployment, order_request)
+        with LATENCY.span(STAGE_ORDER_DISPATCH):
+            if self.deployment.mode == TradingMode.PAPER:
+                guard.assert_mode_matches_deployment(self.deployment, TradingMode.PAPER)
+                return self._paper_executor.execute(self.deployment, order_request)
+            if self.deployment.mode == TradingMode.SIMULATION:
+                guard.assert_mode_matches_deployment(self.deployment, TradingMode.SIMULATION)
+                return self._sim_executor.execute(self.deployment, order_request)
 
         raise RuntimeError(f"Unhandled deployment mode: {self.deployment.mode}")
 
@@ -89,30 +96,34 @@ class OrderRouter:
         guard.assert_live_trading_authorized(self.db, str(self.deployment.id))
         assert self._broker_client is not None  # enforced in __init__
 
-        # Validate the payload shape (esp. market protection) even though
-        # the broker client also builds it — fail before making the network
-        # call, not after.
-        build_order_payload(order_request)
+        with LATENCY.span(STAGE_ORDER_PREP):
+            # Validate the payload shape (esp. market protection) even though
+            # the broker client also builds it — fail before making the
+            # network call, not after.
+            build_order_payload(order_request)
 
-        order_row = Order(
-            mode=TradingMode.LIVE,
-            deployment_id=self.deployment.id,
-            tradingsymbol=order_request.tradingsymbol,
-            exchange=order_request.exchange,
-            transaction_type=order_request.transaction_type,
-            order_type=order_request.order_type,
-            product=order_request.product,
-            variety=order_request.variety,
-            quantity=order_request.quantity,
-            price=order_request.price,
-            trigger_price=order_request.trigger_price,
-            market_protection=order_request.market_protection,
-            raw_request=order_request.__dict__,
-        )
-        self.db.add(order_row)
-        self.db.flush()
+            order_row = Order(
+                mode=TradingMode.LIVE,
+                deployment_id=self.deployment.id,
+                tradingsymbol=order_request.tradingsymbol,
+                exchange=order_request.exchange,
+                transaction_type=order_request.transaction_type,
+                order_type=order_request.order_type,
+                product=order_request.product,
+                variety=order_request.variety,
+                quantity=order_request.quantity,
+                price=order_request.price,
+                trigger_price=order_request.trigger_price,
+                market_protection=order_request.market_protection,
+                raw_request=order_request.__dict__,
+            )
+            self.db.add(order_row)
+            self.db.flush()
 
-        result = self._broker_client.place_order(order_request)
+        # T7 -> T8: EXTERNAL latency (Kite + network). Tracked separately so
+        # the UI never blames our engine for the broker round-trip.
+        with LATENCY.span(STAGE_BROKER_RTT):
+            result = self._broker_client.place_order(order_request)
 
         order_row.broker_order_id = result.broker_order_id
         order_row.raw_response = result.raw_response

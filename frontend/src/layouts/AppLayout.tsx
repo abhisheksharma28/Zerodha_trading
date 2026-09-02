@@ -21,6 +21,7 @@ import {
   Wallet,
 } from "lucide-react";
 
+import { LatencyPill } from "@/components/LatencyPill";
 import { StockDrawer } from "@/components/StockDrawer";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { cn } from "@/lib/utils";
@@ -176,6 +177,8 @@ export function AppLayout() {
                 {broker?.connected ? broker.kite_user_id ?? "Connected" : "Broker offline"}
               </span>
             </span>
+            <span className="hidden h-4 w-px bg-line-strong md:block" />
+            <LatencyPill />
             <ThemeToggle />
           </div>
         </div>

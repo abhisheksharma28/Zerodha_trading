@@ -31,6 +31,13 @@ from app.core.exceptions import BrokerNotConnectedError
 from app.core.logging import get_logger
 from app.execution.guard import now_utc
 from app.execution.router import OrderRouter
+from app.live import telemetry
+from app.live.latency import (
+    LATENCY,
+    STAGE_INTERNAL_DECISION,
+    STAGE_MARKET_DATA,
+    STAGE_STRATEGY_EVAL,
+)
 from app.market_data.live import LiveCandleFeed
 from app.models.deployment import Deployment
 from app.models.enums import (
@@ -137,6 +144,20 @@ class DeploymentWorker:
             db.close()
 
         self._run_options_scheduler()
+        self._publish_telemetry(active_deployments=len(self._runtimes))
+
+    def _publish_telemetry(self, *, active_deployments: int) -> None:
+        """Off the critical path — once per poll, never per event."""
+        try:
+            telemetry.publish(
+                engine={
+                    "running_deployments": active_deployments,
+                    "poll_interval_seconds": self._settings.worker_poll_interval_seconds,
+                    "last_tick_epoch": time.time(),
+                }
+            )
+        except Exception:  # noqa: BLE001 - telemetry must never affect the loop
+            logger.exception("worker_telemetry_publish_failed")
 
     def _run_options_scheduler(self) -> None:
         """Drive scheduled options-basket strategies (NIFTY Monthly HNI):
@@ -197,7 +218,8 @@ class DeploymentWorker:
             orders_routed = 0
 
             for symbol in deployment.instrument_universe:
-                bars = feed.recent_bars(symbol, interval, lookback)
+                with LATENCY.span(STAGE_MARKET_DATA):
+                    bars = feed.recent_bars(symbol, interval, lookback)
                 last_seen = runtime.last_bar_ts.get(symbol)
                 new_bars = [
                     b for b in bars if last_seen is None or str(b.timestamp) > str(last_seen)
@@ -209,8 +231,11 @@ class DeploymentWorker:
 
                 for bar in new_bars:
                     runtime.context.positions = _net_positions(db, deployment.id)
-                    runtime.strategy.on_bar(bar)
-                    for order_request in runtime.context.drain_pending_orders():
+                    decision_start_ns = time.perf_counter_ns()
+                    with LATENCY.span(STAGE_STRATEGY_EVAL):
+                        runtime.strategy.on_bar(bar)
+                    pending = runtime.context.drain_pending_orders()
+                    for order_request in pending:
                         result = router.submit(order_request)
                         orders_routed += 1
                         record_audit(
@@ -226,6 +251,14 @@ class DeploymentWorker:
                             ),
                             after={"order_id": str(result.order.id)},
                             actor="worker",
+                        )
+                    if pending:
+                        # "internal decision" latency: bar handed to the
+                        # strategy -> order(s) dispatched. Excludes the broker
+                        # round-trip, which is measured separately.
+                        LATENCY.record_ns(
+                            STAGE_INTERNAL_DECISION,
+                            time.perf_counter_ns() - decision_start_ns,
                         )
                     runtime.last_bar_ts[symbol] = bar.timestamp
 
