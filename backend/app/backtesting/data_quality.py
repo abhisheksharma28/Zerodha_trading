@@ -40,7 +40,8 @@ _SESSION_MINUTES = 375
 _MIN_REASONABLE_BARS = 30
 _MAX_REPORTED_GAPS = 25
 _MAX_REPORTED_SESSIONS = 25
-# Below this fraction of a session's expected candles, the day is DATA_INCOMPLETE.
+# Below this fraction of a session's expected candles, the day is reported as
+# a partial session (informational only unless a threshold is configured).
 DEFAULT_MIN_SESSION_COMPLETENESS = 0.0  # 0 = report only, never block
 
 
@@ -302,13 +303,12 @@ def validate_candles(
             dates = [x["date"] for x in s.get("incomplete_sessions", [])]
             shown = ", ".join(dates[:5]) + ("…" if len(dates) > 5 else "")
             warnings.append(
-                f"{sym}: {s['incomplete_days']}/{s['trading_days']} trading days are "
-                f"DATA_INCOMPLETE — {shown} "
-                f"({s['missing_candles']} intraday candles missing mid-session; worst day "
-                f"{s['worst_completeness_pct']}% complete). Overnight / weekend / holiday "
-                "boundaries are not counted. This is a warning, not an error: the backtest "
-                "still runs and those days simply contribute fewer or no signals — missing "
-                "bars are never fabricated or forward-filled."
+                f"{sym}: {s['incomplete_days']} of {s['trading_days']} days ran a partial "
+                f"session ({shown}) — typically an NSE special / half-day sitting that "
+                f"trades fewer hours (worst day had {s['worst_completeness_pct']}% of a "
+                "normal session's candles). Nothing to fix: the backtest uses the real "
+                "candles those days have and never fills in the rest; weekend and holiday "
+                "gaps aren't counted here."
             )
         if s.get("short_sessions"):
             warnings.append(
