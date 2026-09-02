@@ -88,7 +88,7 @@ function TemplateCard({ template: t }: { template: StrategyTemplateSummary }) {
               : `${t.min_instruments}+ instruments`}
           </span>
         </div>
-        <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-400/90">
+        <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300 light:text-amber-700">
           {t.warning}
         </p>
         <div className="mt-auto flex gap-2 pt-1">

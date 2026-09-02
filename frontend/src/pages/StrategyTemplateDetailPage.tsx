@@ -42,7 +42,7 @@ export default function StrategyTemplateDetailPage() {
         </Button>
       </div>
 
-      <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-2 text-sm text-amber-400/90">
+      <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-300 light:text-amber-700">
         {t.warning} These are educational research templates, not investment advice.
       </p>
 

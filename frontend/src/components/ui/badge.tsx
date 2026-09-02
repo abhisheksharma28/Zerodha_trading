@@ -10,9 +10,9 @@ const badgeVariants = cva(
       variant: {
         default: "border-line-strong bg-elevated text-fg",
         success: "border-pos/50 bg-pos/10 text-pos",
-        warning: "border-amber-500/50 bg-amber-500/10 text-amber-400",
+        warning: "border-amber-500/50 bg-amber-500/10 text-amber-400 light:text-amber-700",
         destructive: "border-red-500/50 bg-red-500/10 text-neg",
-        info: "border-sky-500/50 bg-sky-500/10 text-sky-400",
+        info: "border-sky-500/50 bg-sky-500/10 text-sky-400 light:text-sky-700",
       },
     },
     defaultVariants: { variant: "default" },

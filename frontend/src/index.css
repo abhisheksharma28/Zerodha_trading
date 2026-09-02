@@ -1,7 +1,10 @@
 @import "tailwindcss";
 
-/* Class-based dark mode: `data-theme` on <html> is the switch (src/lib/theme.tsx). */
+/* Class-based dark mode: `data-theme` on <html> is the switch (src/lib/theme.tsx).
+   The base styles are the DARK theme; `[data-theme="light"]` overrides. So use
+   the `light:` variant (not `dark:`) to opt into a light-only value. */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+@custom-variant light (&:where([data-theme="light"], [data-theme="light"] *));
 
 @theme {
   /* Warm near-black "trading terminal" palette with a gold accent.

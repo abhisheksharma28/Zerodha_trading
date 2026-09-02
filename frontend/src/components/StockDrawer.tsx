@@ -576,10 +576,10 @@ function FundamentalsTab({ exchange, symbol }: { exchange: string; symbol: strin
 
 function ProviderNote({ reason }: { reason?: string | null }) {
   return (
-    <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-300">
+    <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-300 light:text-amber-700">
       <p className="font-medium">Fundamentals data provider not configured</p>
-      <p className="mt-1 text-amber-200/80">{reason}</p>
-      <p className="mt-2 text-amber-200/70">
+      <p className="mt-1 opacity-90">{reason}</p>
+      <p className="mt-2 opacity-80">
         Set <code>FUNDAMENTALS_PROVIDER</code> in the backend env (e.g. <code>indianapi</code> with a key).
         The adapter interface lives in <code>app/providers/fundamentals</code>.
       </p>
