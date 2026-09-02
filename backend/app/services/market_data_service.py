@@ -234,7 +234,14 @@ def _market_overview_uncached(
     }
 
 
+_IST_OFFSET_SECONDS = 5 * 3600 + 30 * 60
+
+
 def _epoch(ts: Any) -> int:
+    """UNIX seconds, then shifted +5:30 so lightweight-charts (which renders
+    timestamps as UTC) shows IST wall-clock on the axis and crosshair,
+    regardless of the viewer's machine timezone. NSE candle timestamps are
+    IST; markers on the frontend apply the same shift."""
     if isinstance(ts, datetime):
         dt = ts
     else:
@@ -242,7 +249,7 @@ def _epoch(ts: Any) -> int:
         if len(s) >= 5 and s[-5] in "+-" and s[-3] != ":":
             s = s[:-2] + ":" + s[-2:]
         dt = datetime.fromisoformat(s)
-    return int(dt.timestamp())
+    return int(dt.timestamp()) + _IST_OFFSET_SECONDS
 
 
 def _parse_day(s: str | None) -> datetime | None:

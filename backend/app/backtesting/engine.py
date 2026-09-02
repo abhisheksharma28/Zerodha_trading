@@ -1,8 +1,9 @@
 """Deterministic, single-threaded backtest engine.
 
 Runs the exact same BaseStrategy subclass that simulation/paper/live modes
-run (see app.strategies.base). Fills are modelled as "fill at this bar's
-close", optionally adjusted by a CostModel that applies execution slippage
+run (see app.strategies.base). Fills are modelled as "fill at the order
+instrument's latest close", optionally adjusted by a CostModel that applies
+execution slippage
 and the full Indian statutory charge stack (see app.backtesting.costs). The
 cost model is injected, never referenced by strategy code, so the same run
 can be re-priced under different assumptions.
@@ -90,8 +91,15 @@ class BacktestEngine:
                 if order.quantity <= 0:
                     diag.reject("zero/negative quantity")
                     continue
-                ref_price = float(bar.close)
                 side = order.transaction_type
+                # Fill at the ORDER INSTRUMENT's own latest close, not this
+                # bar's close. With a multi-instrument universe the merged bar
+                # stream means `bar` often belongs to a different symbol than
+                # the order (e.g. a next-day square-off of a leaked position),
+                # and using `bar.close` there prices the fill off the wrong
+                # stock. For a same-instrument order `last_price[sym]` was just
+                # set to `bar.close` above, so single-symbol runs are unchanged.
+                ref_price = float(last_price.get(order.tradingsymbol, bar.close))
                 if ref_price <= 0:
                     diag.reject("non-positive bar price")
                     continue

@@ -349,6 +349,85 @@ function TechnicalsTab({ ref_ }: { ref_: string }) {
   );
 }
 
+type Obj = Record<string, unknown>;
+const asObj = (r?: { available?: boolean; data?: unknown }) =>
+  r?.available && r.data && typeof r.data === "object" && !Array.isArray(r.data)
+    ? (r.data as Obj)
+    : null;
+const asArr = (r?: { available?: boolean; data?: unknown }) =>
+  r?.available && Array.isArray(r.data) ? (r.data as Obj[]) : null;
+
+const crore = (v: unknown) => {
+  const n = typeof v === "number" ? v : Number(v);
+  if (!isFinite(n) || n === 0) return "N/A";
+  if (Math.abs(n) >= 1e7) return `₹${(n / 1e7).toLocaleString("en-IN", { maximumFractionDigits: 0 })} Cr`;
+  if (Math.abs(n) >= 1e5) return `₹${(n / 1e5).toLocaleString("en-IN", { maximumFractionDigits: 2 })} L`;
+  return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+};
+const pct = (v: unknown) => {
+  const n = typeof v === "number" ? v : Number(v);
+  return isFinite(n) ? `${n.toFixed(2)}%` : "N/A";
+};
+
+function KV({ rows }: { rows: [string, React.ReactNode][] }) {
+  const shown = rows.filter(([, v]) => v !== "N/A" && v != null && v !== "");
+  if (shown.length === 0) return null;
+  return (
+    <table className="w-full text-xs">
+      <tbody>
+        {shown.map(([k, v], i) => (
+          <tr key={k} className={i % 2 ? "bg-bg" : ""}>
+            <td className="py-1.5 pr-3 text-fg-faint">{k}</td>
+            <td className="py-1.5 text-right font-medium tabular-nums">{v}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function Block({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-md border border-line bg-surface p-3">
+      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-fg-muted">{title}</p>
+      {children}
+    </div>
+  );
+}
+
+function PeriodTable({ periods, keys }: { periods: Obj[]; keys: string[] }) {
+  const present = keys.filter((k) => periods.some((p) => typeof p[k] === "number"));
+  if (present.length === 0) return null;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs tabular-nums">
+        <thead>
+          <tr className="text-fg-faint">
+            <th className="py-1 pr-3 text-left font-medium">Metric</th>
+            {periods.map((p) => (
+              <th key={String(p.period)} className="py-1 pl-3 text-right font-medium">
+                {String(p.period ?? "").slice(0, 7)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {present.map((k) => (
+            <tr key={k} className="border-t border-line">
+              <td className="py-1.5 pr-3 text-left text-fg-faint">{k}</td>
+              {periods.map((p) => (
+                <td key={String(p.period)} className="py-1.5 pl-3 text-right">
+                  {typeof p[k] === "number" ? crore(p[k]) : "–"}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function FundamentalsTab({ exchange, symbol }: { exchange: string; symbol: string }) {
   const { data, isLoading } = useQuery({
     queryKey: ["stock", "fundamentals", exchange, symbol],
@@ -359,32 +438,143 @@ function FundamentalsTab({ exchange, symbol }: { exchange: string; symbol: strin
   if (!data) return <p className="text-xs text-fg-faint">Unavailable.</p>;
   if (data.provider === "none") return <ProviderNote reason={data.profile.reason} />;
 
-  const sections: [string, import("@/api/stocks").ProviderResult][] = [
-    ["Company profile", data.profile],
-    ["Key metrics", data.key_metrics],
-    ["Income statement", data.income_statement],
-    ["Quarterly results", data.quarterly_results],
-    ["Balance sheet", data.balance_sheet],
-    ["Cash flow", data.cash_flow],
-    ["Shareholding", data.shareholding],
-    ["Corporate actions", data.corporate_actions],
-    ["News", data.news],
-  ];
+  const profile = asObj(data.profile);
+  const km = asObj(data.key_metrics);
+  const income = asArr(data.income_statement);
+  const cash = asArr(data.cash_flow);
+  const holders = asObj(data.shareholding);
+  const actions = asObj(data.corporate_actions);
+  const dividends = Array.isArray(actions?.dividends) ? (actions.dividends as Obj[]) : [];
+  const news = asArr(data.news);
+
+  const anything = profile || km || income || cash || holders || news;
+  if (!anything) return <ProviderNote reason={data.profile.reason} />;
+
   return (
-    <div className="flex flex-col gap-2">
-      <p className="text-[11px] text-fg-faint">Source: {data.provider}</p>
-      {sections.map(([label, r]) => (
-        <details key={label} className="rounded-md border border-line bg-bg p-2.5 text-xs">
-          <summary className="cursor-pointer font-medium">
-            {label} {!r.available && <span className="text-fg-faint">· {r.reason}</span>}
-          </summary>
-          {r.available && (
-            <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[11px] text-fg-muted">
-              {JSON.stringify(r.data, null, 2)}
-            </pre>
+    <div className="flex flex-col gap-3">
+      {profile && (
+        <Block title="Company">
+          <KV
+            rows={[
+              ["Name", (profile.company_name as string) ?? symbol],
+              ["Sector", profile.sector as string],
+              ["Industry", profile.industry as string],
+              ["Employees", typeof profile.employees === "number" ? profile.employees.toLocaleString("en-IN") : "N/A"],
+              ["Country", profile.country as string],
+            ]}
+          />
+          {typeof profile.description === "string" && (
+            <p className="mt-2 line-clamp-4 text-[11px] leading-relaxed text-fg-muted">
+              {profile.description}
+            </p>
           )}
-        </details>
-      ))}
+        </Block>
+      )}
+
+      {km && (
+        <Block title="Valuation & quality">
+          <KV
+            rows={[
+              ["Market cap", crore(km.marketCap)],
+              ["P/E (TTM)", num(km.pe)],
+              ["Forward P/E", num(km.forwardPe)],
+              ["P/B", num(km.pb)],
+              ["P/S", num(km.ps)],
+              ["EPS (TTM)", num(km.eps)],
+              ["Book value", num(km.bookValue)],
+              ["Dividend yield", pct(km.dividendYield)],
+              ["ROE", pct(km.roe)],
+              ["ROA", pct(km.roa)],
+              ["Operating margin", pct(km.operatingMargin)],
+              ["Profit margin", pct(km.profitMargin)],
+              ["Revenue growth", pct(km.revenueGrowth)],
+              ["Earnings growth", pct(km.earningsGrowth)],
+              ["Debt / Equity", num(km.debtToEquity)],
+              ["Current ratio", num(km.currentRatio)],
+              ["Beta", num(km.beta)],
+              ["52W high", num(km.week52High)],
+              ["52W low", num(km.week52Low)],
+            ]}
+          />
+        </Block>
+      )}
+
+      {income && (
+        <Block title="Income statement">
+          <PeriodTable periods={income} keys={["Total Revenue", "Operating Income", "EBITDA", "Net Income"]} />
+        </Block>
+      )}
+
+      {cash && (
+        <Block title="Cash flow">
+          <PeriodTable
+            periods={cash}
+            keys={["Operating Cash Flow", "Free Cash Flow", "Capital Expenditure"]}
+          />
+        </Block>
+      )}
+
+      {holders && (
+        <Block title="Shareholding">
+          <KV
+            rows={[
+              ["Insiders", holders.insiders_pct != null ? pct((holders.insiders_pct as number) * 100) : "N/A"],
+              [
+                "Institutions",
+                holders.institutions_pct != null ? pct((holders.institutions_pct as number) * 100) : "N/A",
+              ],
+              [
+                "Institution count",
+                typeof holders.institutions_count === "number"
+                  ? holders.institutions_count.toLocaleString("en-IN")
+                  : "N/A",
+              ],
+            ]}
+          />
+          <p className="mt-1.5 text-[11px] text-fg-faint">
+            Yahoo split only — promoter / FII / DII detail needs an Indian provider.
+          </p>
+        </Block>
+      )}
+
+      {dividends.length > 0 && (
+        <Block title="Recent dividends">
+          <KV
+            rows={dividends
+              .slice(-5)
+              .reverse()
+              .map((d) => [String(d.date), `₹${num(d.amount)}`] as [string, React.ReactNode])}
+          />
+        </Block>
+      )}
+
+      {news && news.length > 0 && (
+        <Block title="News">
+          <ul className="flex flex-col gap-2">
+            {news.slice(0, 6).map((n, i) => (
+              <li key={i} className="text-xs">
+                {typeof n.link === "string" ? (
+                  <a
+                    href={n.link}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-accent hover:underline"
+                  >
+                    {String(n.title ?? "Untitled")}
+                  </a>
+                ) : (
+                  <span>{String(n.title ?? "Untitled")}</span>
+                )}
+                {typeof n.publisher === "string" && (
+                  <span className="text-fg-faint"> · {n.publisher}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </Block>
+      )}
+
+      <p className="text-[11px] text-fg-faint">Source: {data.provider}</p>
     </div>
   );
 }

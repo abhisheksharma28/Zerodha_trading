@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { InstrumentSearch } from "@/components/InstrumentSearch";
 import { ModeBadge } from "@/components/ModeBadge";
 import { useCreateDeployment, useDeployments } from "@/hooks/useDeployments";
 import { useStrategies } from "@/hooks/useStrategies";
@@ -75,7 +76,7 @@ function CreateDeploymentForm({ onDone }: { onDone: () => void }) {
   const [strategyId, setStrategyId] = useState("");
   const [name, setName] = useState("");
   const [mode, setMode] = useState<TradingMode>("simulation");
-  const [universe, setUniverse] = useState("NSE:INFY");
+  const [universe, setUniverse] = useState<string[]>(["NSE:INFY"]);
   const [confirmationText, setConfirmationText] = useState("");
   const create = useCreateDeployment();
 
@@ -93,13 +94,13 @@ function CreateDeploymentForm({ onDone }: { onDone: () => void }) {
           className="flex flex-col gap-4"
           onSubmit={(e) => {
             e.preventDefault();
-            if (!strategy?.current_version_id) return;
+            if (!strategy?.current_version_id || universe.length === 0) return;
             create.mutate(
               {
                 strategy_version_id: strategy.current_version_id,
                 name,
                 mode,
-                instrument_universe: universe.split(",").map((s) => s.trim()),
+                instrument_universe: universe,
                 live_trading_confirmation_phrase: isLive ? confirmationText : undefined,
               },
               { onSuccess: onDone },
@@ -128,8 +129,8 @@ function CreateDeploymentForm({ onDone }: { onDone: () => void }) {
             <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="universe">Instrument universe (comma-separated)</Label>
-            <Input id="universe" value={universe} onChange={(e) => setUniverse(e.target.value)} />
+            <Label>Instrument universe</Label>
+            <InstrumentSearch value={universe} onChange={setUniverse} />
           </div>
           <div className="flex flex-col gap-1.5">
             <Label>Mode</Label>
@@ -184,7 +185,7 @@ function CreateDeploymentForm({ onDone }: { onDone: () => void }) {
             <Button
               type="submit"
               variant={isLive ? "destructive" : "default"}
-              disabled={create.isPending || !strategyId || !canSubmitLive}
+              disabled={create.isPending || !strategyId || universe.length === 0 || !canSubmitLive}
             >
               {create.isPending ? "Creating…" : isLive ? "Create LIVE deployment" : "Create deployment"}
             </Button>

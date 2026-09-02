@@ -69,8 +69,9 @@ export default function DashboardPage() {
       cell: (b) => (
         <span className="font-medium text-fg">{b.instrument_universe.join(", ")}</span>
       ),
+      sortValue: (b) => b.instrument_universe.join(", "),
     },
-    { key: "tf", header: "TF", cell: (b) => b.timeframe },
+    { key: "tf", header: "TF", cell: (b) => b.timeframe, sortValue: (b) => b.timeframe },
     {
       key: "ret",
       header: "Return",
@@ -80,6 +81,7 @@ export default function DashboardPage() {
         if (r == null) return <span className="text-fg-faint">–</span>;
         return <span className={r < 0 ? "text-neg" : "text-pos"}>{r.toFixed(2)}%</span>;
       },
+      sortValue: (b) => b.metrics?.total_return_pct ?? null,
     },
     {
       key: "status",
@@ -100,6 +102,7 @@ export default function DashboardPage() {
           {b.status}
         </Badge>
       ),
+      sortValue: (b) => b.status,
     },
   ];
 
@@ -245,6 +248,8 @@ export default function DashboardPage() {
             rowKey={(b) => b.id}
             onRowClick={(b) => navigate(`/backtests/${b.id}`)}
             empty="No backtests yet."
+            searchable
+            searchPlaceholder="Filter backtests…"
           />
         </SectionCard>
 

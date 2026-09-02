@@ -23,11 +23,13 @@ export default function ReportsPage() {
           {b.instrument_universe.join(", ")} · {b.timeframe}
         </span>
       ),
+      sortValue: (b) => `${b.instrument_universe.join(", ")} ${b.timeframe}`,
     },
     {
       key: "date",
       header: "Generated",
       cell: (b) => new Date(b.created_at).toLocaleDateString(),
+      sortValue: (b) => b.created_at,
     },
     {
       key: "ret",
@@ -37,12 +39,14 @@ export default function ReportsPage() {
         const r = b.metrics?.total_return_pct;
         return r == null ? "–" : <span className={r < 0 ? "text-neg" : "text-pos"}>{r.toFixed(2)}%</span>;
       },
+      sortValue: (b) => b.metrics?.total_return_pct ?? null,
     },
     {
       key: "sharpe",
       header: "Sharpe",
       align: "right",
       cell: (b) => (b.metrics?.sharpe_ratio ?? "–") as number | string,
+      sortValue: (b) => b.metrics?.sharpe_ratio ?? null,
     },
     { key: "open", header: "", align: "right", cell: () => <Badge>Open</Badge> },
   ];
@@ -60,6 +64,8 @@ export default function ReportsPage() {
           rowKey={(b) => b.id}
           onRowClick={(b) => navigate(`/backtests/${b.id}`)}
           empty="No completed backtests yet."
+          searchable
+          searchPlaceholder="Filter reports…"
         />
       </SectionCard>
     </div>

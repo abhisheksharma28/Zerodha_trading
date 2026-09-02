@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
 import { optionsApi } from "@/api/options";
@@ -16,7 +17,18 @@ const oi = (v: number | null | undefined) =>
   v == null ? "–" : v >= 1e5 ? `${(v / 1e5).toFixed(1)}L` : `${v}`;
 
 export default function OptionChainPage() {
-  const [underlying, setUnderlying] = useState("NIFTY");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [underlying, setUnderlyingState] = useState(
+    () => (searchParams.get("underlying") || "NIFTY").toUpperCase(),
+  );
+  const setUnderlying = (u: string) => {
+    setUnderlyingState(u);
+    setExpiryPick("");
+    setSearchParams((prev) => {
+      prev.set("underlying", u);
+      return prev;
+    });
+  };
   const [expiryPick, setExpiryPick] = useState<string>("");
   const [range, setRange] = useState<(typeof RANGES)[number]>(20);
   const now = useNow(1000);

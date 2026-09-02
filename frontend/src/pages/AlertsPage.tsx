@@ -28,17 +28,34 @@ export default function AlertsPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]>("Alerts");
 
   const cols: Column<Alert>[] = [
-    { key: "name", header: "Name", cell: (a) => <span className="font-medium text-fg">{a.name}</span> },
-    { key: "cond", header: "Condition", cell: (a) => <span className="text-fg-muted">{a.condition}</span> },
-    { key: "inst", header: "Instrument", cell: (a) => a.instrument },
+    {
+      key: "name",
+      header: "Name",
+      cell: (a) => <span className="font-medium text-fg">{a.name}</span>,
+      sortValue: (a) => a.name,
+    },
+    {
+      key: "cond",
+      header: "Condition",
+      cell: (a) => <span className="text-fg-muted">{a.condition}</span>,
+      sortValue: (a) => a.condition,
+    },
+    { key: "inst", header: "Instrument", cell: (a) => a.instrument, sortValue: (a) => a.instrument },
     {
       key: "status",
       header: "Status",
       cell: (a) => (
         <Badge variant={a.status === "Active" ? "success" : "warning"}>{a.status}</Badge>
       ),
+      sortValue: (a) => a.status,
     },
-    { key: "last", header: "Last triggered", align: "right", cell: (a) => a.lastTriggered },
+    {
+      key: "last",
+      header: "Last triggered",
+      align: "right",
+      cell: (a) => a.lastTriggered,
+      sortValue: (a) => a.lastTriggered,
+    },
   ];
 
   return (
@@ -71,7 +88,13 @@ export default function AlertsPage() {
           ))}
         </div>
         {tab === "Alerts" ? (
-          <DataTable columns={cols} rows={SAMPLE} rowKey={(a) => a.name} />
+          <DataTable
+            columns={cols}
+            rows={SAMPLE}
+            rowKey={(a) => a.name}
+            searchable
+            searchPlaceholder="Filter alerts…"
+          />
         ) : (
           <p className="py-8 text-center text-sm text-fg-faint">No notifications yet.</p>
         )}

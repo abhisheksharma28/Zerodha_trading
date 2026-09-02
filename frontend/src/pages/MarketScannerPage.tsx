@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { RefreshCw } from "lucide-react";
 
 import { DataTable, type Column } from "@/components/DataTable";
@@ -10,15 +10,25 @@ import { useMarketOverview } from "@/hooks/useMarket";
 import { useNow } from "@/hooks/useNow";
 import { useStockDrawer } from "@/lib/stockDrawer";
 import type { MarketQuoteRow, SectorRow } from "@/types/api";
+import { countCompact, inrCompact, num } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const TABS = ["Movers", "Sectors", "Heat-map", "Signals", "Most Active"] as const;
 
+// Index tradingsymbol → F&O underlying for the option chain. Only indices that
+// actually trade options are listed; anything else opens the quote drawer.
+const INDEX_OPTION_UNDERLYING: Record<string, string> = {
+  "NIFTY 50": "NIFTY",
+  "NIFTY BANK": "BANKNIFTY",
+  "NIFTY FIN SERVICE": "FINNIFTY",
+  "NIFTY MIDCAP SELECT": "MIDCPNIFTY",
+  "NIFTY NEXT 50": "NIFTYNXT50",
+};
+
 const pctClass = (p?: number | null) =>
   p == null ? "text-fg-muted" : p > 0 ? "text-pos" : p < 0 ? "text-neg" : "text-fg-muted";
 const sign = (p?: number | null, d = 2) => (p == null ? "–" : `${p >= 0 ? "+" : ""}${p.toFixed(d)}%`);
-const fmtVol = (v?: number | null) =>
-  v == null ? "–" : v >= 1e7 ? `${(v / 1e7).toFixed(1)}Cr` : v >= 1e5 ? `${(v / 1e5).toFixed(1)}L` : `${v}`;
+const fmtVol = (v?: number | null) => countCompact(v);
 const heatStyle = (p: number): React.CSSProperties => {
   const t = Math.max(-3, Math.min(3, p)) / 3;
   const a = 0.12 + 0.5 * Math.abs(t);
@@ -45,20 +55,45 @@ function SymLink({ sym }: { sym: string }) {
 
 export default function MarketScannerPage() {
   const openStock = useSym();
+  const navigate = useNavigate();
   const [tab, setTab] = useState<(typeof TABS)[number]>("Movers");
   const { data, isFetching, refetch, dataUpdatedAt } = useMarketOverview("nifty50");
 
+  const openIndex = (sym: string) => {
+    const underlying = INDEX_OPTION_UNDERLYING[sym.toUpperCase()];
+    if (underlying) navigate(`/option-chain?underlying=${encodeURIComponent(underlying)}`);
+    else openStock(sym);
+  };
+
   const stockCols: Column<MarketQuoteRow>[] = useMemo(
     () => [
-      { key: "sym", header: "Symbol", cell: (s) => <SymLink sym={s.symbol} /> },
+      {
+        key: "sym",
+        header: "Symbol",
+        cell: (s) => <SymLink sym={s.symbol} />,
+        sortValue: (s) => s.symbol,
+      },
       {
         key: "ltp",
         header: "LTP",
         align: "right",
-        cell: (s) => (s.ltp == null ? "–" : s.ltp.toLocaleString("en-IN")),
+        cell: (s) => num(s.ltp),
+        sortValue: (s) => s.ltp,
       },
-      { key: "chg", header: "Chg %", align: "right", cell: (s) => <span className={pctClass(s.change_pct)}>{sign(s.change_pct)}</span> },
-      { key: "vol", header: "Volume", align: "right", cell: (s) => fmtVol(s.volume) },
+      {
+        key: "chg",
+        header: "Chg %",
+        align: "right",
+        cell: (s) => <span className={pctClass(s.change_pct)}>{sign(s.change_pct)}</span>,
+        sortValue: (s) => s.change_pct,
+      },
+      {
+        key: "vol",
+        header: "Volume",
+        align: "right",
+        cell: (s) => fmtVol(s.volume),
+        sortValue: (s) => s.volume,
+      },
     ],
     [],
   );
@@ -98,7 +133,12 @@ export default function MarketScannerPage() {
               <button
                 key={ix.symbol}
                 type="button"
-                onClick={() => openStock(ix.symbol)}
+                onClick={() => openIndex(ix.symbol)}
+                title={
+                  INDEX_OPTION_UNDERLYING[ix.symbol.toUpperCase()]
+                    ? "Open option chain"
+                    : "Open quote"
+                }
                 className="min-w-[9rem] shrink-0 rounded-lg border border-line bg-surface px-3 py-2 text-left hover:border-line-strong"
               >
                 <p className="truncate text-[11px] text-fg-faint">{ix.name}</p>
@@ -131,10 +171,22 @@ export default function MarketScannerPage() {
           {tab === "Movers" && (
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <SectionCard title="Gainers" bodyClassName="p-0">
-                <DataTable columns={stockCols} rows={data.gainers} rowKey={(s) => s.symbol} />
+                <DataTable
+                  columns={stockCols}
+                  rows={data.gainers}
+                  rowKey={(s) => s.symbol}
+                  searchable
+                  searchPlaceholder="Filter gainers…"
+                />
               </SectionCard>
               <SectionCard title="Losers" bodyClassName="p-0">
-                <DataTable columns={stockCols} rows={data.losers} rowKey={(s) => s.symbol} />
+                <DataTable
+                  columns={stockCols}
+                  rows={data.losers}
+                  rowKey={(s) => s.symbol}
+                  searchable
+                  searchPlaceholder="Filter losers…"
+                />
               </SectionCard>
             </div>
           )}
@@ -173,11 +225,15 @@ export default function MarketScannerPage() {
                     key: "val",
                     header: "Value",
                     align: "right",
-                    cell: (s) => (s.value == null ? "–" : `₹${(s.value / 1e7).toFixed(1)} Cr`),
+                    cell: (s) => inrCompact(s.value),
+                    sortValue: (s) => s.value,
                   },
                 ]}
                 rows={data.most_active}
                 rowKey={(s) => s.symbol}
+                searchable
+                searchPlaceholder="Filter…"
+                initialSort={{ key: "val", dir: "desc" }}
               />
             </SectionCard>
           )}

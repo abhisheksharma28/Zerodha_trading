@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,8 +9,10 @@ import { InstrumentSearch } from "@/components/InstrumentSearch";
 import { TimeframeSelect } from "@/components/TimeframeSelect";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useBacktests, useCreateBacktest } from "@/hooks/useBacktests";
+import { backtestsApi } from "@/api/backtests";
+import { backtestKeys, useBacktests, useCreateBacktest } from "@/hooks/useBacktests";
 import { useStrategies } from "@/hooks/useStrategies";
+import { inr } from "@/lib/format";
 
 const STATUS_VARIANT: Record<string, "default" | "success" | "warning" | "destructive" | "info"> = {
   pending: "default",
@@ -53,7 +56,7 @@ export default function BacktestsPage() {
               </p>
               <p className="text-xs text-fg-faint">
                 {new Date(bt.start_date).toLocaleDateString()} –{" "}
-                {new Date(bt.end_date).toLocaleDateString()} · ₹{bt.initial_capital.toLocaleString()}
+                {new Date(bt.end_date).toLocaleDateString()} · {inr(bt.initial_capital)}
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -76,15 +79,20 @@ export default function BacktestsPage() {
 
 function CreateBacktestForm({ onDone }: { onDone: () => void }) {
   const { data: strategies } = useStrategies();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [strategyId, setStrategyId] = useState("");
   const [universe, setUniverse] = useState<string[]>(["NSE:INFY"]);
   const [timeframe, setTimeframe] = useState("1d");
   const [startDate, setStartDate] = useState("2024-01-01");
   const [endDate, setEndDate] = useState("2024-12-31");
   const [capital, setCapital] = useState(100000);
+  const [running, setRunning] = useState(false);
+  const [runError, setRunError] = useState<string | null>(null);
   const create = useCreateBacktest();
 
   const strategy = strategies?.find((s) => s.id === strategyId);
+  const busy = create.isPending || running;
 
   return (
     <Card>
@@ -96,7 +104,8 @@ function CreateBacktestForm({ onDone }: { onDone: () => void }) {
           className="flex flex-col gap-4"
           onSubmit={(e) => {
             e.preventDefault();
-            if (!strategy?.current_version_id || universe.length === 0) return;
+            if (!strategy?.current_version_id || universe.length === 0 || busy) return;
+            setRunError(null);
             create.mutate(
               {
                 strategy_version_id: strategy.current_version_id,
@@ -106,7 +115,22 @@ function CreateBacktestForm({ onDone }: { onDone: () => void }) {
                 end_date: new Date(endDate).toISOString(),
                 initial_capital: capital,
               },
-              { onSuccess: onDone },
+              {
+                onSuccess: async (bt) => {
+                  setRunning(true);
+                  try {
+                    await backtestsApi.run(bt.id);
+                  } catch (err) {
+                    setRunError((err as Error).message);
+                  } finally {
+                    setRunning(false);
+                    queryClient.invalidateQueries({ queryKey: backtestKeys.all });
+                    queryClient.invalidateQueries({ queryKey: backtestKeys.detail(bt.id) });
+                    onDone();
+                    navigate(`/backtests/${bt.id}`);
+                  }
+                },
+              },
             );
           }}
         >
@@ -171,12 +195,13 @@ function CreateBacktestForm({ onDone }: { onDone: () => void }) {
           {create.isError && (
             <p className="text-xs text-neg">{(create.error as Error).message}</p>
           )}
+          {runError && <p className="text-xs text-neg">{runError}</p>}
           <div>
             <Button
               type="submit"
-              disabled={create.isPending || !strategyId || universe.length === 0}
+              disabled={busy || !strategyId || universe.length === 0}
             >
-              {create.isPending ? "Creating…" : "Create backtest"}
+              {create.isPending ? "Creating…" : running ? "Running…" : "Create & run backtest"}
             </Button>
           </div>
         </form>

@@ -8,6 +8,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  LabelList,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -22,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useBacktest, useBacktestReport, useRunBacktest } from "@/hooks/useBacktests";
 import { useCandles } from "@/hooks/useCandles";
+import { inr } from "@/lib/format";
 import { useTheme } from "@/lib/theme";
 import type { BacktestDiagnostics, BacktestReport } from "@/types/api";
 
@@ -34,6 +36,52 @@ const TIP_STYLE = {
   color: "var(--color-fg)",
   fontSize: 12,
 };
+const LABEL_FILL = "var(--color-fg-muted)";
+
+const compactNum = (v: number) =>
+  Math.abs(v) >= 1e7
+    ? `${(v / 1e7).toFixed(2)}Cr`
+    : Math.abs(v) >= 1e5
+      ? `${(v / 1e5).toFixed(2)}L`
+      : Math.abs(v) >= 1e3
+        ? `${(v / 1e3).toFixed(1)}k`
+        : `${v.toFixed(0)}`;
+const rupeeTick = (v: number) => `₹${compactNum(v)}`;
+const pctTick = (v: number) => `${v.toFixed(v >= 10 || v <= -10 ? 0 : 1)}%`;
+const toNum = (v: unknown) => (typeof v === "number" ? v : Number(v));
+const pctLabel = (v: unknown) => {
+  const n = toNum(v);
+  return Number.isFinite(n) ? `${n.toFixed(1)}%` : "";
+};
+// recharts Tooltip formatter — coerce the loose ValueType to a number.
+const tipFmt =
+  (fn: (n: number) => string, name: string) =>
+  (v: unknown): [string, string] => [fn(toNum(v)), name];
+
+// Value label for dense line/area series: only first, last and evenly spaced
+// interior points get a label, so a long curve stays readable.
+const sparseLabel =
+  (total: number, format: (v: number) => string) =>
+  (props: {
+    index?: number;
+    value?: unknown;
+    x?: number | string;
+    y?: number | string;
+  }) => {
+    const { index, value, x, y } = props;
+    const nx = toNum(x);
+    const ny = toNum(y);
+    const nv = toNum(value);
+    if (index == null || !Number.isFinite(nv) || !Number.isFinite(nx) || !Number.isFinite(ny))
+      return null;
+    const step = Math.max(1, Math.ceil(total / 6));
+    if (index !== 0 && index !== total - 1 && index % step !== 0) return null;
+    return (
+      <text x={nx} y={ny - 6} fontSize={10} fill={LABEL_FILL} textAnchor="middle">
+        {format(nv)}
+      </text>
+    );
+  };
 
 export default function BacktestDetailPage() {
   const { backtestId } = useParams<{ backtestId: string }>();
@@ -56,8 +104,8 @@ export default function BacktestDetailPage() {
           </h1>
           <p className="text-sm text-fg-muted">
             {new Date(backtest.start_date).toLocaleDateString()} –{" "}
-            {new Date(backtest.end_date).toLocaleDateString()} · {backtest.timeframe} · ₹
-            {backtest.initial_capital.toLocaleString()}
+            {new Date(backtest.end_date).toLocaleDateString()} · {backtest.timeframe} ·{" "}
+            {inr(backtest.initial_capital)}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -119,15 +167,24 @@ export default function BacktestDetailPage() {
         ) : (
           <div className="h-72 w-full">
             <ResponsiveContainer>
-              <LineChart data={equity}>
+              <LineChart data={equity} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} />
                 <XAxis dataKey="i" stroke={AXIS} fontSize={12} />
-                <YAxis stroke={AXIS} fontSize={12} domain={["auto", "auto"]} />
+                <YAxis
+                  stroke={AXIS}
+                  fontSize={12}
+                  width={70}
+                  domain={["auto", "auto"]}
+                  tickFormatter={rupeeTick}
+                />
                 <Tooltip
                   contentStyle={TIP_STYLE}
+                  formatter={tipFmt((n) => `₹${fmt(n, 0)}`, "Equity")}
                   labelFormatter={(_, p) => p?.[0]?.payload?.ts ?? ""}
                 />
-                <Line type="monotone" dataKey="equity" stroke="var(--color-accent)" dot={false} strokeWidth={2} />
+                <Line type="monotone" dataKey="equity" stroke="var(--color-accent)" dot={false} strokeWidth={2}>
+                  <LabelList dataKey="equity" content={sparseLabel(equity.length, rupeeTick)} />
+                </Line>
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -169,13 +226,15 @@ function PriceTradesChart({
   const candles = data?.available ? (data.candles ?? []) : [];
 
   const markers = useMemo<SeriesMarker<Time>[]>(() => {
+    // backend candle epochs are shifted +5:30 so the chart reads IST; markers must match
+    const IST = 5.5 * 3600;
     const out: SeriesMarker<Time>[] = [];
     for (const t of report.trades) {
       if (t.instrument !== sym) continue;
       const long = t.direction === "long";
       if (t.entry_time) {
         out.push({
-          time: Math.floor(Date.parse(t.entry_time) / 1000) as Time,
+          time: (Math.floor(Date.parse(t.entry_time) / 1000) + IST) as Time,
           position: long ? "belowBar" : "aboveBar",
           color: long ? "var(--color-pos)" : "var(--color-neg)",
           shape: long ? "arrowUp" : "arrowDown",
@@ -184,7 +243,7 @@ function PriceTradesChart({
       }
       if (t.exit_time && !t.is_open) {
         out.push({
-          time: Math.floor(Date.parse(t.exit_time) / 1000) as Time,
+          time: (Math.floor(Date.parse(t.exit_time) / 1000) + IST) as Time,
           position: long ? "aboveBar" : "belowBar",
           color: "var(--color-fg-faint)",
           shape: long ? "arrowDown" : "arrowUp",
@@ -250,11 +309,24 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
 const fmt = (v: number | null | undefined, digits = 2) =>
   v == null ? "–" : v.toLocaleString(undefined, { maximumFractionDigits: digits });
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// Backtest trade timestamps are IST wall-clock (naive or +05:30). Show the wall
+// clock as-is — parsing through Date would re-interpret it in the viewer's zone.
+const istDateTime = (raw: string | null | undefined) => {
+  if (!raw) return "–";
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(raw.trim());
+  if (!m) return raw;
+  const [, y, mo, d, hh, mm] = m;
+  const mon = MONTHS[Number(mo) - 1] ?? mo;
+  return `${d} ${mon} ${y} · ${hh}:${mm}`;
+};
+
 function MetricsGrid({ m }: { m: Record<string, number | null> }) {
   const items: [string, string, boolean?][] = [
-    ["Net P&L", `₹${fmt(m.net_pnl, 0)}`, (m.net_pnl ?? 0) < 0],
-    ["Gross P&L", `₹${fmt(m.gross_pnl, 0)}`],
-    ["Total costs", `₹${fmt(m.total_costs, 0)}`, true],
+    ["Net P&L", inr(m.net_pnl), (m.net_pnl ?? 0) < 0],
+    ["Gross P&L", inr(m.gross_pnl)],
+    ["Total costs", inr(m.total_costs), true],
     ["Return", `${fmt(m.return_pct)}%`, (m.return_pct ?? 0) < 0],
     ["CAGR", `${fmt(m.cagr_pct)}%`],
     ["Max drawdown", `${fmt(m.max_drawdown_pct)}%`, true],
@@ -264,11 +336,11 @@ function MetricsGrid({ m }: { m: Record<string, number | null> }) {
     ["Profit factor", fmt(m.profit_factor)],
     ["Win rate", `${fmt(m.win_rate_pct)}%`],
     ["Total trades", fmt(m.total_trades, 0)],
-    ["Avg trade", `₹${fmt(m.avg_trade, 0)}`],
-    ["Avg winner", `₹${fmt(m.avg_winner, 0)}`],
-    ["Avg loser", `₹${fmt(m.avg_loser, 0)}`, true],
-    ["Largest winner", `₹${fmt(m.largest_winner, 0)}`],
-    ["Largest loser", `₹${fmt(m.largest_loser, 0)}`, true],
+    ["Avg trade", inr(m.avg_trade)],
+    ["Avg winner", inr(m.avg_winner)],
+    ["Avg loser", inr(m.avg_loser), true],
+    ["Largest winner", inr(m.largest_winner)],
+    ["Largest loser", inr(m.largest_loser), true],
     ["Max consec. losses", fmt(m.max_consecutive_losses, 0), true],
     ["Turnover", `${fmt(m.turnover_ratio)}x`],
     ["Capital utilization", `${fmt(m.capital_utilization_pct)}%`],
@@ -364,11 +436,11 @@ function CostBreakdown({ report }: { report: BacktestReport }) {
         <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-fg-muted">
           {rows.map((k) => (
             <span key={k}>
-              <span className="text-fg-faint">{k}</span> ₹{fmt(b[k], 1)}
+              <span className="text-fg-faint">{k}</span> {inr(b[k], 1)}
             </span>
           ))}
           <span className="font-semibold">
-            <span className="text-fg-faint">total</span> ₹{fmt(b.total, 1)}
+            <span className="text-fg-faint">total</span> {inr(b.total, 1)}
           </span>
         </div>
       </CardContent>
@@ -388,15 +460,21 @@ function ReportCharts({ report }: { report: BacktestReport }) {
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-      <ChartCard title="Drawdown">
+      <ChartCard title="Drawdown (%)">
         <div className="h-56 w-full">
           <ResponsiveContainer>
-            <AreaChart data={dd}>
+            <AreaChart data={dd} margin={{ top: 12, right: 16, bottom: 0, left: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} />
               <XAxis dataKey="i" stroke={AXIS} fontSize={12} />
-              <YAxis stroke={AXIS} fontSize={12} />
-              <Tooltip contentStyle={TIP_STYLE} labelFormatter={(_, p) => p?.[0]?.payload?.ts ?? ""} />
-              <Area type="monotone" dataKey="dd" stroke="#ef4444" fill="#ef444433" strokeWidth={1.5} />
+              <YAxis stroke={AXIS} fontSize={12} width={52} tickFormatter={pctTick} />
+              <Tooltip
+                contentStyle={TIP_STYLE}
+                formatter={tipFmt((n) => `${fmt(n, 2)}%`, "Drawdown")}
+                labelFormatter={(_, p) => p?.[0]?.payload?.ts ?? ""}
+              />
+              <Area type="monotone" dataKey="dd" stroke="#ef4444" fill="#ef444433" strokeWidth={1.5}>
+                <LabelList dataKey="dd" content={sparseLabel(dd.length, (v) => `${v.toFixed(1)}%`)} />
+              </Area>
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -405,15 +483,22 @@ function ReportCharts({ report }: { report: BacktestReport }) {
       <ChartCard title="Monthly returns (%)">
         <div className="h-56 w-full">
           <ResponsiveContainer>
-            <BarChart data={monthly}>
+            <BarChart data={monthly} margin={{ top: 16, right: 8, bottom: 0, left: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} />
               <XAxis dataKey="k" stroke={AXIS} fontSize={10} />
-              <YAxis stroke={AXIS} fontSize={12} />
-              <Tooltip contentStyle={TIP_STYLE} />
+              <YAxis stroke={AXIS} fontSize={12} width={52} tickFormatter={pctTick} />
+              <Tooltip contentStyle={TIP_STYLE} formatter={tipFmt((n) => `${fmt(n, 2)}%`, "Return")} />
               <Bar dataKey="v">
                 {monthly.map((d, i) => (
                   <Cell key={i} fill={d.v >= 0 ? "var(--color-pos)" : "var(--color-neg)"} />
                 ))}
+                <LabelList
+                  dataKey="v"
+                  position="top"
+                  fontSize={10}
+                  fill={LABEL_FILL}
+                  formatter={pctLabel}
+                />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -421,18 +506,19 @@ function ReportCharts({ report }: { report: BacktestReport }) {
       </ChartCard>
 
       {bars.length > 0 && (
-        <ChartCard title="Trade return distribution (%)">
+        <ChartCard title="Trade return distribution (count)">
           <div className="h-56 w-full">
             <ResponsiveContainer>
-              <BarChart data={bars}>
+              <BarChart data={bars} margin={{ top: 16, right: 8, bottom: 0, left: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} />
                 <XAxis dataKey="x" stroke={AXIS} fontSize={10} />
                 <YAxis stroke={AXIS} fontSize={12} allowDecimals={false} />
-                <Tooltip contentStyle={TIP_STYLE} />
+                <Tooltip contentStyle={TIP_STYLE} formatter={tipFmt((n) => String(n), "Trades")} />
                 <Bar dataKey="c">
                   {bars.map((d, i) => (
                     <Cell key={i} fill={d.mid >= 0 ? "var(--color-pos)" : "var(--color-neg)"} />
                   ))}
+                  <LabelList dataKey="c" position="top" fontSize={10} fill={LABEL_FILL} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -443,12 +529,27 @@ function ReportCharts({ report }: { report: BacktestReport }) {
       <ChartCard title="Exposure (% of capital)">
         <div className="h-56 w-full">
           <ResponsiveContainer>
-            <AreaChart data={report.charts.exposure_curve.map(([ts, v], i) => ({ i, ts, e: v }))}>
+            <AreaChart
+              data={report.charts.exposure_curve.map(([ts, v], i) => ({ i, ts, e: v }))}
+              margin={{ top: 12, right: 16, bottom: 0, left: 8 }}
+            >
               <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} />
               <XAxis dataKey="i" stroke={AXIS} fontSize={12} />
-              <YAxis stroke={AXIS} fontSize={12} />
-              <Tooltip contentStyle={TIP_STYLE} labelFormatter={(_, p) => p?.[0]?.payload?.ts ?? ""} />
-              <Area type="monotone" dataKey="e" stroke="#0ea5e9" fill="#0ea5e933" strokeWidth={1.5} />
+              <YAxis stroke={AXIS} fontSize={12} width={52} tickFormatter={pctTick} />
+              <Tooltip
+                contentStyle={TIP_STYLE}
+                formatter={tipFmt((n) => `${fmt(n, 1)}%`, "Exposure")}
+                labelFormatter={(_, p) => p?.[0]?.payload?.ts ?? ""}
+              />
+              <Area type="monotone" dataKey="e" stroke="#0ea5e9" fill="#0ea5e933" strokeWidth={1.5}>
+                <LabelList
+                  dataKey="e"
+                  content={sparseLabel(
+                    report.charts.exposure_curve.length,
+                    (v) => `${v.toFixed(0)}%`,
+                  )}
+                />
+              </Area>
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -471,7 +572,9 @@ function TradesTable({ report }: { report: BacktestReport }) {
                 <th className="py-1 pr-3">Instrument</th>
                 <th className="py-1 pr-3">Dir</th>
                 <th className="py-1 pr-3">Qty</th>
+                <th className="py-1 pr-3">Entry time</th>
                 <th className="py-1 pr-3">Entry</th>
+                <th className="py-1 pr-3">Exit time</th>
                 <th className="py-1 pr-3">Exit</th>
                 <th className="py-1 pr-3">Bars</th>
                 <th className="py-1 pr-3">Net P&L</th>
@@ -484,14 +587,15 @@ function TradesTable({ report }: { report: BacktestReport }) {
                   <td className="py-1.5 pr-3">{t.instrument}</td>
                   <td className="py-1.5 pr-3">{t.direction}</td>
                   <td className="py-1.5 pr-3">{t.quantity}</td>
+                  <td className="py-1.5 pr-3 whitespace-nowrap tabular-nums">{istDateTime(t.entry_time)}</td>
                   <td className="py-1.5 pr-3">{fmt(t.entry_price)}</td>
-                  <td className="py-1.5 pr-3">
-                    {fmt(t.exit_price)}
-                    {t.is_open && <span className="text-fg-faint"> (open)</span>}
+                  <td className="py-1.5 pr-3 whitespace-nowrap tabular-nums">
+                    {t.is_open ? <span className="text-fg-faint">open</span> : istDateTime(t.exit_time)}
                   </td>
+                  <td className="py-1.5 pr-3">{fmt(t.exit_price)}</td>
                   <td className="py-1.5 pr-3">{t.bars_held}</td>
                   <td className={`py-1.5 pr-3 ${t.net_pnl < 0 ? "text-neg" : "text-pos"}`}>
-                    ₹{fmt(t.net_pnl, 0)}
+                    {inr(t.net_pnl)}
                   </td>
                   <td className={t.return_pct < 0 ? "text-neg" : "text-pos"}>
                     {fmt(t.return_pct)}%
