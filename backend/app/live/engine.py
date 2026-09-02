@@ -15,6 +15,7 @@ Ticks flow: KiteTicker -> MARKET_STATE (RAM) + HUB.publish -> browser WS.
 from __future__ import annotations
 
 import asyncio
+import threading
 from typing import Any
 
 from app.config import Settings, get_settings
@@ -33,6 +34,7 @@ logger = get_logger(__name__)
 
 _ticker: KiteTicker | None = None
 _task: asyncio.Task[None] | None = None
+_monitor_task: asyncio.Task[None] | None = None
 _state: str = "stopped"  # stopped | no_broker | error | running
 _detail: str = ""
 _start_lock = asyncio.Lock()
@@ -96,10 +98,70 @@ async def _create_ticker(settings: Settings, tokens: list[int]) -> bool:
         on_tick=_fan_out,
     )
     _task = asyncio.create_task(_ticker.run(), name="kite-ticker")
+    global _monitor_task
+    _monitor_task = asyncio.create_task(_monitor_loop(), name="live-monitor")
     _state = "running"
     _detail = f"mode={settings.live_ticker_mode}"
     logger.info("live_ticker_started", instruments=len(tokens), mode=settings.live_ticker_mode)
     return True
+
+
+async def _monitor_loop() -> None:
+    """Every ~2s: feed the circuit breakers a market-data health reading, and
+    on a broker-feed reconnect kick a best-effort order + position resync."""
+    from app.live.circuit_breakers import BREAKERS, is_market_open
+
+    prev_connected: bool | None = None
+    stale_halt = get_settings().circuit_breaker_stale_halt_seconds
+    while _ticker is not None:
+        try:
+            connected = _ticker.connected
+            BREAKERS.observe(
+                feed_connected=connected,
+                seconds_since_tick=MARKET_STATE.seconds_since_any_tick(),
+                stale_threshold=stale_halt,
+                market_open=is_market_open(),
+            )
+            if prev_connected is False and connected:
+                logger.info("live_feed_reconnected_resyncing")
+                _resync_after_reconnect()
+            prev_connected = connected
+        except Exception:  # noqa: BLE001
+            logger.exception("live_monitor_loop_error")
+        await asyncio.sleep(2.0)
+
+
+def _resync_after_reconnect() -> None:
+    """Reconcile OMS orders + refresh the risk engine's position book from
+    the broker, on its own thread (sync DB + broker calls)."""
+
+    def _run() -> None:
+        from app.live.oms import OMS_ENGINE
+        from app.live.reconciler import reconcile
+        from app.live.risk import RISK
+
+        db = SessionLocal()
+        try:
+            client = broker_service.build_authenticated_client(db, get_settings())
+            reconcile(db, client)
+            db.commit()
+            try:
+                positions = client.get_positions().get("net", [])
+                for dep_id in {o.deployment_id for o in OMS_ENGINE.open_orders()}:
+                    book = {
+                        p["tradingsymbol"]: int(p["quantity"])
+                        for p in positions
+                        if int(p.get("quantity") or 0) != 0
+                    }
+                    RISK.sync_positions(dep_id, book)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("live_reconnect_position_sync_failed", error=str(exc))
+        except Exception:  # noqa: BLE001
+            logger.exception("live_reconnect_resync_failed")
+        finally:
+            db.close()
+
+    threading.Thread(target=_run, name="live-resync", daemon=True).start()
 
 
 async def start(settings: Settings | None = None) -> None:
@@ -139,9 +201,11 @@ async def drop_upstream(tokens: list[int]) -> None:
 
 
 async def stop() -> None:
-    global _ticker, _task
+    global _ticker, _task, _monitor_task
     if _ticker is not None:
         _ticker.request_stop()
+    if _monitor_task is not None:
+        _monitor_task.cancel()
     if _task is not None:
         try:
             await asyncio.wait_for(_task, timeout=5)
@@ -149,7 +213,7 @@ async def stop() -> None:
             _task.cancel()
         except Exception:  # noqa: BLE001
             logger.exception("live_ticker_stop_error")
-    _ticker, _task = None, None
+    _ticker, _task, _monitor_task = None, None, None
     _set_stopped("stopped")
 
 
@@ -169,4 +233,7 @@ def engine_status() -> dict[str, Any]:
         "seconds_since_any_tick": round(since, 3) if since is not None else None,
         "stale": since is not None and since > stale_after,
     }
+    from app.live.circuit_breakers import BREAKERS
+
+    st["circuit_breakers"] = BREAKERS.snapshot()
     return st

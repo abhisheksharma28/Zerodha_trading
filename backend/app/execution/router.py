@@ -17,6 +17,7 @@ from app.core.logging import get_logger
 from app.execution import guard
 from app.execution.paper_executor import PaperExecutor
 from app.execution.sim_executor import SimulationExecutor
+from app.live.circuit_breakers import BREAKERS
 from app.live.latency import (
     LATENCY,
     STAGE_BROKER_RTT,
@@ -89,9 +90,16 @@ class OrderRouter:
             get_settings(), (self.deployment.config or {}).get("risk")
         )
         with LATENCY.span(STAGE_RISK):
-            decision = RISK.evaluate(deployment_id, order_request, limits)
-        if not decision.approved:
-            return self._record_rejected(order_request, decision.reason or "risk check failed")
+            if BREAKERS.halted:
+                reasons = "; ".join(r["reason"] for r in BREAKERS.snapshot()["reasons"])
+                decision_reason = f"circuit breaker halt ({reasons})"
+                approved = False
+            else:
+                decision = RISK.evaluate(deployment_id, order_request, limits)
+                approved = decision.approved
+                decision_reason = decision.reason or "risk check failed"
+        if not approved:
+            return self._record_rejected(order_request, decision_reason)
         RISK.record_submitted(deployment_id, order_request)
 
         if self.deployment.mode == TradingMode.LIVE:

@@ -9,6 +9,83 @@ import { ModeBadge } from "@/components/ModeBadge";
 import { useDeployments } from "@/hooks/useDeployments";
 import { inr } from "@/lib/format";
 
+function CircuitBreakerRow() {
+  const qc = useQueryClient();
+  const { data: cb } = useQuery({
+    queryKey: ["monitoring", "circuit-breakers"],
+    queryFn: monitoringApi.circuitBreakers,
+    refetchInterval: 3_000,
+  });
+  const override = useMutation({
+    mutationFn: monitoringApi.overrideBreakers,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["monitoring", "circuit-breakers"] }),
+  });
+  if (!cb) return null;
+  return (
+    <div
+      className={`flex items-center justify-between rounded-md border px-2.5 py-1.5 ${
+        cb.halted ? "border-red-500/50 bg-red-500/5 text-neg" : "border-line text-fg-muted"
+      }`}
+    >
+      <span>
+        {cb.halted
+          ? `AUTO-HALT: ${cb.reasons.map((r) => r.reason).join(", ")}`
+          : cb.override_active
+            ? "Auto-halt overridden by operator"
+            : "Circuit breakers armed · no auto-halt"}
+      </span>
+      {cb.halted && (
+        <button
+          type="button"
+          disabled={override.isPending}
+          onClick={() => override.mutate()}
+          className="rounded bg-fg-faint/20 px-2 py-1 text-[11px] font-medium hover:bg-fg-faint/30"
+        >
+          Override & resume
+        </button>
+      )}
+    </div>
+  );
+}
+
+function FlattenButton() {
+  const qc = useQueryClient();
+  const flatten = useMutation({
+    mutationFn: monitoringApi.flatten,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["monitoring", "risk"] });
+      qc.invalidateQueries({ queryKey: ["monitoring", "oms"] });
+    },
+  });
+  return (
+    <div className="mt-1">
+      <button
+        type="button"
+        disabled={flatten.isPending}
+        onClick={() => {
+          if (
+            window.confirm(
+              "EMERGENCY FLATTEN: market-close every open LIVE position and engage the kill switch. Continue?",
+            )
+          )
+            flatten.mutate();
+        }}
+        className="w-full rounded-md border border-red-500/60 bg-red-500/10 py-1.5 text-xs font-bold text-neg hover:bg-red-500/20"
+      >
+        {flatten.isPending ? "Flattening…" : "EMERGENCY FLATTEN ALL POSITIONS"}
+      </button>
+      {flatten.isError && (
+        <p className="mt-1 text-[11px] text-neg">{(flatten.error as Error).message}</p>
+      )}
+      {flatten.isSuccess && (
+        <p className="mt-1 text-[11px] text-fg-muted">
+          {flatten.data.positions_flattened.length} leg(s) sent · kill switch engaged.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function KillSwitchCard() {
   const qc = useQueryClient();
   const { data: risk } = useQuery({
@@ -56,6 +133,9 @@ function KillSwitchCard() {
             ? "All new orders are BLOCKED across every deployment. Open positions are untouched."
             : "Normal pre-trade risk checks active. Engaging stops all new orders instantly."}
         </p>
+
+        <CircuitBreakerRow />
+        <FlattenButton />
         {deps.length === 0 ? (
           <p className="text-fg-faint">No deployment risk activity yet.</p>
         ) : (

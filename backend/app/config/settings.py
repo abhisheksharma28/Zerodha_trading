@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     live_ticker_instruments: str = ""
     live_ticker_max_instruments: int = 500
     live_ticker_stale_seconds: float = 5.0
+    # No tick for this long during market hours trips the data-stale circuit
+    # breaker and halts new orders until ticks resume.
+    circuit_breaker_stale_halt_seconds: float = 15.0
 
     # --- Strategy-evaluation worker (app.workers) ---
     worker_poll_interval_seconds: int = 60

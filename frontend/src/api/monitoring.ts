@@ -121,14 +121,31 @@ export interface OmsSnapshot {
   orders: OmsOrder[];
 }
 
+export interface CircuitBreakerSnapshot {
+  halted: boolean;
+  override_active: boolean;
+  market_open: boolean;
+  reasons: { reason: string; detail: string; tripped_seconds_ago: number }[];
+}
+
 export const monitoringApi = {
   latency: () => apiClient.get<LatencySnapshot>("/monitoring/latency").then((r) => r.data),
   indicators: () =>
     apiClient.get<IndicatorsResponse>("/monitoring/indicators").then((r) => r.data),
   risk: () => apiClient.get<RiskSnapshot>("/monitoring/risk").then((r) => r.data),
   oms: () => apiClient.get<OmsSnapshot>("/monitoring/oms").then((r) => r.data),
+  circuitBreakers: () =>
+    apiClient.get<CircuitBreakerSnapshot>("/monitoring/circuit-breakers").then((r) => r.data),
   killSwitch: (scope: string, engaged: boolean) =>
     apiClient
       .post<RiskSnapshot | DeploymentRisk>("/monitoring/risk/kill-switch", { scope, engaged })
+      .then((r) => r.data),
+  overrideBreakers: () =>
+    apiClient.post<CircuitBreakerSnapshot>("/monitoring/circuit-breakers/override").then((r) => r.data),
+  flatten: () =>
+    apiClient
+      .post<{ kill_switch: string; positions_flattened: unknown[] }>("/monitoring/flatten", {
+        confirm: "FLATTEN ALL",
+      })
       .then((r) => r.data),
 };
