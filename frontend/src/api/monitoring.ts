@@ -94,11 +94,39 @@ export interface RiskSnapshot {
   deployments: Record<string, DeploymentRisk>;
 }
 
+export interface OmsOrder {
+  internal_id: string;
+  deployment_id: string;
+  tradingsymbol: string;
+  side: string;
+  quantity: number;
+  state: string;
+  broker_order_id: string | null;
+  filled_qty: number;
+  avg_fill_price: number | null;
+  reject_reason: string | null;
+  created_at: string;
+  submitted_at: string | null;
+  filled_at: string | null;
+  latency_ms: {
+    create_to_submit: number | null;
+    submit_to_ack: number | null;
+    submit_to_fill: number | null;
+  };
+}
+
+export interface OmsSnapshot {
+  counts: Record<string, number>;
+  open: number;
+  orders: OmsOrder[];
+}
+
 export const monitoringApi = {
   latency: () => apiClient.get<LatencySnapshot>("/monitoring/latency").then((r) => r.data),
   indicators: () =>
     apiClient.get<IndicatorsResponse>("/monitoring/indicators").then((r) => r.data),
   risk: () => apiClient.get<RiskSnapshot>("/monitoring/risk").then((r) => r.data),
+  oms: () => apiClient.get<OmsSnapshot>("/monitoring/oms").then((r) => r.data),
   killSwitch: (scope: string, engaged: boolean) =>
     apiClient
       .post<RiskSnapshot | DeploymentRisk>("/monitoring/risk/kill-switch", { scope, engaged })

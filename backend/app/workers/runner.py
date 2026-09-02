@@ -143,8 +143,32 @@ class DeploymentWorker:
         finally:
             db.close()
 
+        self._reconcile_live_orders()
         self._run_options_scheduler()
         self._publish_telemetry(active_deployments=len(self._runtimes))
+
+    def _reconcile_live_orders(self) -> None:
+        """Read the broker order book and settle any open OMS orders. Runs
+        independently of the (skipped) live-deployment evaluation loop —
+        it's a read-only broker call plus local status sync."""
+        from app.live.oms import OMS_ENGINE
+        from app.live.reconciler import reconcile
+
+        if not OMS_ENGINE.open_orders():
+            return
+        db = self._session_factory()
+        try:
+            client = broker_service.build_authenticated_client(db, self._settings)
+            result = reconcile(db, client)
+            if result.get("settled"):
+                logger.info("worker_reconciled_orders", **result)
+            db.commit()
+        except BrokerNotConnectedError:
+            pass
+        except Exception:  # noqa: BLE001 - never let reconciliation kill the loop
+            logger.exception("worker_reconcile_failed")
+        finally:
+            db.close()
 
     def _publish_telemetry(self, *, active_deployments: int) -> None:
         """Off the critical path — once per poll, never per event."""

@@ -104,6 +104,79 @@ function KillSwitchCard() {
   );
 }
 
+const OMS_STATE_TONE: Record<string, string> = {
+  FILLED: "text-pos",
+  PARTIALLY_FILLED: "text-accent",
+  REJECTED: "text-neg",
+  FAILED: "text-neg",
+  CANCELLED: "text-fg-faint",
+};
+
+function OmsCard() {
+  const { data: oms } = useQuery({
+    queryKey: ["monitoring", "oms"],
+    queryFn: monitoringApi.oms,
+    refetchInterval: 3_000,
+  });
+  const orders = oms?.orders ?? [];
+  if (orders.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Order management ({oms?.open ?? 0} open)</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="mb-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-fg-faint">
+          {Object.entries(oms?.counts ?? {}).map(([s, n]) => (
+            <span key={s} className={OMS_STATE_TONE[s] ?? ""}>
+              {s} {n}
+            </span>
+          ))}
+        </p>
+        <div className="max-h-72 overflow-auto">
+          <table className="w-full text-xs tabular-nums">
+            <thead className="sticky top-0 bg-surface text-[10px] uppercase tracking-wide text-fg-faint">
+              <tr>
+                <th className="py-1 pr-3 text-left">Symbol</th>
+                <th className="py-1 pr-3 text-left">Side</th>
+                <th className="py-1 pr-3 text-right">Qty / filled</th>
+                <th className="py-1 pr-3 text-left">State</th>
+                <th className="py-1 pr-3 text-right">Submit→fill</th>
+                <th className="py-1 text-left">Broker id</th>
+              </tr>
+            </thead>
+            <tbody>
+              {orders.map((o) => (
+                <tr key={o.internal_id} className="border-t border-line">
+                  <td className="py-1 pr-3 text-left text-fg-muted">{o.tradingsymbol}</td>
+                  <td className="py-1 pr-3 text-left">{o.side}</td>
+                  <td className="py-1 pr-3 text-right">
+                    {o.quantity}
+                    {o.filled_qty > 0 && ` / ${o.filled_qty}`}
+                  </td>
+                  <td className={`py-1 pr-3 text-left font-medium ${OMS_STATE_TONE[o.state] ?? "text-fg-muted"}`}>
+                    {o.state}
+                    {o.reject_reason && (
+                      <span className="block max-w-[14rem] truncate text-[10px] text-fg-faint">
+                        {o.reject_reason}
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-1 pr-3 text-right text-fg-faint">
+                    {o.latency_ms.submit_to_fill != null ? `${o.latency_ms.submit_to_fill} ms` : "–"}
+                  </td>
+                  <td className="py-1 text-left text-fg-faint">{o.broker_order_id ?? "–"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function MonitoringPage() {
   const { data: deployments, isLoading } = useDeployments();
   const running = deployments?.filter((d) => d.status === "running") ?? [];
@@ -119,6 +192,7 @@ export default function MonitoringPage() {
       </div>
 
       <KillSwitchCard />
+      <OmsCard />
 
       {isLoading && <p className="text-sm text-fg-faint">Loading…</p>}
 

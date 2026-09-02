@@ -24,6 +24,7 @@ from app.live.latency import (
     STAGE_ORDER_PREP,
     STAGE_RISK,
 )
+from app.live.oms import OMS_ENGINE
 from app.live.risk import RISK, RiskLimits
 from app.models.deployment import Deployment
 from app.models.enums import AuditAction, ChangeEntityType, OrderStatus, TradingMode
@@ -149,14 +150,42 @@ class OrderRouter:
             self.db.add(order_row)
             self.db.flush()
 
+        internal_id = str(order_row.id)
+        OMS_ENGINE.register(
+            internal_id,
+            deployment_id=str(self.deployment.id),
+            tradingsymbol=order_request.tradingsymbol,
+            exchange=order_request.exchange,
+            side=order_request.transaction_type,
+            quantity=int(order_request.quantity),
+        )
+
         # T7 -> T8: EXTERNAL latency (Kite + network). Tracked separately so
         # the UI never blames our engine for the broker round-trip.
-        with LATENCY.span(STAGE_BROKER_RTT):
-            result = self._broker_client.place_order(order_request)
+        try:
+            with LATENCY.span(STAGE_BROKER_RTT):
+                result = self._broker_client.place_order(order_request)
+        except Exception as exc:  # noqa: BLE001
+            # A client-side failure is NOT proof the order failed at Kite.
+            # Keep the row PENDING, mark the OMS order submitted-without-id so
+            # the reconciler can adopt it on the next poll, and let the
+            # deployment keep running.
+            OMS_ENGINE.mark_submitted(internal_id, None)
+            order_row.status = OrderStatus.PENDING
+            order_row.status_message = f"broker call failed, pending reconciliation: {exc}"[:1000]
+            self.db.commit()
+            logger.warning(
+                "live_order_broker_call_failed",
+                deployment_id=str(self.deployment.id),
+                internal_id=internal_id,
+                error=str(exc),
+            )
+            return ExecutionResult(order=order_row, broker_order_id=None)
 
+        OMS_ENGINE.mark_submitted(internal_id, result.broker_order_id)
         order_row.broker_order_id = result.broker_order_id
         order_row.raw_response = result.raw_response
-        order_row.status = OrderStatus.OPEN  # confirmed via postback/reconciliation, not assumed COMPLETE
+        order_row.status = OrderStatus.OPEN  # confirmed via reconciliation, not assumed COMPLETE
         self.db.commit()
 
         logger.info(

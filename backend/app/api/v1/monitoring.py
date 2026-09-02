@@ -85,6 +85,15 @@ def kill_switch(body: KillSwitchBody) -> dict:
     return RISK.snapshot(None if body.scope == "all" else body.scope)
 
 
+@router.get("/oms")
+def oms() -> dict:
+    """Order Management System snapshot: per-state counts and the recent
+    order lifecycle (create → submit → ack → fill timestamps + latencies)."""
+    from app.live.oms import OMS_ENGINE
+
+    return OMS_ENGINE.snapshot()
+
+
 @router.get("/indicators")
 def indicators() -> dict:
     """Live incremental indicators (EMA/SMA/RSI/ATR/VWAP/Bollinger/MACD/…),
