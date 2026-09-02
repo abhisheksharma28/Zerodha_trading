@@ -52,3 +52,21 @@ def market_state() -> dict:
     from app.live.market_state import MARKET_STATE
 
     return MARKET_STATE.snapshot()
+
+
+@router.get("/indicators")
+def indicators() -> dict:
+    """Live incremental indicators (EMA/SMA/RSI/ATR/VWAP/Bollinger/MACD/…),
+    stepped one bar at a time off the tick stream — never recomputed from
+    history. Keyed by tradingsymbol."""
+    from app.live.indicator_engine import INDICATOR_ENGINE
+    from app.live.market_stream import HUB
+
+    by_symbol: dict[str, dict] = {}
+    for token, snap in INDICATOR_ENGINE.snapshot_all().items():
+        sym = HUB.symbol_for(token) or str(token)
+        by_symbol[sym] = snap
+    return {
+        "interval_seconds": INDICATOR_ENGINE.interval,
+        "instruments": by_symbol,
+    }

@@ -5,6 +5,7 @@ import { BarChart3, Bell, FileText, FlaskConical, X } from "lucide-react";
 
 import { stocksApi } from "@/api/stocks";
 import { useCandles } from "@/hooks/useCandles";
+import { useLiveIndicators } from "@/hooks/useLiveIndicators";
 import { useLiveTick } from "@/hooks/useLiveTick";
 import { atr, ema, rsi, sma, vwap, type Candle } from "@/lib/indicators";
 import { useStockDrawer } from "@/lib/stockDrawer";
@@ -315,6 +316,35 @@ function interpret(price: number, e20?: number, e50?: number, r?: number) {
   return { trend, momentum };
 }
 
+function LiveIndicatorStrip({ ref_ }: { ref_: string }) {
+  const li = useLiveIndicators(ref_);
+  if (!li || li.bars < 1) return null;
+  const cells: [string, number | null][] = [
+    ["EMA 20", li.ema20],
+    ["SMA 20", li.sma20],
+    ["VWAP", li.vwap],
+    ["RSI 14", li.rsi14],
+    ["ATR 14", li.atr14],
+    ["MACD hist", li.macd_hist],
+  ];
+  return (
+    <div className="rounded-md border border-accent/30 bg-accent-soft/40 p-2.5">
+      <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-accent">
+        <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+        Live · 1m incremental · {li.bars} bars
+      </p>
+      <div className="grid grid-cols-3 gap-2 text-xs tabular-nums">
+        {cells.map(([k, v]) => (
+          <div key={k}>
+            <span className="block text-[10px] text-fg-faint">{k}</span>
+            <span className="font-semibold">{num(v)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function TechnicalsTab({ ref_ }: { ref_: string }) {
   const { data } = useCandles(ref_, "1d", 260);
   const candles = useMemo<Candle[]>(() => (data?.available ? (data.candles ?? []) : []), [data]);
@@ -352,6 +382,7 @@ function TechnicalsTab({ ref_ }: { ref_: string }) {
   ];
   return (
     <div className="flex flex-col gap-3">
+      <LiveIndicatorStrip ref_={ref_} />
       <div className="flex gap-2 text-[11px]">
         <Tag label={`Trend: ${t.trend}`} tone={t.trend === "BULLISH" ? "pos" : t.trend === "BEARISH" ? "neg" : "muted"} />
         <Tag label={`Momentum: ${t.momentum}`} tone={t.momentum === "STRONG" ? "pos" : t.momentum === "WEAK" ? "neg" : "muted"} />

@@ -55,7 +55,33 @@ export interface LatencySnapshot {
   thresholds_ms: { excellent: number; fast: number; moderate: number; high: number };
 }
 
+export interface LiveIndicators {
+  bars: number;
+  ema9: number | null;
+  ema20: number | null;
+  ema50: number | null;
+  sma20: number | null;
+  rsi14: number | null;
+  atr14: number | null;
+  vwap: number | null;
+  bb_lower: number | null;
+  bb_mid: number | null;
+  bb_upper: number | null;
+  macd: number | null;
+  macd_signal: number | null;
+  macd_hist: number | null;
+  roll_low20: number | null;
+  roll_high20: number | null;
+  last_bar_age_seconds: number | null;
+}
+
+export interface IndicatorsResponse {
+  interval_seconds: number;
+  instruments: Record<string, LiveIndicators>;
+}
+
 export const monitoringApi = {
-  latency: () =>
-    apiClient.get<LatencySnapshot>("/monitoring/latency").then((r) => r.data),
+  latency: () => apiClient.get<LatencySnapshot>("/monitoring/latency").then((r) => r.data),
+  indicators: () =>
+    apiClient.get<IndicatorsResponse>("/monitoring/indicators").then((r) => r.data),
 };

@@ -21,6 +21,7 @@ from app.config import Settings, get_settings
 from app.core.exceptions import BrokerNotConnectedError
 from app.core.logging import get_logger
 from app.db.session import SessionLocal
+from app.live.indicator_engine import INDICATOR_ENGINE
 from app.live.market_state import MARKET_STATE
 from app.live.market_stream import HUB
 from app.market_data.instruments import resolve_instrument_token
@@ -82,13 +83,17 @@ async def _create_ticker(settings: Settings, tokens: list[int]) -> bool:
         _state, _detail = "no_broker", "broker session has no access token"
         return False
 
+    def _fan_out(tick: dict[str, Any]) -> None:
+        HUB.publish(tick)
+        INDICATOR_ENGINE.on_tick(tick)
+
     _ticker = KiteTicker(
         api_key,
         access_token,
         tokens,
         mode=settings.live_ticker_mode,
         market_state=MARKET_STATE,
-        on_tick=HUB.publish,
+        on_tick=_fan_out,
     )
     _task = asyncio.create_task(_ticker.run(), name="kite-ticker")
     _state = "running"

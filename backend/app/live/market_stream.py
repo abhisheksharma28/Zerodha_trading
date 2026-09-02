@@ -123,6 +123,9 @@ class MarketStreamHub:
                     conn.queue.put_nowait(payload)
                 conn.dropped += 1
 
+    def symbol_for(self, token: int) -> str | None:
+        return self._symbol_by_token.get(int(token))
+
     def status(self) -> dict[str, Any]:
         return {
             "clients": len(self._clients),
