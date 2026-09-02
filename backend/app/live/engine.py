@@ -1,12 +1,15 @@
-"""Supervises the live market-data ticker for the API process.
+"""Owns the single Kite market-data ticker for the API process and bridges
+it to the frontend fan-out hub.
 
-Started from the FastAPI lifespan. Off by default — set ``LIVE_TICKER_ENABLED
-=true`` to run it. When enabled it needs a connected Zerodha session; if
-there is none at startup the ticker simply doesn't start and
-:func:`engine_status` says so (a later slice adds live re-arming).
+Two ways the ticker starts:
 
-The ticker folds ticks into :data:`app.live.market_state.MARKET_STATE`; this
-module only owns the task lifecycle and the instrument selection.
+* eagerly from the FastAPI lifespan when ``LIVE_TICKER_ENABLED=true`` (with
+  the configured watchlist), and
+* lazily via :func:`ensure_started` the first time a browser opens a live
+  chart — a chart subscription is itself explicit intent, so it does not
+  require the env flag, only a connected Zerodha session.
+
+Ticks flow: KiteTicker -> MARKET_STATE (RAM) + HUB.publish -> browser WS.
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ from app.core.exceptions import BrokerNotConnectedError
 from app.core.logging import get_logger
 from app.db.session import SessionLocal
 from app.live.market_state import MARKET_STATE
+from app.live.market_stream import HUB
 from app.market_data.instruments import resolve_instrument_token
 from app.market_data.kite_ticker import KiteTicker
 from app.market_data.nse_universe import NIFTY_50
@@ -28,38 +32,37 @@ logger = get_logger(__name__)
 
 _ticker: KiteTicker | None = None
 _task: asyncio.Task[None] | None = None
-_state: str = "disabled"  # disabled | no_broker | no_instruments | running | error
+_state: str = "stopped"  # stopped | no_broker | error | running
 _detail: str = ""
+_start_lock = asyncio.Lock()
 
 
 def _watchlist(settings: Settings) -> list[str]:
     raw = (settings.live_ticker_instruments or "").strip()
-    if raw:
-        syms = [s.strip() for s in raw.split(",") if s.strip()]
-    else:
-        syms = [f"NSE:{sym}" for sym, _n, _s in NIFTY_50]
+    syms = (
+        [s.strip() for s in raw.split(",") if s.strip()]
+        if raw
+        else [f"NSE:{sym}" for sym, _n, _s in NIFTY_50]
+    )
     return syms[: settings.live_ticker_max_instruments]
 
 
-def _resolve_tokens(symbols: list[str]) -> list[int]:
-    tokens: list[int] = []
+def resolve_symbols(symbols: list[str]) -> tuple[list[tuple[int, str, str]], list[str]]:
+    """[(token, input_symbol, tradingsymbol), ...], [unknown_inputs]."""
+    triples: list[tuple[int, str, str]] = []
+    unknown: list[str] = []
     for sym in symbols:
         try:
-            token, _ts = resolve_instrument_token(sym)
-            tokens.append(int(token))
-        except Exception as exc:  # noqa: BLE001 - skip unknowns, keep the rest
-            logger.info("live_ticker_unresolved_symbol", symbol=sym, error=str(exc))
-    return tokens
+            token, tradingsymbol = resolve_instrument_token(sym)
+            triples.append((int(token), sym, tradingsymbol))
+        except Exception:  # noqa: BLE001
+            unknown.append(sym)
+    return triples, unknown
 
 
-async def start(settings: Settings | None = None) -> None:
+async def _create_ticker(settings: Settings, tokens: list[int]) -> bool:
+    """Build + launch the ticker task. Returns True on success."""
     global _ticker, _task, _state, _detail
-    settings = settings or get_settings()
-
-    if not settings.live_ticker_enabled:
-        _state, _detail = "disabled", "LIVE_TICKER_ENABLED is not set"
-        return
-
     db = SessionLocal()
     try:
         client = broker_service.build_authenticated_client(db, settings)
@@ -67,23 +70,17 @@ async def start(settings: Settings | None = None) -> None:
         access_token = client.access_token
     except BrokerNotConnectedError as exc:
         _state, _detail = "no_broker", str(exc)
-        logger.info("live_ticker_not_started_no_broker")
-        return
+        return False
     except Exception as exc:  # noqa: BLE001
         _state, _detail = "error", f"{type(exc).__name__}: {exc}"
         logger.warning("live_ticker_start_failed", error=_detail)
-        return
+        return False
     finally:
         db.close()
 
-    if not access_token or not api_key:
+    if not api_key or not access_token:
         _state, _detail = "no_broker", "broker session has no access token"
-        return
-
-    tokens = _resolve_tokens(_watchlist(settings))
-    if not tokens:
-        _state, _detail = "no_instruments", "no instrument tokens resolved for the watchlist"
-        return
+        return False
 
     _ticker = KiteTicker(
         api_key,
@@ -91,14 +88,53 @@ async def start(settings: Settings | None = None) -> None:
         tokens,
         mode=settings.live_ticker_mode,
         market_state=MARKET_STATE,
+        on_tick=HUB.publish,
     )
     _task = asyncio.create_task(_ticker.run(), name="kite-ticker")
-    _state, _detail = "running", f"{len(tokens)} instruments, mode={settings.live_ticker_mode}"
+    _state = "running"
+    _detail = f"mode={settings.live_ticker_mode}"
     logger.info("live_ticker_started", instruments=len(tokens), mode=settings.live_ticker_mode)
+    return True
+
+
+async def start(settings: Settings | None = None) -> None:
+    """Eager startup from the lifespan. Only runs the ticker up-front when
+    LIVE_TICKER_ENABLED is set; otherwise it waits for a chart subscription."""
+    settings = settings or get_settings()
+    if not settings.live_ticker_enabled:
+        _set_stopped("LIVE_TICKER_ENABLED not set — ticker starts on first chart subscription")
+        return
+    async with _start_lock:
+        if _ticker is not None:
+            return
+        triples, _unknown = resolve_symbols(_watchlist(settings))
+        await _create_ticker(settings, [t for t, _in, _ts in triples])
+
+
+async def ensure_started() -> str:
+    """Start the ticker on demand (a browser opened a live chart). Idempotent."""
+    global _ticker
+    if _ticker is not None and _state == "running":
+        return _state
+    async with _start_lock:
+        if _ticker is not None and _state == "running":
+            return _state
+        await _create_ticker(get_settings(), [])
+    return _state
+
+
+async def ensure_upstream(tokens: list[int]) -> None:
+    if _ticker is not None and tokens:
+        await _ticker.subscribe(tokens)
+
+
+async def drop_upstream(tokens: list[int]) -> None:
+    if _ticker is not None and tokens:
+        await _ticker.unsubscribe(tokens)
 
 
 async def stop() -> None:
-    global _ticker, _task, _state
+    global _ticker, _task
     if _ticker is not None:
         _ticker.request_stop()
     if _task is not None:
@@ -109,12 +145,16 @@ async def stop() -> None:
         except Exception:  # noqa: BLE001
             logger.exception("live_ticker_stop_error")
     _ticker, _task = None, None
-    if _state == "running":
-        _state = "disabled"
+    _set_stopped("stopped")
+
+
+def _set_stopped(detail: str) -> None:
+    global _state, _detail
+    _state, _detail = "stopped", detail
 
 
 def engine_status() -> dict[str, Any]:
-    st: dict[str, Any] = {"state": _state, "detail": _detail}
+    st: dict[str, Any] = {"state": _state, "detail": _detail, "hub": HUB.status()}
     if _ticker is not None:
         st["ticker"] = _ticker.status()
     stale_after = get_settings().live_ticker_stale_seconds

@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import type { Time } from "lightweight-charts";
 
 import { DrawingSurface, type ChartApi } from "@/components/DrawingLayer";
 import { IndicatorMenu, type Indicator } from "@/components/IndicatorMenu";
@@ -9,17 +10,17 @@ import { PriceChart, type Overlay, type SubPane } from "@/components/PriceChart"
 import { TimeframeSelect } from "@/components/TimeframeSelect";
 import { Card, CardContent } from "@/components/ui/card";
 import { useCandles } from "@/hooks/useCandles";
+import { useLiveTick } from "@/hooks/useLiveTick";
 import { useNow } from "@/hooks/useNow";
 import { atr, bollinger, ema, macd, rsi, sma, vwap, type Candle } from "@/lib/indicators";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
-// Intraday charts poll so the forming candle tracks the live price; the
-// daily chart only needs an occasional refresh.
+// Live ticks keep the last candle moving between polls; the REST poll only
+// needs to reconcile the series (new bars, volume) reasonably often.
 function refetchMsFor(timeframe: string): number {
   if (timeframe === "1d" || timeframe === "1w") return 60_000;
-  if (timeframe === "1h" || timeframe === "30m") return 15_000;
-  return 5_000;
+  return 10_000;
 }
 
 export default function ChartingPage() {
@@ -42,6 +43,41 @@ export default function ChartingPage() {
   );
   const now = useNow(1000);
   const agoSecs = dataUpdatedAt ? Math.max(0, Math.round((now - dataUpdatedAt) / 1000)) : null;
+
+  // --- live last-candle updates from the tick stream ---
+  const { tick, status: streamStatus } = useLiveTick(symbol);
+  const [liveLast, setLiveLast] = useState<Candle | null>(null);
+  const lastTickAtRef = useRef(0);
+
+  // A fresh REST payload is authoritative — drop the live overlay.
+  useEffect(() => {
+    setLiveLast(null);
+  }, [candles]);
+
+  useEffect(() => {
+    if (!tick || tick.ltp == null || !chartApi || candles.length === 0) return;
+    const base = liveLast ?? candles[candles.length - 1];
+    const px = tick.ltp;
+    const merged: Candle = {
+      ...base,
+      high: Math.max(base.high, px),
+      low: Math.min(base.low, px),
+      close: px,
+    };
+    lastTickAtRef.current = Date.now();
+    setLiveLast(merged);
+    chartApi.series.update({
+      time: merged.time as Time,
+      open: merged.open,
+      high: merged.high,
+      low: merged.low,
+      close: merged.close,
+    } as never);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tick, chartApi]);
+
+  const tickFresh = now - lastTickAtRef.current < 6_000;
+  const streamLive = streamStatus === "open" && tickFresh;
 
   const setSymbol = (s: string) => {
     params.set("symbol", s);
@@ -87,7 +123,7 @@ export default function ChartingPage() {
     return { overlays: ovs, subPanes: panes };
   }, [candles, indicators]);
 
-  const last = candles[candles.length - 1];
+  const last = liveLast ?? candles[candles.length - 1];
   const prev = candles[candles.length - 2];
   const chg = last && prev ? ((last.close - prev.close) / prev.close) * 100 : null;
   const bar = hover ?? last;
@@ -142,14 +178,22 @@ export default function ChartingPage() {
                   <span
                     className={cn(
                       "h-1.5 w-1.5 rounded-full",
-                      isFetching ? "bg-accent" : "bg-pos",
+                      streamLive
+                        ? "bg-pos"
+                        : streamStatus === "connecting" || streamStatus === "reconnecting"
+                          ? "bg-accent animate-pulse"
+                          : isFetching
+                            ? "bg-accent"
+                            : "bg-line-strong",
                     )}
                   />
-                  {agoSecs == null
-                    ? "live"
-                    : agoSecs <= 2
-                      ? "live"
-                      : `updated ${agoSecs}s ago`}
+                  {streamLive
+                    ? "live · streaming"
+                    : streamStatus === "reconnecting"
+                      ? "reconnecting…"
+                      : agoSecs == null || agoSecs <= 2
+                        ? "live"
+                        : `updated ${agoSecs}s ago`}
                 </span>
               </div>
               <div className="relative">

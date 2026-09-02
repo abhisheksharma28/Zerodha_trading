@@ -12,6 +12,7 @@ from app.config import get_settings
 from app.core.exceptions import AppError
 from app.core.logging import configure_logging, get_logger
 from app.live.latency import LATENCY
+from app.websocket.routes import router as ws_router
 
 settings = get_settings()
 configure_logging()
@@ -88,3 +89,4 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
 
 
 app.include_router(api_router)
+app.include_router(ws_router)
