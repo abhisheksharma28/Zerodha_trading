@@ -18,6 +18,8 @@ import { PageHeader } from "@/components/PageHeader";
 import { SectionCard } from "@/components/SectionCard";
 import { StatCard } from "@/components/StatCard";
 import { Card, CardContent } from "@/components/ui/card";
+import { useLiveTicks } from "@/hooks/useLiveTick";
+import { chainSubscriptions, overlayChain, spotSymbolFor } from "@/lib/optionChain";
 import { cn } from "@/lib/utils";
 
 type Action = "buy" | "sell";
@@ -284,13 +286,24 @@ export default function OptionStrategyPage() {
   });
   const expiry = expiryPick && expiries?.includes(expiryPick) ? expiryPick : (expiries?.[0] ?? "");
 
-  const { data: chain } = useQuery({
+  const { data: restChain } = useQuery({
     queryKey: ["opt", "chain", underlying, expiry],
     queryFn: () => optionsApi.chain(underlying, expiry),
     enabled: !!expiry,
-    refetchInterval: 5_000,
+    refetchInterval: 10_000,
     refetchIntervalInBackground: false,
   });
+
+  const spotSym = spotSymbolFor(underlying);
+  const subs = useMemo(
+    () => (restChain?.available ? chainSubscriptions(restChain, spotSym) : []),
+    [restChain, spotSym],
+  );
+  const { ticks: liveTicks } = useLiveTicks(subs);
+  const chain = useMemo(
+    () => (restChain?.available ? overlayChain(restChain, liveTicks, spotSym) : restChain),
+    [restChain, liveTicks, spotSym],
+  );
 
   const live = chain?.available ? chain : null;
   const lotSize = lotSizeOverride ?? LOT_SIZE[underlying] ?? 1;

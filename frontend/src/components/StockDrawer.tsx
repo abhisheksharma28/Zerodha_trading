@@ -5,6 +5,7 @@ import { BarChart3, Bell, FileText, FlaskConical, X } from "lucide-react";
 
 import { stocksApi } from "@/api/stocks";
 import { useCandles } from "@/hooks/useCandles";
+import { useLiveTick } from "@/hooks/useLiveTick";
 import { atr, ema, rsi, sma, vwap, type Candle } from "@/lib/indicators";
 import { useStockDrawer } from "@/lib/stockDrawer";
 import { cn } from "@/lib/utils";
@@ -28,12 +29,33 @@ function Panel({ exchange, symbol, onClose }: { exchange: string; symbol: string
   const { data, isLoading } = useQuery({
     queryKey: ["stock", exchange, symbol],
     queryFn: () => stocksApi.quickLook(exchange, symbol),
-    refetchInterval: 2_000,
+    refetchInterval: 6_000,
     refetchIntervalInBackground: false,
     staleTime: 0,
   });
 
-  const q = data?.quote?.available ? data.quote : null;
+  const { tick } = useLiveTick(ref);
+  const rest = data?.quote?.available ? data.quote : null;
+  const q = useMemo(() => {
+    if (!rest) return null;
+    if (!tick || tick.ltp == null) return rest;
+    const ltp = tick.ltp;
+    const pc = rest.prev_close;
+    return {
+      ...rest,
+      ltp,
+      change: pc != null ? ltp - pc : rest.change,
+      change_pct: pc ? ((ltp - pc) / pc) * 100 : rest.change_pct,
+      high: tick.ohlc ? Math.max(rest.high ?? ltp, tick.ohlc.high) : rest.high,
+      low: tick.ohlc ? Math.min(rest.low ?? ltp, tick.ohlc.low) : rest.low,
+      volume: tick.volume ?? rest.volume,
+      oi: tick.oi ?? rest.oi,
+      avg_price: tick.avg_price ?? rest.avg_price,
+      buy_quantity: tick.buy_qty ?? rest.buy_quantity,
+      sell_quantity: tick.sell_qty ?? rest.sell_quantity,
+      depth: tick.depth ?? rest.depth,
+    };
+  }, [rest, tick]);
   const chgPos = (q?.change_pct ?? 0) >= 0;
 
   const go = (path: string) => {

@@ -6,10 +6,12 @@ import { DataTable, type Column } from "@/components/DataTable";
 import { PageHeader } from "@/components/PageHeader";
 import { SectionCard } from "@/components/SectionCard";
 import { Card, CardContent } from "@/components/ui/card";
+import { useLiveTicks } from "@/hooks/useLiveTick";
 import { useMarketOverview } from "@/hooks/useMarket";
 import { useNow } from "@/hooks/useNow";
+import type { LiveTick } from "@/lib/marketStream";
 import { useStockDrawer } from "@/lib/stockDrawer";
-import type { MarketQuoteRow, SectorRow } from "@/types/api";
+import type { MarketIndexRow, MarketQuoteRow, SectorRow } from "@/types/api";
 import { countCompact, inrCompact, num } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -53,11 +55,47 @@ function SymLink({ sym }: { sym: string }) {
   );
 }
 
+// Prev close for a tick: Kite's OHLC "close" is the previous day's close
+// during the session; fall back to implying it from the REST snapshot.
+function prevCloseOf(row: MarketQuoteRow, tick: LiveTick): number | null {
+  if (tick.ohlc?.close) return tick.ohlc.close;
+  if (row.ltp != null && row.change_pct != null && 1 + row.change_pct / 100 !== 0) {
+    return row.ltp / (1 + row.change_pct / 100);
+  }
+  return null;
+}
+
+// Overlay a live tick onto a REST snapshot row.
+function withLiveRow<T extends MarketQuoteRow>(row: T, tick?: LiveTick): T {
+  if (!tick || tick.ltp == null) return row;
+  const ltp = tick.ltp;
+  const pc = prevCloseOf(row, tick);
+  const volume = tick.volume ?? row.volume;
+  return {
+    ...row,
+    ltp,
+    change: pc != null ? ltp - pc : row.change,
+    change_pct: pc ? ((ltp - pc) / pc) * 100 : row.change_pct,
+    volume,
+    value: volume != null ? ltp * volume : row.value,
+  };
+}
+
 export default function MarketScannerPage() {
   const openStock = useSym();
   const navigate = useNavigate();
   const [tab, setTab] = useState<(typeof TABS)[number]>("Movers");
   const { data, isFetching, refetch, dataUpdatedAt } = useMarketOverview("nifty50");
+
+  const liveSymbols = useMemo(() => {
+    if (!data?.available) return [];
+    return [
+      ...data.heatmap.map((h) => `NSE:${h.symbol}`),
+      ...data.indices.map((i) => `NSE:${i.symbol}`),
+    ];
+  }, [data]);
+  const { ticks: liveTicks, status: streamStatus } = useLiveTicks(liveSymbols);
+  const live = (sym: string) => liveTicks[`NSE:${sym}`];
 
   const openIndex = (sym: string) => {
     const underlying = INDEX_OPTION_UNDERLYING[sym.toUpperCase()];
@@ -98,6 +136,25 @@ export default function MarketScannerPage() {
     [],
   );
 
+  const view = useMemo(() => {
+    if (!data?.available) return null;
+    const rows = (rs: MarketQuoteRow[]) => rs.map((r) => withLiveRow(r, live(r.symbol)));
+    const gainersAll = rows(data.gainers);
+    const losersAll = rows(data.losers);
+    return {
+      indices: data.indices.map((i) => withLiveRow(i, live(i.symbol))) as MarketIndexRow[],
+      gainers: [...gainersAll].sort((a, b) => (b.change_pct ?? 0) - (a.change_pct ?? 0)),
+      losers: [...losersAll].sort((a, b) => (a.change_pct ?? 0) - (b.change_pct ?? 0)),
+      most_active: [...rows(data.most_active)].sort((a, b) => (b.value ?? 0) - (a.value ?? 0)),
+      heatmap: data.heatmap.map((h) => {
+        const t = live(h.symbol);
+        if (!t || t.ltp == null || !t.ohlc?.close) return h;
+        return { ...h, change_pct: ((t.ltp - t.ohlc.close) / t.ohlc.close) * 100 };
+      }),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, liveTicks]);
+
   if (data && !data.available) {
     return (
       <div className="flex flex-col gap-5">
@@ -120,7 +177,16 @@ export default function MarketScannerPage() {
       <PageHeader
         title="Market Scanner"
         subtitle="Live NSE breadth, movers, sectors and heat-map — real Zerodha quotes."
-        actions={<LiveClock updatedAt={dataUpdatedAt} fetching={isFetching} onRefresh={refetch} />}
+        actions={
+          <div className="flex items-center gap-2">
+            {streamStatus === "open" && (
+              <span className="hidden items-center gap-1 text-xs font-medium text-pos sm:flex">
+                <span className="h-1.5 w-1.5 rounded-full bg-pos" /> streaming
+              </span>
+            )}
+            <LiveClock updatedAt={dataUpdatedAt} fetching={isFetching} onRefresh={refetch} />
+          </div>
+        }
       />
 
       {!data ? (
@@ -129,7 +195,7 @@ export default function MarketScannerPage() {
         <>
           {/* index strip */}
           <div className="flex gap-2 overflow-x-auto pb-1">
-            {data.indices.map((ix) => (
+            {(view ?? data).indices.map((ix) => (
               <button
                 key={ix.symbol}
                 type="button"
@@ -173,7 +239,7 @@ export default function MarketScannerPage() {
               <SectionCard title="Gainers" bodyClassName="p-0">
                 <DataTable
                   columns={stockCols}
-                  rows={data.gainers}
+                  rows={(view ?? data).gainers}
                   rowKey={(s) => s.symbol}
                   searchable
                   searchPlaceholder="Filter gainers…"
@@ -182,7 +248,7 @@ export default function MarketScannerPage() {
               <SectionCard title="Losers" bodyClassName="p-0">
                 <DataTable
                   columns={stockCols}
-                  rows={data.losers}
+                  rows={(view ?? data).losers}
                   rowKey={(s) => s.symbol}
                   searchable
                   searchPlaceholder="Filter losers…"
@@ -203,7 +269,7 @@ export default function MarketScannerPage() {
 
           {tab === "Heat-map" && (
             <SectionCard title="Change Heat-map" bodyClassName="p-3">
-              <Heatmap rows={data.heatmap} />
+              <Heatmap rows={(view ?? data).heatmap} />
             </SectionCard>
           )}
 
@@ -229,7 +295,7 @@ export default function MarketScannerPage() {
                     sortValue: (s) => s.value,
                   },
                 ]}
-                rows={data.most_active}
+                rows={(view ?? data).most_active}
                 rowKey={(s) => s.symbol}
                 searchable
                 searchPlaceholder="Filter…"

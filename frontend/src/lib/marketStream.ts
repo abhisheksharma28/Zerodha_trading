@@ -4,6 +4,12 @@
 // backoff, and re-subscribes everything on reconnect. Components use the
 // useLiveTick hook rather than touching this directly.
 
+export interface DepthLevel {
+  price: number;
+  quantity: number;
+  orders: number;
+}
+
 export interface LiveTick {
   type: "tick";
   token: number;
@@ -11,7 +17,11 @@ export interface LiveTick {
   ltp: number | null;
   ohlc?: { open: number; high: number; low: number; close: number };
   volume?: number | null;
+  avg_price?: number | null;
+  buy_qty?: number | null;
+  sell_qty?: number | null;
   oi?: number | null;
+  depth?: { buy: DepthLevel[]; sell: DepthLevel[] };
   ts?: number | null;
 }
 

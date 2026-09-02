@@ -104,7 +104,11 @@ class MarketStreamHub:
             "ltp": tick.get("last_price"),
             "ohlc": tick.get("ohlc"),
             "volume": tick.get("volume_traded"),
+            "avg_price": tick.get("average_traded_price"),
+            "buy_qty": tick.get("total_buy_quantity"),
+            "sell_qty": tick.get("total_sell_quantity"),
             "oi": tick.get("oi"),
+            "depth": tick.get("depth"),
             "ts": tick.get("exchange_timestamp") or tick.get("last_trade_time"),
         }
         for conn in self._clients:

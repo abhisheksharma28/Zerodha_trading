@@ -64,7 +64,10 @@ class Settings(BaseSettings):
     # Off by default. When enabled the API process opens one ws.kite.trade
     # connection and folds ticks into the in-memory market state.
     live_ticker_enabled: bool = False
-    live_ticker_mode: str = "quote"  # "ltp" | "quote" | "full"
+    # "full" streams 5-level depth + OI too, which the quote drawer and
+    # option chain use; ~4x the bytes of "quote" but negligible at our
+    # instrument counts.
+    live_ticker_mode: str = "full"  # "ltp" | "quote" | "full"
     # Comma-separated "EXCH:SYMBOL" list; empty => the NIFTY 50 watchlist.
     live_ticker_instruments: str = ""
     live_ticker_max_instruments: int = 500

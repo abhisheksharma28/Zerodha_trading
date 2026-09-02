@@ -7,7 +7,9 @@ import { PageHeader } from "@/components/PageHeader";
 import { SectionCard } from "@/components/SectionCard";
 import { StatCard } from "@/components/StatCard";
 import { Card, CardContent } from "@/components/ui/card";
+import { useLiveTicks } from "@/hooks/useLiveTick";
 import { useNow } from "@/hooks/useNow";
+import { chainSubscriptions, overlayChain, spotSymbolFor } from "@/lib/optionChain";
 import { cn } from "@/lib/utils";
 
 const RANGES = [10, 20, 40, 0] as const; // 0 = all
@@ -47,13 +49,25 @@ export default function OptionChainPage() {
     expiryPick && expiries?.includes(expiryPick) ? expiryPick : (expiries?.[0] ?? "");
   const setExpiry = setExpiryPick;
 
-  const { data, isFetching, dataUpdatedAt } = useQuery({
+  const { data: restData, isFetching, dataUpdatedAt } = useQuery({
     queryKey: ["opt", "chain", underlying, expiry],
     queryFn: () => optionsApi.chain(underlying, expiry),
     enabled: !!expiry,
-    refetchInterval: 3_000,
+    refetchInterval: 8_000,
     refetchIntervalInBackground: false,
   });
+
+  const spotSym = spotSymbolFor(underlying);
+  const subs = useMemo(
+    () => (restData?.available ? chainSubscriptions(restData, spotSym) : []),
+    [restData, spotSym],
+  );
+  const { ticks: liveTicks, status: streamStatus } = useLiveTicks(subs);
+
+  const data = useMemo(
+    () => (restData?.available ? overlayChain(restData, liveTicks, spotSym) : restData),
+    [restData, liveTicks, spotSym],
+  );
 
   const rows = useMemo(() => {
     if (!data?.available) return [];
@@ -80,7 +94,12 @@ export default function OptionChainPage() {
         title="Option Chain"
         subtitle="Live NSE-style chain from the Zerodha instrument master + quotes. IV is back-solved from LTP."
         actions={
-          <span className="text-xs text-fg-faint">
+          <span className="flex items-center gap-2 text-xs text-fg-faint">
+            {streamStatus === "open" && (
+              <span className="flex items-center gap-1 font-medium text-pos">
+                <span className="h-1.5 w-1.5 rounded-full bg-pos" /> streaming
+              </span>
+            )}
             {isFetching ? "updating…" : secs == null ? "" : secs <= 3 ? "live" : `${secs}s ago`}
           </span>
         }
