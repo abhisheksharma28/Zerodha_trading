@@ -25,6 +25,7 @@ export const backtestsApi = {
     apiClient.post<Backtest>("/backtests", payload).then((r) => r.data),
   run: (id: string, payload: RunBacktestPayload = {}) =>
     apiClient.post<Backtest>(`/backtests/${id}/run`, payload).then((r) => r.data),
+  remove: (id: string) => apiClient.delete(`/backtests/${id}`).then((r) => r.data),
   report: (id: string) =>
     apiClient.get<BacktestReport>(`/backtests/${id}/report`).then((r) => r.data),
   paramSim: (id: string, pct = 5, n = 24) =>

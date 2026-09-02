@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import type { SeriesMarker, Time } from "lightweight-charts";
 import {
   Area,
@@ -23,7 +23,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { backtestsApi } from "@/api/backtests";
-import { useBacktest, useBacktestReport, useRunBacktest } from "@/hooks/useBacktests";
+import {
+  useBacktest,
+  useBacktestReport,
+  useDeleteBacktest,
+  useRunBacktest,
+} from "@/hooks/useBacktests";
 import { useCandles } from "@/hooks/useCandles";
 import { inr } from "@/lib/format";
 import { useTheme } from "@/lib/theme";
@@ -87,8 +92,10 @@ const sparseLabel =
 
 export default function BacktestDetailPage() {
   const { backtestId } = useParams<{ backtestId: string }>();
+  const navigate = useNavigate();
   const { data: backtest, isLoading } = useBacktest(backtestId);
   const run = useRunBacktest(backtestId ?? "");
+  const del = useDeleteBacktest();
   const { data: report } = useBacktestReport(backtestId, backtest?.status === "completed");
 
   if (isLoading) return <p className="text-sm text-fg-faint">Loading…</p>;
@@ -123,9 +130,26 @@ export default function BacktestDetailPage() {
           <Badge variant={backtest.status === "completed" ? "success" : "default"}>
             {backtest.status}
           </Badge>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-neg hover:text-neg"
+            disabled={del.isPending}
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Delete this backtest? Its stored orders are removed too. This cannot be undone.",
+                )
+              )
+                del.mutate(backtest.id, { onSuccess: () => navigate("/backtests") });
+            }}
+          >
+            {del.isPending ? "Deleting…" : "Delete"}
+          </Button>
         </div>
       </div>
 
+      {del.isError && <ErrorCard>{(del.error as Error).message}</ErrorCard>}
       {run.isError && <ErrorCard>{(run.error as Error).message}</ErrorCard>}
       {backtest.error_message && <ErrorCard>{backtest.error_message}</ErrorCard>}
 

@@ -423,3 +423,11 @@ def get_backtest(db: Session, backtest_id) -> Backtest:
 
 def list_backtests(db: Session) -> list[Backtest]:
     return BacktestRepository(db).list()
+
+
+def delete_backtest(db: Session, backtest_id) -> None:
+    """Delete a backtest row. Orders tagged with this backtest_id are removed
+    by the database (ON DELETE CASCADE on orders.backtest_id)."""
+    backtest = get_backtest(db, backtest_id)
+    db.delete(backtest)
+    db.commit()

@@ -62,3 +62,14 @@ export function useRunBacktest(id: string) {
     },
   });
 }
+
+export function useDeleteBacktest() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => backtestsApi.remove(id),
+    onSuccess: (_data, id) => {
+      queryClient.removeQueries({ queryKey: backtestKeys.detail(id) });
+      queryClient.invalidateQueries({ queryKey: backtestKeys.all });
+    },
+  });
+}

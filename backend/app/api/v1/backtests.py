@@ -1,7 +1,7 @@
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
 from app.backtesting.robustness import monte_carlo
@@ -138,3 +138,10 @@ def get_backtest_report(backtest_id: uuid.UUID, db: Session = Depends(get_db)):
 @router.get("/{backtest_id}", response_model=BacktestRead)
 def get_backtest(backtest_id: uuid.UUID, db: Session = Depends(get_db)):
     return backtest_service.get_backtest(db, backtest_id)
+
+
+@router.delete("/{backtest_id}", status_code=204)
+def delete_backtest(backtest_id: uuid.UUID, db: Session = Depends(get_db)) -> Response:
+    """Delete a backtest and its persisted orders. 404 if it does not exist."""
+    backtest_service.delete_backtest(db, backtest_id)
+    return Response(status_code=204)

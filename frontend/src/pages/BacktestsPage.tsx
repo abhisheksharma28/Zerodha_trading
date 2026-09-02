@@ -10,9 +10,15 @@ import { TimeframeSelect } from "@/components/TimeframeSelect";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { backtestsApi } from "@/api/backtests";
-import { backtestKeys, useBacktests, useCreateBacktest } from "@/hooks/useBacktests";
+import {
+  backtestKeys,
+  useBacktests,
+  useCreateBacktest,
+  useDeleteBacktest,
+} from "@/hooks/useBacktests";
 import { useStrategies } from "@/hooks/useStrategies";
 import { inr } from "@/lib/format";
+import type { Backtest } from "@/types/api";
 
 const STATUS_VARIANT: Record<string, "default" | "success" | "warning" | "destructive" | "info"> = {
   pending: "default",
@@ -45,33 +51,49 @@ export default function BacktestsPage() {
 
       <div className="flex flex-col gap-2">
         {backtests?.map((bt) => (
-          <Link
-            key={bt.id}
-            to={`/backtests/${bt.id}`}
-            className="flex items-center justify-between rounded-md border border-line px-4 py-3 hover:bg-elevated/60"
-          >
-            <div>
-              <p className="text-sm font-medium">
-                {bt.instrument_universe.join(", ")} · {bt.timeframe}
-              </p>
-              <p className="text-xs text-fg-faint">
-                {new Date(bt.start_date).toLocaleDateString()} –{" "}
-                {new Date(bt.end_date).toLocaleDateString()} · {inr(bt.initial_capital)}
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              {bt.metrics && (
-                <span className="text-xs text-fg-muted">
-                  {bt.metrics.total_return_pct?.toFixed(2)}% return
-                </span>
-              )}
-              <Badge variant={STATUS_VARIANT[bt.status]}>{bt.status}</Badge>
-            </div>
-          </Link>
+          <BacktestRow key={bt.id} bt={bt} />
         ))}
         {backtests?.length === 0 && !isLoading && (
           <p className="text-sm text-fg-faint">No backtests yet.</p>
         )}
+      </div>
+    </div>
+  );
+}
+
+function BacktestRow({ bt }: { bt: Backtest }) {
+  const del = useDeleteBacktest();
+
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-md border border-line px-4 py-3 hover:bg-elevated/60">
+      <Link to={`/backtests/${bt.id}`} className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium">
+          {bt.instrument_universe.join(", ")} · {bt.timeframe}
+        </p>
+        <p className="text-xs text-fg-faint">
+          {new Date(bt.start_date).toLocaleDateString()} –{" "}
+          {new Date(bt.end_date).toLocaleDateString()} · {inr(bt.initial_capital)}
+        </p>
+      </Link>
+      <div className="flex shrink-0 items-center gap-3">
+        {bt.metrics && (
+          <span className="text-xs text-fg-muted">
+            {bt.metrics.total_return_pct?.toFixed(2)}% return
+          </span>
+        )}
+        <Badge variant={STATUS_VARIANT[bt.status]}>{bt.status}</Badge>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-neg hover:text-neg"
+          disabled={del.isPending}
+          onClick={() => {
+            if (window.confirm("Delete this backtest? Its stored orders are removed too. This cannot be undone."))
+              del.mutate(bt.id);
+          }}
+        >
+          {del.isPending ? "Deleting…" : "Delete"}
+        </Button>
       </div>
     </div>
   );
