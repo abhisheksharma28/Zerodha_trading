@@ -177,7 +177,7 @@ export function AppLayout() {
                 {broker?.connected ? broker.kite_user_id ?? "Connected" : "Broker offline"}
               </span>
             </span>
-            <span className="hidden h-4 w-px bg-line-strong md:block" />
+            <span className="h-4 w-px bg-line-strong" />
             <LatencyPill />
             <ThemeToggle />
           </div>
