@@ -39,7 +39,10 @@ def option_chain(
 def candles(
     symbol: str = Query(..., description="e.g. NSE:INFY or INFY"),
     timeframe: str = Query("5m"),
-    days: int | None = Query(None, ge=1, le=4000),
+    days: int | None = Query(
+        None, ge=1, description="Trailing window in days. No upper cap — large "
+        "ranges are fetched from Kite page-by-page and stitched."
+    ),
     from_date: str | None = Query(None, description="ISO date/datetime — pin the window start"),
     to_date: str | None = Query(None, description="ISO date/datetime — pin the window end"),
     db: Session = Depends(get_db),

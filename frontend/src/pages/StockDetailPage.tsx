@@ -28,7 +28,7 @@ const numericOr = (v: unknown): number | null => {
   return isFinite(n) ? n : null;
 };
 
-const TIMEFRAMES = ["1m", "5m", "15m", "30m", "1h", "1d", "1w"] as const;
+const TIMEFRAMES = ["1m", "5m", "15m", "30m", "1h", "1d"] as const;
 const PERIODS: { label: string; days: number; tf: string }[] = [
   { label: "Day", days: 1, tf: "5m" },
   { label: "Week", days: 7, tf: "15m" },
@@ -36,8 +36,9 @@ const PERIODS: { label: string; days: number; tf: string }[] = [
   { label: "3M", days: 92, tf: "1d" },
   { label: "6M", days: 183, tf: "1d" },
   { label: "1Y", days: 365, tf: "1d" },
-  { label: "5Y", days: 1825, tf: "1w" },
-  { label: "Max", days: 4000, tf: "1w" },
+  { label: "5Y", days: 1825, tf: "1d" },
+  { label: "10Y", days: 3650, tf: "1d" },
+  { label: "Max", days: 12000, tf: "1d" }, // ~33y — Kite returns whatever it has
 ];
 
 // --- recommendation scoring -----------------------------------------
@@ -209,7 +210,8 @@ export default function StockDetailPage() {
   const period = PERIODS[periodIdx];
   const { data: candleResp, isFetching: candlesFetching } = useCandles(ref, timeframe, {
     days: period.days,
-    refetchMs: timeframe === "1d" || timeframe === "1w" ? 60_000 : 10_000,
+    // don't re-poll multi-year ranges; the live tick keeps the last candle moving
+    refetchMs: period.days > 400 ? undefined : timeframe === "1d" ? 60_000 : 10_000,
   });
   const candles = useMemo<Candle[]>(
     () => (candleResp?.available ? (candleResp.candles ?? []) : []),

@@ -32,13 +32,11 @@ from app.services import broker_service, instrument_service
 
 logger = get_logger(__name__)
 
-# Sensible lookback per timeframe for a chart (also respects Kite's per-call
-# range ceilings for intraday intervals).
+# Default lookback per timeframe when the caller doesn't pass an explicit
+# window. There is no maximum — an explicit `days` (or from/to) of any size
+# is honoured; the Kite client pages large ranges under the hood.
 _CHART_DEFAULT_DAYS: dict[str, int] = {
     "1m": 5, "3m": 12, "5m": 30, "10m": 45, "15m": 75, "30m": 120, "1h": 200, "1d": 1500,
-}
-_CHART_MAX_DAYS: dict[str, int] = {
-    "1m": 30, "3m": 60, "5m": 90, "10m": 100, "15m": 180, "30m": 365, "1h": 730, "1d": 4000,
 }
 
 _QUOTE_BATCH = 200
@@ -374,7 +372,6 @@ def candles(
         to_dt = to_dt + timedelta(days=2)
     else:
         span = days or _CHART_DEFAULT_DAYS.get(tf.token, 60)
-        span = min(span, _CHART_MAX_DAYS.get(tf.token, 365))
         to_dt = datetime.now()
         from_dt = to_dt - timedelta(days=span)
     try:

@@ -8,7 +8,7 @@ a 4xx order rejection, which is terminal and must surface to the caller (and
 from there, the audit log) untouched.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
@@ -28,6 +28,19 @@ from app.risk.limiter import RateLimiter
 logger = get_logger(__name__)
 
 _KITE_VERSION = "3"
+
+# Kite's per-request date-range ceiling by interval (days). Larger spans are
+# fetched page-by-page and stitched — see get_historical_candles.
+_KITE_HIST_MAX_DAYS: dict[str, int] = {
+    "minute": 55,
+    "3minute": 85,
+    "5minute": 90,
+    "10minute": 90,
+    "15minute": 180,
+    "30minute": 180,
+    "60minute": 360,
+    "day": 1900,
+}
 
 
 class KiteClient:
@@ -137,6 +150,31 @@ class KiteClient:
     def get_historical_candles(
         self, instrument_token: str, interval: str, from_dt: datetime, to_dt: datetime,
         *, continuous: bool = False, oi: bool = False,
+    ) -> list[list[Any]]:
+        """Full OHLCV history for any date range. Kite caps a single request's
+        span per interval, so ranges larger than that are fetched in
+        successive pages and stitched — there is no cap on how far back the
+        caller can ask for."""
+        max_days = _KITE_HIST_MAX_DAYS.get(interval, 90)
+        if (to_dt - from_dt).days <= max_days:
+            return self._historical_page(instrument_token, interval, from_dt, to_dt, continuous, oi)
+
+        out: list[list[Any]] = []
+        step = timedelta(days=max_days)
+        cur = from_dt
+        while cur < to_dt:
+            end = min(cur + step, to_dt)
+            for c in self._historical_page(instrument_token, interval, cur, end, continuous, oi):
+                # consecutive pages overlap by one candle at `end`; keep only
+                # strictly-newer rows (Kite timestamps are ISO, sortable as text)
+                if not out or str(c[0]) > str(out[-1][0]):
+                    out.append(c)
+            cur = end
+        return out
+
+    def _historical_page(
+        self, instrument_token: str, interval: str, from_dt: datetime, to_dt: datetime,
+        continuous: bool, oi: bool,
     ) -> list[list[Any]]:
         self._historical_limiter.acquire()
         params = {

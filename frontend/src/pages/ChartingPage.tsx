@@ -23,10 +23,23 @@ function refetchMsFor(timeframe: string): number {
   return 10_000;
 }
 
+// Trailing history window. No cap — the backend pages large ranges from Kite.
+const LOOKBACKS: { label: string; days?: number }[] = [
+  { label: "1M", days: 31 },
+  { label: "3M", days: 92 },
+  { label: "6M", days: 183 },
+  { label: "1Y", days: 365 },
+  { label: "5Y", days: 1825 },
+  { label: "10Y", days: 3650 },
+  { label: "Max", days: 12000 },
+  { label: "Default" }, // per-timeframe default
+];
+
 export default function ChartingPage() {
   const [params, setParams] = useSearchParams();
   const symbol = params.get("symbol") ?? "NSE:RELIANCE";
   const [timeframe, setTimeframe] = useState("15m");
+  const [lookbackIdx, setLookbackIdx] = useState(LOOKBACKS.length - 1); // Default
   const [indicators, setIndicators] = useState<Indicator[]>([]);
   const [hover, setHover] = useState<Candle | null>(null);
   const { theme } = useTheme();
@@ -34,8 +47,12 @@ export default function ChartingPage() {
   const drawKey = `${symbol}:${timeframe}`;
   const [chartApi, setChartApi] = useState<ChartApi | null>(null);
 
+  const lookbackDays = LOOKBACKS[lookbackIdx].days;
   const { data, isLoading, isFetching, dataUpdatedAt } = useCandles(symbol, timeframe, {
-    refetchMs: refetchMsFor(timeframe),
+    days: lookbackDays,
+    // large historical windows don't need re-polling — the live tick keeps
+    // the last candle moving; only short windows refresh the whole series.
+    refetchMs: lookbackDays && lookbackDays > 400 ? undefined : refetchMsFor(timeframe),
   });
   const candles = useMemo<Candle[]>(
     () => (data?.available ? (data.candles ?? []) : []),
@@ -141,6 +158,21 @@ export default function ChartingPage() {
         </div>
         <TimeframeSelect value={timeframe} onChange={setTimeframe} />
         <IndicatorMenu value={indicators} onChange={setIndicators} />
+        <div className="inline-flex rounded-md border border-line-strong bg-surface p-0.5">
+          {LOOKBACKS.map((lb, i) => (
+            <button
+              key={lb.label}
+              type="button"
+              onClick={() => setLookbackIdx(i)}
+              className={cn(
+                "rounded px-2 py-1 text-xs font-medium",
+                i === lookbackIdx ? "bg-accent-soft text-accent" : "text-fg-muted hover:text-fg",
+              )}
+            >
+              {lb.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <Card>
