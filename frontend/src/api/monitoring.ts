@@ -31,6 +31,24 @@ export interface LatencySnapshot {
     running_deployments?: number;
     poll_interval_seconds?: number;
     last_tick_epoch?: number;
+    ticker?: {
+      state: string;
+      detail: string;
+      ticker?: {
+        connected: boolean;
+        subscribed: number;
+        mode: string;
+        ticks_total: number;
+        frames_per_sec: number;
+        last_tick_age_seconds: number | null;
+        last_error: string | null;
+      };
+      market_state: {
+        instrument_count: number;
+        seconds_since_any_tick: number | null;
+        stale: boolean;
+      };
+    };
   };
   thresholds_ms: { excellent: number; fast: number; moderate: number; high: number };
 }

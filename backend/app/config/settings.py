@@ -60,6 +60,16 @@ class Settings(BaseSettings):
     latency_threshold_moderate_ms: float = 20.0
     latency_threshold_high_ms: float = 100.0
 
+    # --- Live market-data ticker (Kite WebSocket) ---
+    # Off by default. When enabled the API process opens one ws.kite.trade
+    # connection and folds ticks into the in-memory market state.
+    live_ticker_enabled: bool = False
+    live_ticker_mode: str = "quote"  # "ltp" | "quote" | "full"
+    # Comma-separated "EXCH:SYMBOL" list; empty => the NIFTY 50 watchlist.
+    live_ticker_instruments: str = ""
+    live_ticker_max_instruments: int = 500
+    live_ticker_stale_seconds: float = 5.0
+
     # --- Strategy-evaluation worker (app.workers) ---
     worker_poll_interval_seconds: int = 60
     # How far back the worker pulls candles each poll; only bars newer than

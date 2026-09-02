@@ -9,6 +9,7 @@ never synthesizes values.
 from fastapi import APIRouter
 
 from app.config import get_settings
+from app.live import engine as live_engine
 from app.live import telemetry
 
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
@@ -37,4 +38,17 @@ def latency() -> dict:
         "moderate": s.latency_threshold_moderate_ms,
         "high": s.latency_threshold_high_ms,
     }
+    # The Kite ticker runs in THIS (API) process, so its status is read
+    # directly rather than via the cross-process telemetry snapshot.
+    snap.setdefault("engine", {})
+    snap["engine"]["ticker"] = live_engine.engine_status()
     return snap
+
+
+@router.get("/market-state")
+def market_state() -> dict:
+    """Current in-memory market snapshot (last price / OHLC / age per
+    instrument). Read straight from RAM — no broker call, no DB."""
+    from app.live.market_state import MARKET_STATE
+
+    return MARKET_STATE.snapshot()

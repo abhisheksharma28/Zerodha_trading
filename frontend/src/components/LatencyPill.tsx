@@ -118,7 +118,17 @@ export function LatencyPill() {
             )}
           </table>
 
-          <p className="mt-2 text-[10px] text-fg-faint">
+          {data.engine.ticker && (
+            <p className="mt-2 text-[10px] text-fg-faint">
+              ticker: {data.engine.ticker.state}
+              {data.engine.ticker.ticker &&
+                ` · ${data.engine.ticker.ticker.connected ? "connected" : "down"} · ${
+                  data.engine.ticker.ticker.frames_per_sec
+                }/s · ${data.engine.ticker.market_state.instrument_count} instruments`}
+              {data.engine.ticker.market_state.stale && " · STALE"}
+            </p>
+          )}
+          <p className="mt-1 text-[10px] text-fg-faint">
             source: {data.source}
             {data.stale && " · stale"}
             {data.engine.running_deployments != null &&

@@ -18,7 +18,17 @@ logger = get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("startup", environment=settings.environment)
+    from app.live import engine as live_engine
+
+    try:
+        await live_engine.start(settings)
+    except Exception:  # noqa: BLE001 - the ticker is optional, never block startup
+        logger.exception("live_engine_start_failed")
     yield
+    try:
+        await live_engine.stop()
+    except Exception:  # noqa: BLE001
+        logger.exception("live_engine_stop_failed")
     logger.info("shutdown")
 
 
