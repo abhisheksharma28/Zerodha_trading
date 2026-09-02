@@ -15,6 +15,8 @@ interface Opts {
   days?: number;
   from?: string;
   to?: string;
+  /** Poll this often (ms) so the last candle tracks the live price. Omit for a one-shot fetch. */
+  refetchMs?: number;
 }
 
 export function useCandles(symbol: string | undefined, timeframe: string, opts: number | Opts = {}) {
@@ -34,6 +36,8 @@ export function useCandles(symbol: string | undefined, timeframe: string, opts: 
         })
         .then((r) => r.data),
     enabled: !!symbol,
-    staleTime: 20_000,
+    staleTime: o.refetchMs ?? 20_000,
+    refetchInterval: o.refetchMs,
+    refetchIntervalInBackground: false,
   });
 }

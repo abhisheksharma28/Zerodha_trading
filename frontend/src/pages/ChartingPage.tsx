@@ -9,9 +9,18 @@ import { PriceChart, type Overlay, type SubPane } from "@/components/PriceChart"
 import { TimeframeSelect } from "@/components/TimeframeSelect";
 import { Card, CardContent } from "@/components/ui/card";
 import { useCandles } from "@/hooks/useCandles";
+import { useNow } from "@/hooks/useNow";
 import { atr, bollinger, ema, macd, rsi, sma, vwap, type Candle } from "@/lib/indicators";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
+
+// Intraday charts poll so the forming candle tracks the live price; the
+// daily chart only needs an occasional refresh.
+function refetchMsFor(timeframe: string): number {
+  if (timeframe === "1d" || timeframe === "1w") return 60_000;
+  if (timeframe === "1h" || timeframe === "30m") return 15_000;
+  return 5_000;
+}
 
 export default function ChartingPage() {
   const [params, setParams] = useSearchParams();
@@ -24,11 +33,15 @@ export default function ChartingPage() {
   const drawKey = `${symbol}:${timeframe}`;
   const [chartApi, setChartApi] = useState<ChartApi | null>(null);
 
-  const { data, isLoading } = useCandles(symbol, timeframe);
+  const { data, isLoading, isFetching, dataUpdatedAt } = useCandles(symbol, timeframe, {
+    refetchMs: refetchMsFor(timeframe),
+  });
   const candles = useMemo<Candle[]>(
     () => (data?.available ? (data.candles ?? []) : []),
     [data],
   );
+  const now = useNow(1000);
+  const agoSecs = dataUpdatedAt ? Math.max(0, Math.round((now - dataUpdatedAt) / 1000)) : null;
 
   const setSymbol = (s: string) => {
     params.set("symbol", s);
@@ -120,11 +133,24 @@ export default function ChartingPage() {
                   </span>
                 )}
                 {chg != null && (
-                  <span className={cn("ml-auto font-medium tabular-nums", chg >= 0 ? "text-pos" : "text-neg")}>
+                  <span className={cn("font-medium tabular-nums", chg >= 0 ? "text-pos" : "text-neg")}>
                     {chg >= 0 ? "+" : ""}
                     {chg.toFixed(2)}%
                   </span>
                 )}
+                <span className="ml-auto flex items-center gap-1.5 text-xs text-fg-faint">
+                  <span
+                    className={cn(
+                      "h-1.5 w-1.5 rounded-full",
+                      isFetching ? "bg-accent" : "bg-pos",
+                    )}
+                  />
+                  {agoSecs == null
+                    ? "live"
+                    : agoSecs <= 2
+                      ? "live"
+                      : `updated ${agoSecs}s ago`}
+                </span>
               </div>
               <div className="relative">
                 <PriceChart
