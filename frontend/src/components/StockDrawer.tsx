@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, Bell, FileText, FlaskConical, X } from "lucide-react";
+import { BarChart3, Bell, FileText, FlaskConical, Maximize2, X } from "lucide-react";
 
 import { stocksApi } from "@/api/stocks";
 import { useCandles } from "@/hooks/useCandles";
@@ -79,9 +79,18 @@ function Panel({ exchange, symbol, onClose }: { exchange: string; symbol: string
                 {exchange}:{symbol} · {data?.instrument.instrument_type ?? data?.instrument.segment ?? "—"}
               </p>
             </div>
-            <button type="button" onClick={onClose} className="rounded p-1 text-fg-faint hover:bg-elevated hover:text-fg">
-              <X className="h-4 w-4" />
-            </button>
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={() => go(`/stocks/${exchange}/${encodeURIComponent(symbol)}`)}
+                className="flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-accent hover:bg-elevated"
+              >
+                <Maximize2 className="h-3.5 w-3.5" /> Full view
+              </button>
+              <button type="button" onClick={onClose} className="rounded p-1 text-fg-faint hover:bg-elevated hover:text-fg">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           </div>
           {q ? (
             <div className="mt-1.5 flex items-baseline gap-2">

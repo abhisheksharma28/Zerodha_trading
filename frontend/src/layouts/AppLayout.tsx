@@ -16,12 +16,12 @@ import {
   Plug,
   Radar,
   Rocket,
-  Search,
   Settings as SettingsIcon,
   Wallet,
 } from "lucide-react";
 
 import { LatencyPill } from "@/components/LatencyPill";
+import { NavInstrumentSearch } from "@/components/NavInstrumentSearch";
 import { StockDrawer } from "@/components/StockDrawer";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { cn } from "@/lib/utils";
@@ -161,14 +161,7 @@ export function AppLayout() {
             ))}
           </nav>
 
-          <button
-            type="button"
-            onClick={() => navigate("/charting")}
-            className="ml-auto hidden items-center gap-2 rounded-md border border-line-strong bg-bg px-3 py-1.5 text-xs text-fg-faint hover:text-fg-muted sm:flex"
-          >
-            <Search className="h-3.5 w-3.5" />
-            Search instruments…
-          </button>
+          <NavInstrumentSearch />
 
           <div className="ml-auto flex items-center gap-3 sm:ml-3">
             <span className="hidden items-center gap-1.5 text-xs md:flex">
