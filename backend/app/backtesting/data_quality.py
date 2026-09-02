@@ -299,11 +299,16 @@ def validate_candles(
         if s.get("naive_timestamps"):
             warnings.append(f"{sym}: {s['naive_timestamps']} timestamps without a timezone")
         if s.get("incomplete_days"):
+            dates = [x["date"] for x in s.get("incomplete_sessions", [])]
+            shown = ", ".join(dates[:5]) + ("…" if len(dates) > 5 else "")
             warnings.append(
                 f"{sym}: {s['incomplete_days']}/{s['trading_days']} trading days are "
-                f"DATA_INCOMPLETE ({s['missing_candles']} intraday candles missing within "
-                f"sessions; worst day {s['worst_completeness_pct']}% complete). "
-                "Overnight / weekend / holiday boundaries are not counted."
+                f"DATA_INCOMPLETE — {shown} "
+                f"({s['missing_candles']} intraday candles missing mid-session; worst day "
+                f"{s['worst_completeness_pct']}% complete). Overnight / weekend / holiday "
+                "boundaries are not counted. This is a warning, not an error: the backtest "
+                "still runs and those days simply contribute fewer or no signals — missing "
+                "bars are never fabricated or forward-filled."
             )
         if s.get("short_sessions"):
             warnings.append(
