@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { Suspense, useCallback, useRef, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   Activity,
@@ -183,7 +183,16 @@ export function AppLayout() {
 
       <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-6">
         <div className="animate-in">
-          <Outlet />
+          <Suspense
+            fallback={
+              <div className="flex items-center gap-2 py-16 text-sm text-fg-faint">
+                <span className="h-3 w-3 animate-spin rounded-full border-2 border-line-strong border-t-accent" />
+                Loading…
+              </div>
+            }
+          >
+            <Outlet />
+          </Suspense>
         </div>
       </main>
 

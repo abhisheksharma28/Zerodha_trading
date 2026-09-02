@@ -1,30 +1,35 @@
+import { lazy } from "react";
 import { Route, Routes } from "react-router-dom";
 
 import { AppLayout } from "@/layouts/AppLayout";
-import DashboardPage from "@/pages/DashboardPage";
-import StrategiesPage from "@/pages/StrategiesPage";
-import StrategyDetailPage from "@/pages/StrategyDetailPage";
-import StrategyLibraryPage from "@/pages/StrategyLibraryPage";
-import StrategyTemplateDetailPage from "@/pages/StrategyTemplateDetailPage";
-import OptionsHniPage from "@/pages/OptionsHniPage";
-import BacktestsPage from "@/pages/BacktestsPage";
-import BacktestDetailPage from "@/pages/BacktestDetailPage";
-import DeploymentsPage from "@/pages/DeploymentsPage";
-import DeploymentDetailPage from "@/pages/DeploymentDetailPage";
-import MonitoringPage from "@/pages/MonitoringPage";
-import TradeLogsPage from "@/pages/TradeLogsPage";
-import AuditLogsPage from "@/pages/AuditLogsPage";
-import BrokerPage from "@/pages/BrokerPage";
-import MarketScannerPage from "@/pages/MarketScannerPage";
-import OptionChainPage from "@/pages/OptionChainPage";
-import OptionStrategyPage from "@/pages/OptionStrategyPage";
-import ChartingPage from "@/pages/ChartingPage";
-import AnalyticsPage from "@/pages/AnalyticsPage";
-import AlertsPage from "@/pages/AlertsPage";
-import ReportsPage from "@/pages/ReportsPage";
-import PositionsPage from "@/pages/PositionsPage";
-import OrdersPage from "@/pages/OrdersPage";
-import SettingsPage from "@/pages/SettingsPage";
+
+// Route components are code-split: the initial load ships only the shell +
+// the first route's chunk instead of every page's JS (recharts /
+// lightweight-charts included). Each page is a default export.
+const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
+const StrategiesPage = lazy(() => import("@/pages/StrategiesPage"));
+const StrategyDetailPage = lazy(() => import("@/pages/StrategyDetailPage"));
+const StrategyLibraryPage = lazy(() => import("@/pages/StrategyLibraryPage"));
+const StrategyTemplateDetailPage = lazy(() => import("@/pages/StrategyTemplateDetailPage"));
+const OptionsHniPage = lazy(() => import("@/pages/OptionsHniPage"));
+const BacktestsPage = lazy(() => import("@/pages/BacktestsPage"));
+const BacktestDetailPage = lazy(() => import("@/pages/BacktestDetailPage"));
+const DeploymentsPage = lazy(() => import("@/pages/DeploymentsPage"));
+const DeploymentDetailPage = lazy(() => import("@/pages/DeploymentDetailPage"));
+const MonitoringPage = lazy(() => import("@/pages/MonitoringPage"));
+const TradeLogsPage = lazy(() => import("@/pages/TradeLogsPage"));
+const AuditLogsPage = lazy(() => import("@/pages/AuditLogsPage"));
+const BrokerPage = lazy(() => import("@/pages/BrokerPage"));
+const MarketScannerPage = lazy(() => import("@/pages/MarketScannerPage"));
+const OptionChainPage = lazy(() => import("@/pages/OptionChainPage"));
+const OptionStrategyPage = lazy(() => import("@/pages/OptionStrategyPage"));
+const ChartingPage = lazy(() => import("@/pages/ChartingPage"));
+const AnalyticsPage = lazy(() => import("@/pages/AnalyticsPage"));
+const AlertsPage = lazy(() => import("@/pages/AlertsPage"));
+const ReportsPage = lazy(() => import("@/pages/ReportsPage"));
+const PositionsPage = lazy(() => import("@/pages/PositionsPage"));
+const OrdersPage = lazy(() => import("@/pages/OrdersPage"));
+const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
 
 export default function App() {
   return (

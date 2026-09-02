@@ -35,8 +35,10 @@ class _FakeClient:
 @pytest.fixture(autouse=True)
 def _no_overview_cache():
     market_data_service._overview_cache.clear()
+    market_data_service._overview_refreshing.clear()
     yield
     market_data_service._overview_cache.clear()
+    market_data_service._overview_refreshing.clear()
 
 
 @pytest.fixture()

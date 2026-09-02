@@ -11,7 +11,9 @@ a reason — it never fabricates prices or serves a stale/mock fallback.
 from __future__ import annotations
 
 import math
+import threading
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -22,6 +24,7 @@ from app.backtesting.timeframes import UnknownTimeframeError, kite_interval, res
 from app.config import Settings
 from app.core.exceptions import BrokerNotConnectedError, ValidationError
 from app.core.logging import get_logger
+from app.db.session import SessionLocal
 from app.market_data.instruments import resolve_instrument_token
 from app.market_data.nse_universe import BROAD_INDICES, SECTOR_INDICES, UNIVERSES
 from app.models.instrument import Instrument
@@ -69,19 +72,87 @@ def _known_index_symbols(db: Session) -> set[str]:
     return {r.upper() for r in rows}
 
 
-# Tiny hot cache so a 1-2s frontend poll doesn't multiply Kite quote calls
-# (the underlying quotes only move once per ~second anyway).
-_OVERVIEW_TTL = 1.5
-_overview_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+# Stale-while-revalidate hot cache. A single client polling every ~2-3s would
+# otherwise miss a short TTL on every poll and pay the full Kite round-trip
+# (~1s) each time. Instead: serve the cached snapshot instantly while it is
+# younger than FRESH; between FRESH and STALE still serve it instantly but
+# kick a background refresh; only block on a synchronous fetch when nothing
+# is cached or the entry is older than STALE.
+_SwrEntry = tuple[float, dict[str, Any]]
+
+
+class _SwrCache:
+    def __init__(self, *, fresh: float, stale: float, label: str) -> None:
+        self._fresh = fresh
+        self._stale = stale
+        self._label = label
+        self._data: dict[str, _SwrEntry] = {}
+        self._refreshing: set[str] = set()
+        self._lock = threading.Lock()
+
+    def clear(self) -> None:  # test hook
+        with self._lock:
+            self._data.clear()
+            self._refreshing.clear()
+
+    def get(
+        self,
+        key: str,
+        sync_producer: Callable[[], dict[str, Any]],
+        async_producer: Callable[[], dict[str, Any]],
+    ) -> dict[str, Any]:
+        hit = self._data.get(key)
+        if hit is not None:
+            age = time.monotonic() - hit[0]
+            if age < self._fresh:
+                return hit[1]
+            if age < self._stale:
+                self._spawn(key, async_producer)
+                return hit[1]
+        out = sync_producer()
+        self._data[key] = (time.monotonic(), out)
+        return out
+
+    def _spawn(self, key: str, producer: Callable[[], dict[str, Any]]) -> None:
+        with self._lock:
+            if key in self._refreshing:
+                return
+            self._refreshing.add(key)
+
+        def _run() -> None:
+            try:
+                self._data[key] = (time.monotonic(), producer())
+            except Exception as exc:  # noqa: BLE001 - keep serving the last good snapshot
+                logger.warning(f"{self._label}_bg_refresh_failed", key=key, error=str(exc))
+            finally:
+                with self._lock:
+                    self._refreshing.discard(key)
+
+        threading.Thread(target=_run, name=f"{self._label}-{key}", daemon=True).start()
+
+
+def _with_db(fn: Callable[[Session], dict[str, Any]]) -> dict[str, Any]:
+    db = SessionLocal()
+    try:
+        return fn(db)
+    finally:
+        db.close()
+
+
+_overview_cache_obj = _SwrCache(fresh=1.5, stale=30.0, label="market_overview")
+_chain_cache_obj = _SwrCache(fresh=2.0, stale=30.0, label="option_chain")
+
+# Back-compat aliases for existing tests that clear the cache directly.
+_overview_cache = _overview_cache_obj._data
+_overview_refreshing = _overview_cache_obj._refreshing
 
 
 def market_overview(db: Session, settings: Settings, *, universe: str = "nifty50") -> dict[str, Any]:
-    hit = _overview_cache.get(universe)
-    if hit and time.monotonic() - hit[0] < _OVERVIEW_TTL:
-        return hit[1]
-    out = _market_overview_uncached(db, settings, universe=universe)
-    _overview_cache[universe] = (time.monotonic(), out)
-    return out
+    return _overview_cache_obj.get(
+        universe,
+        lambda: _market_overview_uncached(db, settings, universe=universe),
+        lambda: _with_db(lambda d: _market_overview_uncached(d, settings, universe=universe)),
+    )
 
 
 def _market_overview_uncached(
@@ -378,9 +449,22 @@ def _implied_vol(price: float, spot: float, strike: float, t: float, is_call: bo
 def option_chain(
     db: Session, settings: Settings, *, underlying: str, expiry: str
 ) -> dict[str, Any]:
-    """Live NSE-style option chain for one underlying + expiry, assembled from
-    the instrument master + Zerodha quotes. IV is back-solved from the LTP
-    (Kite doesn't publish it)."""
+    """Live NSE-style option chain for one underlying + expiry. Stale-while-
+    revalidate cached (see _SwrCache) so a 3-5s frontend poll doesn't pay the
+    ~1s Kite quote round-trip every time."""
+    key = f"{underlying.strip().upper()}|{expiry}"
+    return _chain_cache_obj.get(
+        key,
+        lambda: _option_chain_uncached(db, settings, underlying=underlying, expiry=expiry),
+        lambda: _with_db(
+            lambda d: _option_chain_uncached(d, settings, underlying=underlying, expiry=expiry)
+        ),
+    )
+
+
+def _option_chain_uncached(
+    db: Session, settings: Settings, *, underlying: str, expiry: str
+) -> dict[str, Any]:
     u = underlying.strip().upper()
     legs = instrument_service.option_strikes(db, u, expiry)
     if not legs:
