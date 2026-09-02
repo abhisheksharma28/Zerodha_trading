@@ -45,12 +45,25 @@ const PERIODS: { label: string; days: number; tf: string }[] = [
 
 interface Gauge {
   label: string;
+  desc: string;
   buy: number;
   neutral: number;
   sell: number;
   verdict: string;
   tone: "pos" | "neg" | "muted";
 }
+
+const GAUGE_DESC: Record<string, string> = {
+  "Technical indicators":
+    "Momentum & oscillators on daily bars: RSI(14) overbought/oversold, MACD histogram sign, " +
+    "price vs session VWAP, 10-day rate-of-change, and Bollinger Bands(20) breakouts. " +
+    "5 signals — each votes buy, neutral or sell.",
+  "Moving average":
+    "Latest daily close against its SMA(20), EMA(20), EMA(50) and EMA(200). " +
+    "Above the average = buy, below = sell. 4 signals.",
+  "General assessment":
+    "All 9 signals combined — the 4 moving-average checks plus the 5 technical indicators.",
+};
 
 function verdictOf(net: number, total: number): { verdict: string; tone: Gauge["tone"] } {
   const r = total ? net / total : 0;
@@ -66,7 +79,7 @@ function toGauge(label: string, signals: number[]): Gauge {
   const sell = signals.filter((s) => s < 0).length;
   const neutral = signals.length - buy - sell;
   const { verdict, tone } = verdictOf(buy - sell, signals.length);
-  return { label, buy, neutral, sell, verdict, tone };
+  return { label, desc: GAUGE_DESC[label] ?? "", buy, neutral, sell, verdict, tone };
 }
 
 function recommendations(candles: Candle[]): Gauge[] | null {
@@ -109,7 +122,10 @@ function Donut({ g }: { g: Gauge }) {
     g.tone === "pos" ? "var(--color-pos)" : g.tone === "neg" ? "var(--color-neg)" : "var(--color-accent)";
   const filled = ((g.buy + g.sell) / total) * c;
   return (
-    <div className="flex flex-col items-center gap-1.5">
+    <div
+      className="flex cursor-help flex-col items-center gap-1.5"
+      title={`${g.label} — ${g.verdict}\n\n${g.desc}\n\nVotes: ${g.buy} buy · ${g.neutral} neutral · ${g.sell} sell (of ${total}).\nVerdict: Buy when up-votes minus down-votes ≥ 20% of signals; Strong Buy ≥ 50% (same for Sell), else Neutral.`}
+    >
       <div className="relative h-20 w-20">
         <svg viewBox="0 0 80 80" className="h-full w-full -rotate-90">
           <circle cx="40" cy="40" r={r} fill="none" stroke="var(--color-line-strong)" strokeWidth="7" />
@@ -134,8 +150,9 @@ function Donut({ g }: { g: Gauge }) {
         </span>
       </div>
       <p className="text-center text-[11px] leading-tight text-fg-faint">{g.label}</p>
-      <p className="text-[10px] text-fg-faint">
-        {g.buy} · {g.neutral} · {g.sell}
+      <p className="text-[10px] text-fg-faint" title="Buy · Neutral · Sell votes">
+        <span className="text-pos">{g.buy}</span> · {g.neutral} ·{" "}
+        <span className="text-neg">{g.sell}</span>
       </p>
     </div>
   );
@@ -364,13 +381,30 @@ export default function StockDetailPage() {
       <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-3">
         {/* col 1 — recommendations + depth */}
         <div className="flex flex-col gap-4">
-          <SectionCard title="Investment recommendations">
+          <SectionCard
+            title="Investment recommendations"
+            actions={
+              <span
+                className="cursor-help rounded bg-elevated px-1.5 py-0.5 text-[10px] font-medium text-fg-muted"
+                title="Computed from ~1 year of daily candles, so this is a swing / positional read (days to weeks) — not an intraday signal. Hover a ring for its inputs. Educational, not investment advice."
+              >
+                daily · swing horizon
+              </span>
+            }
+          >
             {gauges ? (
-              <div className="grid grid-cols-3 gap-2">
-                {gauges.map((g) => (
-                  <Donut key={g.label} g={g} />
-                ))}
-              </div>
+              <>
+                <p className="mb-2 text-[11px] leading-snug text-fg-faint">
+                  Rule-based read of ~1 year of <span className="text-fg-muted">daily</span> candles —
+                  a <span className="text-fg-muted">swing / positional</span> view (days to weeks),
+                  not intraday. Hover a ring for its inputs.
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  {gauges.map((g) => (
+                    <Donut key={g.label} g={g} />
+                  ))}
+                </div>
+              </>
             ) : (
               <p className="py-6 text-center text-xs text-fg-faint">
                 Not enough price history for a technical read.
