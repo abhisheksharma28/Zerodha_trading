@@ -20,6 +20,7 @@ import {
   Wallet,
 } from "lucide-react";
 
+import { IndexStrip } from "@/components/IndexStrip";
 import { LatencyPill } from "@/components/LatencyPill";
 import { NavInstrumentSearch } from "@/components/NavInstrumentSearch";
 import { StockDrawer } from "@/components/StockDrawer";
@@ -176,6 +177,8 @@ export function AppLayout() {
           </div>
         </div>
       </header>
+
+      <IndexStrip />
 
       <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-6">
         <div className="animate-in">
