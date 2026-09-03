@@ -20,6 +20,7 @@ from app.api.v1 import (
     orderflow,
     orders,
     paper_account,
+    seasonality,
     stocks,
     strategies,
     strategy_editor,
@@ -44,6 +45,7 @@ api_router.include_router(instruments.router)
 api_router.include_router(market.router)
 api_router.include_router(market_scanner.router)
 api_router.include_router(leaderboard.router)
+api_router.include_router(seasonality.router)
 api_router.include_router(orderflow.router)
 api_router.include_router(monitoring.router)
 api_router.include_router(audit.router)

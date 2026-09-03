@@ -136,6 +136,39 @@ def test_analyze_end_to_end_synthetic(monkeypatch):
         assert k in it_apr_cell
 
 
+def test_walk_forward_is_out_of_sample_and_reports_rank_ic(monkeypatch):
+    from app.seasonality import backtest as wf
+
+    yrs = range(2004, 2024)
+    # NIFTY IT genuinely strong every April, NIFTY METAL genuinely weak every
+    # April; everyone else flat. A causal ranking should learn this.
+    bars = {
+        "NIFTY 50": _daily_bars("NIFTY 50", dict.fromkeys(range(1, 13), 0.7), years=yrs),
+        "INDIA VIX": _daily_bars("INDIA VIX", dict.fromkeys(range(1, 13), 0.0), years=yrs, start_px=15),
+        "NIFTY IT": _daily_bars("NIFTY IT", {m: (9.0 if m == 4 else 0.6) for m in range(1, 13)}, years=yrs),
+        "NIFTY METAL": _daily_bars("NIFTY METAL", {m: (-8.0 if m == 4 else 0.7) for m in range(1, 13)}, years=yrs),
+        "NIFTY FMCG": _daily_bars("NIFTY FMCG", dict.fromkeys(range(1, 13), 0.7), years=yrs),
+        "NIFTY AUTO": _daily_bars("NIFTY AUTO", dict.fromkeys(range(1, 13), 0.6), years=yrs),
+        "NIFTY PHARMA": _daily_bars("NIFTY PHARMA", dict.fromkeys(range(1, 13), 0.65), years=yrs),
+    }
+    monkeypatch.setattr(
+        wf, "load_history",
+        lambda *_a, **_k: (bars, {s: __import__("app.seasonality.data", fromlist=["audit_series"]).audit_series(s, b) for s, b in bars.items()}),
+    )
+
+    r = wf.walk_forward(None, None, strategy="E_long_top3_short_bottom3",
+                        start_test_year=2012, min_train_years=5)
+    # with a real repeating edge the long/short spread and rank IC should be positive
+    assert r.rank_ic["mean"] is not None and r.rank_ic["mean"] > 0.1
+    assert r.spread["mean_pct"] is not None and r.spread["mean_pct"] > 0
+    assert r.n_months >= 100
+    d = r.to_dict()
+    assert "out_of_sample" in d["oos_split"] and "in_sample" in d["oos_split"]
+    # every test-month decision only used earlier years -> no lookahead
+    apr_trades = [t for t in r.trades if t.month == 4 and t.side == "LONG"]
+    assert any(t.sector == "NIFTY IT" for t in apr_trades)
+
+
 def test_no_lookahead_current_partial_month_excluded(monkeypatch):
     # a sector with a huge spike in the (incomplete) current month must not
     # let that month leak into its own-month history
