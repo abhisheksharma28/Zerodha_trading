@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { SectionCard } from "@/components/SectionCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useMarkAlertsRead, useScannerAlerts } from "@/hooks/useMarketScanner";
 import { cn } from "@/lib/utils";
 
 interface Alert {
@@ -23,6 +24,56 @@ const SAMPLE: Alert[] = [
 ];
 
 const TABS = ["Alerts", "Notifications"] as const;
+
+function ScannerNotifications() {
+  const { data } = useScannerAlerts();
+  const mark = useMarkAlertsRead();
+  const alerts = data?.alerts ?? [];
+  if (alerts.length === 0) {
+    return <p className="py-8 text-center text-sm text-fg-faint">No scanner notifications yet.</p>;
+  }
+  const tone: Record<string, string> = {
+    NEW_TRADE: "border-l-accent",
+    TARGET: "border-l-pos",
+    SL: "border-l-neg",
+    NEUTRAL: "border-l-amber-400",
+  };
+  return (
+    <div>
+      <div className="flex items-center justify-between px-3 py-2 text-xs text-fg-faint">
+        <span>
+          Market Scanner · {data?.unread ?? 0} unread. Delivery to push / email is wired later; this is
+          the in-app feed.
+        </span>
+        {(data?.unread ?? 0) > 0 && (
+          <button type="button" className="text-accent hover:underline" onClick={() => mark.mutate(undefined)}>
+            Mark all read
+          </button>
+        )}
+      </div>
+      <ul className="divide-y divide-line/60">
+        {alerts.map((a) => (
+          <li
+            key={a.id}
+            className={cn(
+              "border-l-2 px-3 py-2 text-sm",
+              tone[a.kind] ?? "border-l-line",
+              a.read ? "opacity-60" : "",
+            )}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-medium text-fg">{a.title}</span>
+              <span className="shrink-0 text-[11px] text-fg-faint">
+                {a.created_at ? new Date(a.created_at).toLocaleString("en-IN") : ""}
+              </span>
+            </div>
+            <p className="text-xs text-fg-muted">{a.body}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 export default function AlertsPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]>("Alerts");
@@ -96,7 +147,7 @@ export default function AlertsPage() {
             searchPlaceholder="Filter alerts…"
           />
         ) : (
-          <p className="py-8 text-center text-sm text-fg-faint">No notifications yet.</p>
+          <ScannerNotifications />
         )}
       </SectionCard>
     </div>

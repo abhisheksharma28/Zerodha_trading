@@ -23,12 +23,21 @@ logger = get_logger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("startup", environment=settings.environment)
     from app.live import engine as live_engine
+    from app.market_scanner import scheduler as scanner_scheduler
 
     try:
         await live_engine.start(settings)
     except Exception:  # noqa: BLE001 - the ticker is optional, never block startup
         logger.exception("live_engine_start_failed")
+    try:
+        await scanner_scheduler.start()
+    except Exception:  # noqa: BLE001 - the scanner loop is optional, never block startup
+        logger.exception("market_scanner_start_failed")
     yield
+    try:
+        await scanner_scheduler.stop()
+    except Exception:  # noqa: BLE001
+        logger.exception("market_scanner_stop_failed")
     try:
         await live_engine.stop()
     except Exception:  # noqa: BLE001

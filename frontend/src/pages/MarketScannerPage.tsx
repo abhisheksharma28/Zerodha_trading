@@ -4,6 +4,7 @@ import { RefreshCw } from "lucide-react";
 
 import { DataTable, type Column } from "@/components/DataTable";
 import { PageHeader } from "@/components/PageHeader";
+import { RecommendationsPanel } from "@/components/scanner/RecommendationsPanel";
 import { SectionCard } from "@/components/SectionCard";
 import { Card, CardContent } from "@/components/ui/card";
 import { useLiveTicks } from "@/hooks/useLiveTick";
@@ -216,6 +217,9 @@ export default function MarketScannerPage() {
 
           {/* slim breadth strip */}
           <BreadthStrip b={data.breadth} />
+
+          {/* full-market trade recommendations — above the movers/sectors */}
+          <RecommendationsPanel />
 
           {/* tabs — the meat, right at the top */}
           <div className="flex gap-1 border-b border-line">

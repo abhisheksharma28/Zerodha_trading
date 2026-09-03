@@ -12,6 +12,7 @@ from app.api.v1 import (
     instruments,
     leaderboard,
     market,
+    market_scanner,
     monitoring,
     options_strategies,
     orderflow,
@@ -34,6 +35,7 @@ api_router.include_router(deployments.router)
 api_router.include_router(broker.router)
 api_router.include_router(instruments.router)
 api_router.include_router(market.router)
+api_router.include_router(market_scanner.router)
 api_router.include_router(leaderboard.router)
 api_router.include_router(orderflow.router)
 api_router.include_router(monitoring.router)

@@ -12,6 +12,7 @@ from app.models.backtest import Backtest
 from app.models.broker_session import BrokerSession
 from app.models.deployment import Deployment
 from app.models.instrument import Instrument
+from app.models.market_scanner import ScannerAlert, ScanRecommendation, ScanRun
 from app.models.options_strategy import OptionsStrategyInstance
 from app.models.order import Order, Trade
 from app.models.strategy import Strategy, StrategyVersion
@@ -27,6 +28,9 @@ __all__ = [
     "BrokerSession",
     "Deployment",
     "Instrument",
+    "ScanRecommendation",
+    "ScanRun",
+    "ScannerAlert",
     "OptionsStrategyInstance",
     "Order",
     "Trade",

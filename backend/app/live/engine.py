@@ -202,6 +202,40 @@ async def drop_upstream(tokens: list[int]) -> None:
         await _ticker.unsubscribe(tokens)
 
 
+# Process-owned subscriptions (the Market Scanner tracks its live setups off
+# the tick feed and must keep them streaming with no browser chart open).
+_system_tokens: set[int] = set()
+
+
+async def ensure_system_subscription(tokens: list[int]) -> str:
+    """Start the ticker if idle and add ``tokens`` to a subscription set that
+    is independent of browser refcounts. Idempotent; safe with no broker
+    session (returns the ticker state so the caller can fall back to REST)."""
+    global _system_tokens
+    want = {int(t) for t in tokens}
+    if not want:
+        return _state
+    if _ticker is None or _state != "running":
+        await ensure_started()
+    new = want - _system_tokens
+    _system_tokens |= want
+    if _ticker is not None and new:
+        await _ticker.subscribe(sorted(new))
+    return _state
+
+
+async def release_system_subscription(tokens: list[int]) -> None:
+    """Drop tokens the scanner no longer tracks, unless a browser still holds
+    them (checked via the fan-out hub refcount)."""
+    global _system_tokens
+    drop = {int(t) for t in tokens} & _system_tokens
+    _system_tokens -= drop
+    still_needed = {t for t in drop if HUB._refcount.get(t, 0) > 0}  # noqa: SLF001
+    free = sorted(drop - still_needed)
+    if _ticker is not None and free:
+        await _ticker.unsubscribe(free)
+
+
 async def stop() -> None:
     global _ticker, _task, _monitor_task
     if _ticker is not None:

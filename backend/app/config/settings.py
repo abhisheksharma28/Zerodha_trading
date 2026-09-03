@@ -76,6 +76,19 @@ class Settings(BaseSettings):
     # breaker and halts new orders until ticks resume.
     circuit_breaker_stale_halt_seconds: float = 15.0
 
+    # --- Market Scanner recommendation engine (app.market_scanner) ---
+    # A 5-minute sweep of the tradable universe that produces ranked, live-
+    # tracked trade setups shown at the top of the Scanner tab. Runs in the
+    # API process (needs the tick feed); market-hours gated.
+    market_scanner_enabled: bool = True
+    market_scanner_scan_interval_seconds: int = 300
+    market_scanner_track_interval_seconds: int = 20
+    market_scanner_core_max: int = 120            # deep-scanned F&O names / cycle
+    market_scanner_broad_promote_max: int = 15    # quote-screened equities promoted / cycle
+    market_scanner_max_live: int = 24             # cap on concurrent LIVE recommendations
+    market_scanner_overlay_min_confidence: float = 68.0  # attach an option spread above this
+    market_scanner_eod_flatten_ist: str = "15:20"       # unresolved -> NEUTRAL at this IST time
+
     # --- Strategy-evaluation worker (app.workers) ---
     worker_poll_interval_seconds: int = 60
     # How far back the worker pulls candles each poll; only bars newer than

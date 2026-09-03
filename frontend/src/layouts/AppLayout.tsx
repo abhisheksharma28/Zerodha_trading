@@ -4,6 +4,7 @@ import {
   Activity,
   BarChart3,
   Bell,
+  BookOpen,
   CandlestickChart,
   ChevronDown,
   FileClock,
@@ -94,6 +95,7 @@ const MENUS: { label: string; items: Item[] }[] = [
   {
     label: "System",
     items: [
+      { to: "/logbook", label: "Scanner Log Book", icon: BookOpen, desc: "Recommendation outcomes & hit-rate" },
       { to: "/reports", label: "Reports", icon: FileText },
       { to: "/audit-logs", label: "Audit Logs", icon: FileClock },
       { to: "/broker", label: "Broker", icon: Plug },
