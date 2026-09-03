@@ -180,3 +180,60 @@ def test_no_lookahead_current_partial_month_excluded(monkeypatch):
              for i in range(3)]
     mr = monthly_returns(bars)
     assert (now.year, now.month) not in mr
+
+
+def test_model_freeze_signal_and_review(db, monkeypatch, tmp_path):
+    """freeze -> generate a point-in-time signal -> review a completed month."""
+    import json as _json
+
+    from app.config import get_settings
+    from app.seasonality import store, versioning
+
+    yrs = range(2004, 2024)
+    bars = {
+        "NIFTY 50": _daily_bars("NIFTY 50", dict.fromkeys(range(1, 13), 0.7), years=yrs),
+        "INDIA VIX": _daily_bars("INDIA VIX", dict.fromkeys(range(1, 13), 0.0), years=yrs, start_px=15),
+        "NIFTY IT": _daily_bars("NIFTY IT", {m: (9.0 if m == 4 else 0.6) for m in range(1, 13)}, years=yrs),
+        "NIFTY METAL": _daily_bars("NIFTY METAL", {m: (-8.0 if m == 4 else 0.7) for m in range(1, 13)}, years=yrs),
+        "NIFTY FMCG": _daily_bars("NIFTY FMCG", dict.fromkeys(range(1, 13), 0.7), years=yrs),
+        "NIFTY AUTO": _daily_bars("NIFTY AUTO", dict.fromkeys(range(1, 13), 0.65), years=yrs),
+        "NIFTY PHARMA": _daily_bars("NIFTY PHARMA", dict.fromkeys(range(1, 13), 0.6), years=yrs),
+    }
+    from app.seasonality import data as sdata
+
+    def _fake_load(_db, _settings, **_kw):
+        return bars, {s: sdata.audit_series(s, b) for s, b in bars.items()}
+
+    monkeypatch.setattr(eng, "load_history", _fake_load)
+    monkeypatch.setattr("app.seasonality.data.load_history", _fake_load)
+    # small pre-built report on disk for freeze()
+    store_path = tmp_path / "seasonality_report.json"
+    monkeypatch.setattr(store, "STORE_PATH", store_path)
+    monkeypatch.setattr(versioning, "load_report", lambda: {
+        "verdict": "NO VALID EDGE FOUND", "sector_count": 5,
+        "history_span": {"latest": "2023-12-31"}, "months": {},
+        "backtests": {"strategies": {}},
+    })
+
+    s = get_settings()
+    v = versioning.freeze(db, s, version="v1.0-test", name="Seasonality test", notes="unit")
+    assert v["verdict"] == "NO VALID EDGE FOUND"
+    assert v["methodology_hash"]
+
+    sig = versioning.generate_signal(db, s, version_id=v["id"], for_month="2020-04")
+    assert sig["signal_ref"] == "SEASONAL-2020-04-v1.0-test"
+    assert sig["data_cutoff"]
+    assert any(c["sector"] == "NIFTY IT" for c in sig["long_candidates"])
+    # idempotent
+    again = versioning.generate_signal(db, s, version_id=v["id"], for_month="2020-04")
+    assert again["id"] == sig["id"]
+
+    reviewed = versioning.review_signal(db, s, signal_id=sig["id"])
+    assert reviewed["status"] == "reviewed"
+    assert reviewed["review"]["actual_best"] == "NIFTY IT"
+    assert reviewed["review"]["actual_worst"] == "NIFTY METAL"
+    assert reviewed["review"]["rank_ic"] is not None
+
+    h = versioning.health(db, version_id=v["id"])
+    assert h["reviewed_signals"] == 1
+    _ = _json  # silence unused

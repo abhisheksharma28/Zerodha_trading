@@ -11,11 +11,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Body, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.core.deps import get_db
+from app.seasonality import versioning
 from app.seasonality.backtest import STRATEGIES, walk_forward
 from app.seasonality.store import load, read_status, start_refresh
 
@@ -64,3 +65,67 @@ def backtest(
         db, settings, strategy=strategy, mode=mode, start_test_year=start_test_year,
         long_cost_bps=long_cost_bps, short_cost_bps=short_cost_bps,
     ).to_dict()
+
+
+# --- model freeze / version control + signal snapshots --------------------
+
+@router.get("/versions")
+def list_versions(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    return versioning.list_versions(db)
+
+
+@router.post("/versions", status_code=status.HTTP_201_CREATED)
+def freeze_version(
+    payload: dict[str, Any] = Body(...),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    return versioning.freeze(
+        db, settings,
+        version=str(payload.get("version", "")),
+        name=str(payload.get("name", "")),
+        notes=payload.get("notes"),
+        params=payload.get("params"),
+    )
+
+
+@router.get("/versions/{version_id}")
+def get_version(version_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+    return versioning.serialize_version(versioning.get_version(db, version_id), full=True)
+
+
+@router.post("/versions/{version_id}/retire")
+def retire_version(version_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+    return versioning.retire_version(db, version_id)
+
+
+@router.post("/versions/{version_id}/signal", status_code=status.HTTP_201_CREATED)
+def generate_signal(
+    version_id: str,
+    for_month: str | None = Query(None, pattern=r"^\d{4}-\d{2}$"),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    return versioning.generate_signal(db, settings, version_id=version_id, for_month=for_month)
+
+
+@router.get("/signals")
+def list_signals(
+    version_id: str | None = Query(None),
+    db: Session = Depends(get_db),
+) -> list[dict[str, Any]]:
+    return versioning.list_signals(db, version_id=version_id)
+
+
+@router.post("/signals/{signal_id}/review")
+def review_signal(
+    signal_id: str,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    return versioning.review_signal(db, settings, signal_id=signal_id)
+
+
+@router.get("/versions/{version_id}/health")
+def version_health(version_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+    return versioning.health(db, version_id=version_id)
