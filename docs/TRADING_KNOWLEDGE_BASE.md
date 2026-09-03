@@ -4,10 +4,13 @@ Distilled, actionable rules from the reference material the platform owner has
 supplied. This is the **specification and backlog for the Trading Ideas engine**
 (`backend/app/market_scanner/`), not something the running service parses.
 
-**How the tool actually "uses" this:** the engine only acts on what is *coded*
-into `app/market_scanner/` (`candles.py`, `chart_patterns.py`, `structure.py`,
-`features.py`, `context.py`, `options_overlay.py`, and the scorer in
-`signals.py`). Each entry below is tagged with its status:
+**How the tool uses this at runtime:** the engine acts on what is *coded* into
+`app/market_scanner/`, and every weight / threshold / on-off switch that code
+uses is read from **`app/market_scanner/knowledge.py`**, which deep-merges an
+optional **`knowledge.yaml`** override at import (`GET /market-scanner/knowledge`
+to inspect, `POST /market-scanner/knowledge/reload` to re-read). So the rules
+below can be re-tuned live by editing the YAML — no code change. Each entry is
+tagged with its status:
 
 | Tag | Meaning |
 |---|---|
@@ -178,7 +181,9 @@ negative deep in the second half (−0.3).
 |---|---|---|
 | `weapon-candle` — EMA9 reclaim + MACD confirmation, break of the signal bar | Mengshetti et al. 2024 | ✅ implemented |
 | `macd-grid` — MACD-line-above-signal filter + 1% averaging grid, flatten on MACD cross-down | Dr Reshampal Kaur | ✅ implemented — **note:** this deliberately averages *into* weakness, which Elder / Vince explicitly warn against (see §10); labelled with that risk |
-| Z-score + RSI + MA240 regime-filtered mean reversion (buy oversold in an uptrend, cash in a downtrend; cooldowns, max-open cap, risk-based sizing) | Poudel & Paudel 2025 | 🔜 candidate (`regime-adaptive` already covers the regime-switch idea) |
+| `zscore-regime-mr` — Z-Score + RSI oversold entry, long MA regime filter, ATR stop + take-profit + cool-down | Poudel & Paudel 2025 | ✅ implemented |
+| `triple-screen` — long-MA-slope "tide" + RSI pullback + prior-bar-break trigger | Elder, *Trading for a Living* | ✅ implemented |
+| `elder-force-index` — 13-EMA price trend + 2-EMA Force Index dip entry, exit on trend / FI centreline flip | Elder, *Trading for a Living* | ✅ implemented |
 
 ---
 
