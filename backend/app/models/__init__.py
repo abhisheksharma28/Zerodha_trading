@@ -1,6 +1,12 @@
 """Import every model module here so Base.metadata is complete for Alembic
 autogenerate and for `Base.metadata.create_all` in tests."""
 
+from app.models.adaptive_options import (
+    AdaptiveChainSnapshot,
+    AdaptiveDecision,
+    AdaptivePaperPosition,
+    AdaptivePaperRun,
+)
 from app.models.audit import AuditLog, ChangeLogEntry
 from app.models.backtest import Backtest
 from app.models.broker_session import BrokerSession
@@ -11,6 +17,10 @@ from app.models.order import Order, Trade
 from app.models.strategy import Strategy, StrategyVersion
 
 __all__ = [
+    "AdaptiveChainSnapshot",
+    "AdaptiveDecision",
+    "AdaptivePaperPosition",
+    "AdaptivePaperRun",
     "AuditLog",
     "ChangeLogEntry",
     "Backtest",

@@ -20,6 +20,17 @@ const ArbPaperPage = lazy(() => import("@/pages/ArbitrageLabPages").then((m) => 
 const ArbLiveMonitorPage = lazy(() => import("@/pages/ArbitrageLabPages").then((m) => ({ default: m.ArbLiveMonitorPage })));
 const ArbPortfolioPage = lazy(() => import("@/pages/ArbitrageLabPages").then((m) => ({ default: m.ArbPortfolioPage })));
 const ArbAnalyticsPage = lazy(() => import("@/pages/ArbitrageLabPages").then((m) => ({ default: m.ArbAnalyticsPage })));
+const AdaptiveDashboardPage = lazy(() => import("@/pages/AdaptiveOptionsPages").then((m) => ({ default: m.AdaptiveDashboardPage })));
+const AdaptiveMarketIntelligencePage = lazy(() => import("@/pages/AdaptiveOptionsPages").then((m) => ({ default: m.AdaptiveMarketIntelligencePage })));
+const AdaptiveRiskGreeksPage = lazy(() => import("@/pages/AdaptiveOptionsPages").then((m) => ({ default: m.AdaptiveRiskGreeksPage })));
+const AdaptiveSettingsPage = lazy(() => import("@/pages/AdaptiveOptionsPages").then((m) => ({ default: m.AdaptiveSettingsPage })));
+const AdaptiveStrategyEnginePage = lazy(() => import("@/pages/AdaptiveOptionsPhases").then((m) => ({ default: m.AdaptiveStrategyEnginePage })));
+const AdaptiveStrategyBuilderPage = lazy(() => import("@/pages/AdaptiveOptionsPhases").then((m) => ({ default: m.AdaptiveStrategyBuilderPage })));
+const AdaptiveComparisonPage = lazy(() => import("@/pages/AdaptiveOptionsPhases").then((m) => ({ default: m.AdaptiveComparisonPage })));
+const AdaptiveBacktestingPage = lazy(() => import("@/pages/AdaptiveOptionsPhases").then((m) => ({ default: m.AdaptiveBacktestingPage })));
+const AdaptiveValidationPage = lazy(() => import("@/pages/AdaptiveOptionsPhases").then((m) => ({ default: m.AdaptiveValidationPage })));
+const AdaptivePaperTradingPage = lazy(() => import("@/pages/AdaptiveOptionsPhases").then((m) => ({ default: m.AdaptivePaperTradingPage })));
+const AdaptiveDecisionLogPage = lazy(() => import("@/pages/AdaptiveOptionsPhases").then((m) => ({ default: m.AdaptiveDecisionLogPage })));
 const OptionsHniPage = lazy(() => import("@/pages/OptionsHniPage"));
 const BacktestsPage = lazy(() => import("@/pages/BacktestsPage"));
 const BacktestDetailPage = lazy(() => import("@/pages/BacktestDetailPage"));
@@ -59,6 +70,17 @@ export default function App() {
         <Route path="arbitrage/portfolio" element={<ArbPortfolioPage />} />
         <Route path="arbitrage/analytics" element={<ArbAnalyticsPage />} />
         <Route path="options-hni" element={<OptionsHniPage />} />
+        <Route path="adaptive-options" element={<AdaptiveDashboardPage />} />
+        <Route path="adaptive-options/intelligence" element={<AdaptiveMarketIntelligencePage />} />
+        <Route path="adaptive-options/risk-greeks" element={<AdaptiveRiskGreeksPage />} />
+        <Route path="adaptive-options/settings" element={<AdaptiveSettingsPage />} />
+        <Route path="adaptive-options/strategy-engine" element={<AdaptiveStrategyEnginePage />} />
+        <Route path="adaptive-options/strategy-builder" element={<AdaptiveStrategyBuilderPage />} />
+        <Route path="adaptive-options/backtesting" element={<AdaptiveBacktestingPage />} />
+        <Route path="adaptive-options/validation" element={<AdaptiveValidationPage />} />
+        <Route path="adaptive-options/paper-trading" element={<AdaptivePaperTradingPage />} />
+        <Route path="adaptive-options/comparison" element={<AdaptiveComparisonPage />} />
+        <Route path="adaptive-options/decision-log" element={<AdaptiveDecisionLogPage />} />
         <Route path="strategies" element={<StrategiesPage />} />
         <Route path="strategies/:strategyId" element={<StrategyDetailPage />} />
         <Route path="backtests" element={<BacktestsPage />} />

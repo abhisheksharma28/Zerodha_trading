@@ -64,6 +64,22 @@ const MENUS: { label: string; items: Item[] }[] = [
     ],
   },
   {
+    label: "Adaptive Options",
+    items: [
+      { to: "/adaptive-options", label: "Dashboard", icon: Gauge, desc: "Market + positioning at a glance" },
+      { to: "/adaptive-options/intelligence", label: "Market Intelligence", icon: Activity, desc: "Regime · PCR · OI · IV · expected move" },
+      { to: "/adaptive-options/risk-greeks", label: "Risk & Greeks", icon: Scale, desc: "Per-strike & ATM greeks + warnings" },
+      { to: "/adaptive-options/strategy-engine", label: "Strategy Engine", icon: ListChecks, desc: "Adaptive selection" },
+      { to: "/adaptive-options/strategy-builder", label: "Strategy Builder", icon: Layers, desc: "Strike selection" },
+      { to: "/adaptive-options/backtesting", label: "Backtesting", icon: FlaskConical, desc: "Bhavcopy + synthetic" },
+      { to: "/adaptive-options/validation", label: "Validation", icon: Radar, desc: "Walk-forward / MC" },
+      { to: "/adaptive-options/paper-trading", label: "Paper Trading", icon: Rocket, desc: "Live decision engine" },
+      { to: "/adaptive-options/comparison", label: "Strategy Comparison", icon: BarChart3, desc: "Why one over another" },
+      { to: "/adaptive-options/decision-log", label: "Decision Log", icon: FileClock, desc: "Every decision, replayable" },
+      { to: "/adaptive-options/settings", label: "Settings", icon: SettingsIcon, desc: "Presets & overridable parameters" },
+    ],
+  },
+  {
     label: "Trading",
     items: [
       { to: "/option-chain", label: "Option Chain", icon: Layers, desc: "OI, IV, PCR, max pain" },

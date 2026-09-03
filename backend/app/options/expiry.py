@@ -48,6 +48,23 @@ def monthly_expiries(underlying: str) -> list[date]:
     return sorted(by_month.values())
 
 
+def weekly_expiries(underlying: str) -> list[date]:
+    """Every listed expiry — for index options these are the weeklies (the
+    monthly is just the last one of its month). Kept as a distinct name so
+    callers reading intent are clear."""
+    return listed_expiries(underlying)
+
+
+def select_expiry(
+    underlying: str, as_of: date, *, kind: str = "weekly", min_dte: int = 0
+) -> date | None:
+    """Nearest expiry of ``kind`` ('weekly' | 'monthly') at least ``min_dte``
+    calendar days out from ``as_of``. ``None`` if nothing qualifies."""
+    pool = monthly_expiries(underlying) if kind == "monthly" else weekly_expiries(underlying)
+    future = [e for e in pool if (e - as_of).days >= max(min_dte, 1)]
+    return future[0] if future else None
+
+
 def calendar_dte(expiry: date, as_of: date) -> int:
     return (expiry - as_of).days
 

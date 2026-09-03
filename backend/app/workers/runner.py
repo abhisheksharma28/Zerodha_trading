@@ -145,6 +145,7 @@ class DeploymentWorker:
 
         self._reconcile_live_orders()
         self._run_options_scheduler()
+        self._run_adaptive_options()
         self._publish_telemetry(active_deployments=len(self._runtimes))
 
     def _reconcile_live_orders(self) -> None:
@@ -198,6 +199,25 @@ class DeploymentWorker:
                 })
         except Exception:  # noqa: BLE001 - never let this kill the worker loop
             logger.exception("options_scheduler_failed")
+        finally:
+            db.close()
+
+    def _run_adaptive_options(self) -> None:
+        """Adaptive Options: record a chain snapshot for the tracked
+        underlyings (feeds IV rank / PCR history) and advance every ACTIVE
+        paper run through the decision engine. Market-hours gated; isolated."""
+        db = self._session_factory()
+        try:
+            from app.adaptive_options.scheduler import run_once
+
+            result = run_once(db, self._settings)
+            paper = result.get("paper") or {}
+            if not result.get("skipped") and (result.get("recorded") or paper.get("ticked")):
+                logger.info("adaptive_options_tick",
+                            recorded=list((result.get("recorded") or {}).keys()),
+                            paper_runs=paper.get("ticked", 0))
+        except Exception:  # noqa: BLE001 - never let this kill the worker loop
+            logger.exception("adaptive_options_tick_failed")
         finally:
             db.close()
 
