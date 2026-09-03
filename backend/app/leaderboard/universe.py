@@ -324,6 +324,47 @@ def broad_cross_section(
     return ScreenResult(res.symbols, rationale, res.metrics, res.caveats)
 
 
+def consolidation_prone(
+    bars: dict[str, list[Bar]], as_of: date, *,
+    n: int = 40, base_n: int = 150, window: int = 25, tight_pct: float = 15.0,
+    history: int = 500,
+) -> ScreenResult:
+    base = _base_syms(bars, as_of, base_n)
+    scored: list[tuple[str, float]] = []
+    for s in base:
+        bs = bars[s][-history:]
+        if len(bs) < window * 3:
+            continue
+        highs = np.asarray([float(b.high) for b in bs])
+        lows = np.asarray([float(b.low) for b in bs])
+        closes = np.asarray([float(b.close) for b in bs])
+        tight = 0
+        total = 0
+        for i in range(window, len(bs), max(1, window // 3)):
+            seg_h = highs[i - window:i].max()
+            seg_l = lows[i - window:i].min()
+            mid = closes[i - window:i].mean()
+            if mid > 0:
+                total += 1
+                if (seg_h - seg_l) / mid * 100.0 <= tight_pct:
+                    tight += 1
+        if total:
+            scored.append((s, tight / total))
+    scored.sort(key=lambda t: t[1], reverse=True)
+    picked = [s for s, _f in scored[:n]]
+    frac = np.median([f for _s, f in scored[:n]]) if picked else 0.0
+    rationale = (
+        f"A volatility-contraction breakout only sets up on names that actually build tight "
+        f"bases. Of {len(scored)} liquid names these {len(picked)} spend the most time coiled "
+        f"— a median {frac * 100:.0f}% of rolling {window}-bar windows sit inside a "
+        f"{tight_pct:.0f}% range."
+    )
+    return ScreenResult(picked, rationale,
+                        {"candidates": len(scored), "selected": len(picked),
+                         "median_tight_fraction": round(float(frac), 3)},
+                        [_SURVIVORSHIP])
+
+
 def leaders_with_benchmark(
     bars: dict[str, list[Bar]], as_of: date, *,
     n: int = 60, benchmark: str = "NIFTY 50", min_bars: int = 260,
@@ -425,6 +466,7 @@ SCREENS: dict[str, Screen] = {
     "high_volatility": high_volatility,
     "low_volatility": low_volatility,
     "broad_cross_section": broad_cross_section,
+    "consolidation_prone": consolidation_prone,
     "leaders_with_benchmark": leaders_with_benchmark,
     "sector_index_basket": sector_index_basket,
     "index_proxy": index_proxy,

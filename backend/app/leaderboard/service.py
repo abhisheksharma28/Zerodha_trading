@@ -54,24 +54,27 @@ def _downsample(curve: list[list[Any]], n: int = 300) -> list[list[Any]]:
     return [curve[min(len(curve) - 1, int(i * step))] for i in range(n)] + [curve[-1]]
 
 
-_POOL_CACHE: dict[float, tuple[dict[str, Any], dict[str, str]]] = {}
+_POOL_CACHE: dict[tuple[float, str], tuple[dict[str, Any], dict[str, str]]] = {}
 
 
-def _screen_pool(db: Session, settings: Settings, years: float) -> dict[str, Any]:
-    """Daily bar pool for the universe screens, memoised per window length
-    within one process so ``refresh_all`` builds it once."""
-    if years not in _POOL_CACHE:
-        _POOL_CACHE[years] = market_pool.load_pool(
-            db, settings, as_of=datetime.now().date().isoformat(), years=years, timeframe="1d",
+def _screen_pool(db: Session, settings: Settings, years: float, scope: str) -> dict[str, Any]:
+    """Daily bar pool for the universe screens, memoised per (window, scope)
+    within one process so ``refresh_all`` builds it once. ``scope='indices'``
+    skips the ~400 equity pulls for sector / index strategies."""
+    key = (years, scope)
+    if key not in _POOL_CACHE:
+        _POOL_CACHE[key] = market_pool.load_pool(
+            db, settings, as_of=datetime.now().date().isoformat(), years=years,
+            timeframe="1d", max_equities=0 if scope == "indices" else 400,
         )
-    return _POOL_CACHE[years][0]
+    return _POOL_CACHE[key][0]
 
 
 def _resolve_universe(
     db: Session, settings: Settings, slug: str, as_of: datetime,
 ) -> universe.ScreenResult:
     plan = TEST_PLANS[slug]
-    pool = _screen_pool(db, settings, plan.years)
+    pool = _screen_pool(db, settings, plan.years, plan.pool_scope)
     return universe.run_screen(plan.screen, pool, as_of.date(), plan.screen_params)
 
 
@@ -139,6 +142,21 @@ def run_canonical(db: Session, settings: Settings, slug: str) -> dict[str, Any]:
     payload["summary"] = narrative.summarize(payload)
     store.save(slug, cfg.config_hash, payload)
     return payload
+
+
+def sector_seasonality(db: Session, settings: Settings, *, years: float = 10.0) -> dict[str, Any]:
+    """Month-by-month historical performance of the NSE sector indices — the
+    insight the SeasonalSectorRotation strategy trades on."""
+    from app.strategies.seasonality import report
+
+    pool = _screen_pool(db, settings, years, "indices")
+    from app.market_data.nse_universe import SECTOR_INDICES
+
+    sectors = {s: pool[s] for s in SECTOR_INDICES if s in pool and len(pool[s]) > 260}
+    out = report(sectors, min_years=3)
+    out["window_years"] = years
+    out["sector_count"] = len(sectors)
+    return out
 
 
 def refresh_all(

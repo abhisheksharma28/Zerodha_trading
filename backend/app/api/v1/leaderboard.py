@@ -26,7 +26,7 @@ from app.leaderboard import (
 )
 from app.leaderboard import store as lb_store
 from app.leaderboard.config import canonical_for
-from app.leaderboard.service import live_paper_stats
+from app.leaderboard.service import live_paper_stats, sector_seasonality
 from app.robustness.service import (
     param_sim_for,
     robustness_for,
@@ -53,6 +53,18 @@ def get_catalog(db: Session = Depends(get_db)) -> dict[str, Any]:
     with metrics + a plain-English summary, read from the on-disk cache.
     Use POST /leaderboard/refresh to (slowly) recompute it."""
     return catalog(db)
+
+
+@router.get("/seasonality")
+def get_sector_seasonality(
+    years: float = 10.0,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Month-by-month historical performance of the NSE sector indices over
+    the last ``years`` — the table the seasonal-sector-rotation strategy
+    trades on. Slow on a cold cache (pulls sector-index history)."""
+    return sector_seasonality(db, settings, years=years)
 
 
 @router.post("/refresh")

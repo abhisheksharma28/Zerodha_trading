@@ -88,6 +88,14 @@ TUNING_GRID: dict[str, dict[str, list]] = {
         "rs_lookback": [63, 126, 189],
         "price_band_pct": [5.0, 8.0, 12.0],
     },
+    "volatility-contraction-breakout": {
+        "contraction_window": [18, 25, 35],
+        "target_r": [2.0, 2.5, 3.0],
+    },
+    "seasonal-sector-rotation": {
+        "hold_n": [2, 3, 4],
+        "metric": ["mean_pct", "median_pct"],
+    },
     # intraday templates excluded — 5-minute grid runs are too slow.
 }
 

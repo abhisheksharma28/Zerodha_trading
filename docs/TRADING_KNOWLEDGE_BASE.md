@@ -256,6 +256,21 @@ surfaced on every result.
 CPU-hung the refresh twice on NSE 5-minute data; `opening-range-breakout` is the
 NSE version.
 
+**New strategies (2026-09, Phase C):**
+
+| Template | Source | Screen |
+|---|---|---|
+| `volatility-contraction-breakout` — multi-week tight base + compressing vol, buy the break above the range if not already extended; stop on the base, target = R multiple | Minervini VCP; Darvas; Wyckoff accumulation | `consolidation_prone` (names that historically build tight bases) |
+| `seasonal-sector-rotation` — each month hold the sectors with the strongest *historical record for that calendar month* (mean/median return + hit rate), built causally from history so far | calendar-seasonality literature | `sector_index_basket` (indices-only pool, 10y) |
+
+Seasonality helper: `app/strategies/seasonality.py::monthly_sector_stats` /
+`best_sectors_for_month` / `report` (lives under `app.strategies`, not
+`app.leaderboard`, to avoid a circular import). `GET /leaderboard/seasonality`
+(`service.sector_seasonality`) returns the full month-by-month sector table over
+~10 years — the standalone "which sector is strong in which month" insight.
+`TestPlan.pool_scope="indices"` skips the ~400 equity pulls for sector/index
+strategies.
+
 > Refresh operational note: run the canonical suite as a **standalone process**
 > (`SessionLocal()` + `service.refresh_all`), not through the uvicorn worker — a
 > synchronous `POST /leaderboard/refresh` blocks the single web worker for the

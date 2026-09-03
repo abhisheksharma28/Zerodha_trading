@@ -33,12 +33,14 @@ from app.strategies.library import (
     RegimeAdaptiveStrategy,
     Rsi2ReversionStrategy,
     RsLineHighStrategy,
+    SeasonalSectorRotationStrategy,
     SectorMomentumRotationStrategy,
     SupertrendStrategy,
     TrendFollowingStrategy,
     TripleScreenStrategy,
     TtmSqueezeStrategy,
     TurnOfMonthStrategy,
+    VolatilityContractionBreakoutStrategy,
     VolatilityRegimeStrategy,
     VwapReversionStrategy,
     WeaponCandleStrategy,
@@ -1286,3 +1288,41 @@ def test_rs_line_high_buys_a_relative_strength_leader():
     _emitted, positions = run(RsLineHighStrategy, p, steps)
     assert positions.get("LEADER", 0) > 0
     assert positions.get("NIFTY 50", 0) == 0
+
+
+def test_volatility_contraction_breakout_buys_the_base_break():
+    # a base whose oscillation amplitude tapers from ~2.5 down to ~0.2
+    # (genuine volatility contraction), then a green break above it
+    closes = [100.0 + 4.0 * ((-1) ** i) for i in range(20)]        # wide, choppy lead-in
+    closes += [100.0 + (2.5 - 2.3 * k / 44) * ((-1) ** k) for k in range(44)]  # contracting base
+    closes += [101.4, 104.0]                                       # green breakout
+    bars = [_bar("PERSISTENT", round(c, 2), daily_ts(i)) for i, c in enumerate(closes)]
+    p = VolatilityContractionBreakoutStrategy.resolve_params({
+        **VolatilityContractionBreakoutStrategy.presets()["balanced"],
+        "contraction_window": 30, "contraction_pct": 12.0, "vol_ratio_max": 0.9,
+        "green_days": 1, "max_extension_pct": 8.0, "trend_ma_period": 0,
+        "regime_filter_enabled": False,
+    })
+    emitted, _ = run(VolatilityContractionBreakoutStrategy, p, bars)
+    assert any(o.transaction_type == "BUY" for _, orders in emitted for o in orders)
+
+
+def test_seasonal_sector_rotation_favours_a_seasonally_strong_sector():
+    # NIFTY IT rallies +10% every December, flat otherwise; NIFTY FMCG always flat.
+    steps = []
+    start = datetime(2026, 1, 1)
+    for i in range(1090):                       # ~3 years, ending in December of year 3
+        d = start + timedelta(days=i)
+        ts = d.strftime("%Y-%m-%dT00:00:00") + IST_OFFSET
+        it_px = 100.0 + 10.0 * (d.day / 31.0) if d.month == 12 else 100.0
+        steps.append(_bar("NIFTY IT", round(it_px, 2), ts))
+        steps.append(_bar("NIFTY FMCG", 100.0, ts))
+    p = SeasonalSectorRotationStrategy.resolve_params({
+        **SeasonalSectorRotationStrategy.presets()["balanced"],
+        "hold_n": 1, "min_years": 2, "metric": "mean_pct", "min_hit_rate": 0.5,
+        "history_window": 3000, "sizing_method": "fixed_capital",
+        "capital_allocation": 1_000_000.0, "regime_filter_enabled": False,
+    })
+    _emitted, positions = run(SeasonalSectorRotationStrategy, p, steps)
+    assert positions.get("NIFTY IT", 0) > 0
+    assert positions.get("NIFTY FMCG", 0) == 0

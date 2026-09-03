@@ -50,6 +50,7 @@ class TestPlan:
     capital: float = _CAPITAL
     max_gross_exposure: float = 1.0
     design_note: str = ""
+    pool_scope: str = "full"          # "full" = liquid equities + indices; "indices" = indices only
 
 
 @dataclass(frozen=True)
@@ -188,9 +189,17 @@ TEST_PLANS: dict[str, TestPlan] = {
                                        design_note="The anomaly is defined by the screen: "
                                                    "buy the calmest decile, monthly."),
     "sector-momentum-rotation": TestPlan("sector-momentum-rotation", "sector_index_basket",
-                                         {}, "1d", 5.0,
+                                         {}, "1d", 5.0, pool_scope="indices",
                                          design_note="Trades sector indices so single-stock "
                                                      "noise does not drown the signal."),
+    "seasonal-sector-rotation": TestPlan("seasonal-sector-rotation", "sector_index_basket",
+                                         {}, "1d", 10.0, pool_scope="indices",
+                                         design_note="Needs ~10 years of sector-index history to "
+                                                     "build a reliable month-by-month table."),
+    "volatility-contraction-breakout": TestPlan(
+        "volatility-contraction-breakout", "consolidation_prone",
+        {"n": 40, "base_n": 150, "window": 25, "tight_pct": 15.0}, "1d", 5.0,
+        design_note="Only fires on names that actually build tight multi-week bases."),
     "pairs-trading": TestPlan("pairs-trading", "cointegrated_pair",
                               {"base_n": 30, "window": 252, "max_half_life": 60.0}, "1d", 3.0,
                               design_note="The tool picks the pair: the most stationary "
