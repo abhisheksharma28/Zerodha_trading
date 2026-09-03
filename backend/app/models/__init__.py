@@ -16,7 +16,6 @@ from app.models.instrument import Instrument
 from app.models.market_scanner import ScannerAlert, ScanRecommendation, ScanRun
 from app.models.options_strategy import OptionsStrategyInstance
 from app.models.order import Order, Trade
-from app.models.seasonality import SeasonalityModelVersion, SeasonalitySignal
 from app.models.paper_account import (
     PaperAccount,
     PaperAlgoConfig,
@@ -27,6 +26,7 @@ from app.models.paper_account import (
     PaperStrategyRun,
     PaperTrade,
 )
+from app.models.seasonality import SeasonalityModelVersion, SeasonalitySignal
 from app.models.strategy import Strategy, StrategyVersion
 
 __all__ = [
