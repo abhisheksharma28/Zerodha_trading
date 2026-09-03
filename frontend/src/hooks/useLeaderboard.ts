@@ -20,6 +20,14 @@ export function useBacktestCatalog() {
   });
 }
 
+export function useSectorSeasonality(years = 10) {
+  return useQuery({
+    queryKey: [...KEY, "seasonality", years],
+    queryFn: () => leaderboardApi.seasonality(years),
+    staleTime: 5 * 60_000,
+  });
+}
+
 export function useLeaderboardDetail(slug: string | undefined) {
   return useQuery({
     queryKey: [...KEY, slug],

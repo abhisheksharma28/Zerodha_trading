@@ -36,6 +36,7 @@ function Metric({ label, value, tone }: { label: string; value: string; tone?: s
 
 function CatalogCard({ e }: { e: CatalogEntry }) {
   const [open, setOpen] = useState(false);
+  const [howOpen, setHowOpen] = useState(false);
   const m = e.metrics ?? {};
   const v = e.summary?.verdict ?? (e.status === "not_run" ? "insufficient" : "marginal");
   const badge = VERDICT[v] ?? VERDICT.marginal;
@@ -63,6 +64,50 @@ function CatalogCard({ e }: { e: CatalogEntry }) {
           {badge.label}
         </span>
       </div>
+
+      {e.how && (
+        <div className="mt-2">
+          <p className="text-xs text-fg-muted">{e.how.description}</p>
+          <button
+            type="button"
+            onClick={() => setHowOpen((o) => !o)}
+            className="mt-1 text-[11px] font-medium text-accent hover:underline"
+          >
+            {howOpen ? "Hide how it works" : "How it decides a trade"}
+          </button>
+          {howOpen && (
+            <div className="mt-1.5 space-y-1.5 rounded-md border border-line/70 bg-bg/40 p-2 text-[11px] leading-snug text-fg-muted">
+              <p>
+                <span className="font-semibold text-fg-faint">Logic. </span>
+                {e.how.logic}
+              </p>
+              {e.how.example && (
+                <p>
+                  <span className="font-semibold text-fg-faint">Example. </span>
+                  {e.how.example}
+                </p>
+              )}
+              {e.how.best_for && (
+                <p>
+                  <span className="font-semibold text-fg-faint">Best for. </span>
+                  {e.how.best_for}
+                </p>
+              )}
+              {e.how.risks?.length > 0 && (
+                <div>
+                  <span className="font-semibold text-fg-faint">When it loses. </span>
+                  <ul className="mt-0.5 list-disc space-y-0.5 pl-4">
+                    {e.how.risks.map((r, i) => (
+                      <li key={i}>{r}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {e.how.warning && <p className="text-amber-500">{e.how.warning}</p>}
+            </div>
+          )}
+        </div>
+      )}
 
       {e.status === "not_run" ? (
         <p className="mt-3 text-xs text-fg-faint">Not run yet — hit “Refresh catalog”.</p>

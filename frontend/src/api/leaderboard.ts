@@ -238,6 +238,14 @@ export interface CatalogEntry {
   years: number;
   screen?: string;
   design_note?: string;
+  how?: {
+    description: string;
+    logic: string;
+    best_for: string;
+    warning: string;
+    example: string;
+    risks: string[];
+  };
   stale: boolean;
   status: "ok" | "ruined" | "not_run";
   metrics: Record<string, number | null> | null;
@@ -284,10 +292,40 @@ export interface RefreshJob {
   status_url: string;
 }
 
+export interface SeasonMonthStat {
+  mean_pct: number;
+  median_pct: number;
+  hit_rate: number;
+  years: number;
+  t_stat: number;
+  mean_rank: number;
+  raw_mean_pct: number;
+}
+
+export interface SectorSeasonality {
+  method: string;
+  sectors: string[];
+  years_covered: number;
+  window_years?: number;
+  sector_count?: number;
+  india_calendar_anchors: Record<string, string>;
+  per_sector: Record<string, Record<string, SeasonMonthStat>>;
+  calendar_winners: Record<
+    string,
+    { sector: string; seasonal_edge_pct: number; t_stat: number; hit_rate: number; raw_mean_pct: number }[]
+  >;
+  significant_months_per_sector: Record<string, string[]>;
+}
+
 export const leaderboardApi = {
   get: () => apiClient.get<Leaderboard>("/leaderboard").then((r) => r.data),
 
   catalog: () => apiClient.get<BacktestCatalog>("/leaderboard/catalog").then((r) => r.data),
+
+  seasonality: (years = 10) =>
+    apiClient
+      .get<SectorSeasonality>("/leaderboard/seasonality", { params: { years } })
+      .then((r) => r.data),
 
   detail: (slug: string) =>
     apiClient.get<LeaderboardDetail>(`/leaderboard/${slug}`).then((r) => r.data),

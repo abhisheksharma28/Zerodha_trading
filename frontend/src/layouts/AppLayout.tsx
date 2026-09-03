@@ -4,6 +4,7 @@ import {
   Activity,
   Bell,
   BookOpen,
+  CalendarRange,
   CandlestickChart,
   ChevronDown,
   Code2,
@@ -16,6 +17,7 @@ import {
   Plug,
   Radar,
   Settings as SettingsIcon,
+  Trophy,
   Wallet,
 } from "lucide-react";
 
@@ -57,6 +59,8 @@ const MENUS: { label: string; items: Item[] }[] = [
     label: "Backtest",
     items: [
       { to: "/backtests", label: "Backtest", icon: FlaskConical, desc: "Run & analyse strategies + the catalog" },
+      { to: "/leaderboard", label: "Strategy Leaderboard", icon: Trophy, desc: "Every strategy ranked: canonical backtest + live paper" },
+      { to: "/seasonality", label: "Sector Seasonality", icon: CalendarRange, desc: "Which sector runs in which month — 10-year table" },
       { to: "/strategy-editor", label: "Python Editor", icon: Code2, desc: "Code a strategy, compile & backtest it" },
       { to: "/strategy-library", label: "Strategy Library", icon: LibraryBig, desc: "Research-backed templates" },
       { to: "/strategies", label: "My Strategies", icon: ListChecks, desc: "Your saved strategies" },

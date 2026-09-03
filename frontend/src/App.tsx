@@ -12,6 +12,7 @@ const StrategyDetailPage = lazy(() => import("@/pages/StrategyDetailPage"));
 const StrategyLibraryPage = lazy(() => import("@/pages/StrategyLibraryPage"));
 const StrategyTemplateDetailPage = lazy(() => import("@/pages/StrategyTemplateDetailPage"));
 const LeaderboardPage = lazy(() => import("@/pages/LeaderboardPage"));
+const SeasonalityPage = lazy(() => import("@/pages/SeasonalityPage"));
 const ArbitrageLibraryPage = lazy(() => import("@/pages/ArbitrageLabPages").then((m) => ({ default: m.ArbitrageLibraryPage })));
 const ArbScannerPage = lazy(() => import("@/pages/ArbitrageLabPages").then((m) => ({ default: m.ArbScannerPage })));
 const ArbPairDiscoveryPage = lazy(() => import("@/pages/ArbitrageLabPages").then((m) => ({ default: m.ArbPairDiscoveryPage })));
@@ -65,6 +66,7 @@ export default function App() {
         <Route path="strategy-library" element={<StrategyLibraryPage />} />
         <Route path="strategy-library/:slug" element={<StrategyTemplateDetailPage />} />
         <Route path="leaderboard" element={<LeaderboardPage />} />
+        <Route path="seasonality" element={<SeasonalityPage />} />
         <Route path="arbitrage" element={<ArbitrageLibraryPage />} />
         <Route path="arbitrage/scanner" element={<ArbScannerPage />} />
         <Route path="arbitrage/pair-discovery" element={<ArbPairDiscoveryPage />} />

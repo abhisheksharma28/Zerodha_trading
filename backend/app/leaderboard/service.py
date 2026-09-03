@@ -194,6 +194,7 @@ def catalog(db: Session) -> dict[str, Any]:
     for slug, cfg in CANONICAL.items():
         blob = store.load(slug, cfg.config_hash) or store.load_any(slug)
         tmpl = get_template(slug)
+        md = tmpl.METADATA
         row: dict[str, Any] = {
             "slug": slug,
             "name": tmpl.NAME,
@@ -203,6 +204,14 @@ def catalog(db: Session) -> dict[str, Any]:
             "years": cfg.years,
             "screen": cfg.screen,
             "design_note": cfg.design_note,
+            "how": {
+                "description": md.description,
+                "logic": md.logic,
+                "best_for": md.best_for,
+                "warning": md.warning,
+                "example": md.example,
+                "risks": list(md.risks or [])[:3],
+            },
             "stale": bool(blob and blob.get("config", {}).get("config_hash") != cfg.config_hash),
         }
         if blob is None:
