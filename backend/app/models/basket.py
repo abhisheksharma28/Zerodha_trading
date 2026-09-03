@@ -31,6 +31,7 @@ class Basket(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str | None] = mapped_column(String(500))
+    category: Mapped[str | None] = mapped_column(String(40))  # e.g. "Multi-asset"
     benchmark: Mapped[str] = mapped_column(String(32), nullable=False, default="NIFTY 50")
     rebalance_frequency: Mapped[str] = mapped_column(
         String(12), nullable=False, default="monthly"

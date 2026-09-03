@@ -46,7 +46,7 @@ def create_basket(
 
 
 @router.get("/templates")
-def starter_templates() -> list[dict[str, Any]]:
+def starter_templates() -> dict[str, Any]:
     return service.starter_templates()
 
 

@@ -27,12 +27,13 @@ function specForPayload(sleeves: Sleeve[]): BasketSpec {
 export default function BasketsPage() {
   const nav = useNavigate();
   const { data: baskets, isLoading } = useBaskets();
-  const { data: templates } = useBasketTemplates();
+  const { data: catalog } = useBasketTemplates();
   const create = useCreateBasket();
 
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [category, setCategory] = useState("");
   const [benchmark, setBenchmark] = useState("NIFTY 50");
   const [frequency, setFrequency] = useState<Frequency>("monthly");
   const [driftBand, setDriftBand] = useState(3);
@@ -49,6 +50,7 @@ export default function BasketsPage() {
   const resetForm = () => {
     setName("");
     setDescription("");
+    setCategory("");
     setBenchmark("NIFTY 50");
     setFrequency("monthly");
     setDriftBand(3);
@@ -58,11 +60,12 @@ export default function BasketsPage() {
   };
 
   const applyTemplate = (key: string) => {
-    const t = templates?.find((x) => x.key === key);
+    const t = catalog?.templates.find((x) => x.key === key);
     if (!t) return;
     setOpen(true);
     setName(t.name);
     setDescription(t.description);
+    setCategory(t.category);
     setBenchmark(t.benchmark);
     setFrequency(t.rebalance_frequency);
     setDriftBand(t.drift_band_pct);
@@ -82,6 +85,7 @@ export default function BasketsPage() {
       const b = await create.mutateAsync({
         name: name.trim(),
         description: description.trim() || undefined,
+        category: category || undefined,
         benchmark,
         rebalance_frequency: frequency,
         drift_band_pct: driftBand,
@@ -132,6 +136,20 @@ export default function BasketsPage() {
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="optional"
                 />
+              </Field>
+              <Field label="Category">
+                <select
+                  className="h-9 w-full rounded-md border border-line bg-surface px-2 text-sm"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                >
+                  <option value="">— none —</option>
+                  {(catalog?.categories ?? []).map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
               </Field>
               <Field label="Rebalance">
                 <select
@@ -190,25 +208,53 @@ export default function BasketsPage() {
         </SectionCard>
       )}
 
-      {templates && templates.length > 0 && (
-        <section>
-          <h2 className="mb-2 text-sm font-semibold text-fg">Start from a template</h2>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            {templates.map((t) => (
-              <div key={t.key} className="flex flex-col rounded-lg border border-line bg-surface p-3">
-                <p className="text-sm font-semibold text-fg">{t.name}</p>
-                <p className="mt-1 flex-1 text-[11px] leading-snug text-fg-muted">{t.description}</p>
-                <div className="mt-2 flex items-center justify-between">
-                  <span className="text-[10px] text-fg-faint">
-                    {t.spec.sleeves.length} sleeves · {t.rebalance_frequency}
-                  </span>
-                  <Button size="sm" variant="outline" onClick={() => applyTemplate(t.key)}>
-                    Use
-                  </Button>
+      {catalog && catalog.templates.length > 0 && (
+        <section className="flex flex-col gap-4">
+          <h2 className="text-sm font-semibold text-fg">Start from a template</h2>
+          {catalog.categories.map((cat) => {
+            const items = catalog.templates.filter((t) => t.category === cat);
+            if (items.length === 0) return null;
+            return (
+              <div key={cat}>
+                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-fg-faint">
+                  {cat}
+                </p>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {items.map((t) => (
+                    <div
+                      key={t.key}
+                      className="flex flex-col rounded-lg border border-line bg-surface p-3"
+                    >
+                      <p className="text-sm font-semibold text-fg">{t.name}</p>
+                      <p className="mt-1 flex-1 text-[11px] leading-snug text-fg-muted">
+                        {t.description}
+                      </p>
+                      {t.tags?.length > 0 && (
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {t.tags.slice(0, 4).map((tag) => (
+                            <span
+                              key={tag}
+                              className="rounded bg-elevated px-1.5 py-0.5 text-[9px] text-fg-faint"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <div className="mt-2 flex items-center justify-between">
+                        <span className="text-[10px] text-fg-faint">
+                          {t.spec.sleeves.length} sleeves · {t.rebalance_frequency}
+                        </span>
+                        <Button size="sm" variant="outline" onClick={() => applyTemplate(t.key)}>
+                          Use
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-            ))}
-          </div>
+            );
+          })}
         </section>
       )}
 
@@ -234,6 +280,7 @@ export default function BasketsPage() {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-fg">{b.name}</p>
                       <p className="text-[11px] text-fg-faint">
+                        {b.category ? `${b.category} · ` : ""}
                         {b.n_sleeves} sleeves · {b.rebalance_frequency} · {inrCompact(b.capital)}
                       </p>
                     </div>

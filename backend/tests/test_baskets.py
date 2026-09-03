@@ -231,15 +231,19 @@ def test_basket_api_crud_roundtrip():
         tpls = client.get("/api/v1/baskets/templates")
         assert tpls.status_code == 200
         body = tpls.json()
-        assert any(t["key"] == "all-weather" for t in body)
+        assert "Multi-asset" in body["categories"]
+        tlist = body["templates"]
+        assert any(t["key"] == "all-weather" for t in tlist)
+        assert all(t.get("category") in body["categories"] for t in tlist)
 
         payload = {
             "name": "pytest basket",
             "description": "temp",
+            "category": "Multi-asset",
             "rebalance_frequency": "monthly",
             "drift_band_pct": 3.0,
             "capital": 300_000,
-            "spec": next(t["spec"] for t in body if t["key"] == "all-weather"),
+            "spec": next(t["spec"] for t in tlist if t["key"] == "all-weather"),
         }
         created = client.post("/api/v1/baskets", json=payload)
         assert created.status_code == 200, created.text
@@ -261,6 +265,20 @@ def test_basket_api_crud_roundtrip():
         assert deleted.status_code == 200
         assert deleted.json()["deleted"] is True
         assert client.get(f"/api/v1/baskets/{bid}").status_code == 404
+
+
+def test_all_starter_templates_parse_and_are_categorised():
+    from app.baskets.templates import TEMPLATE_CATEGORIES, templates
+
+    seen_keys = set()
+    for t in templates():
+        assert t["key"] not in seen_keys, f"duplicate template key {t['key']}"
+        seen_keys.add(t["key"])
+        assert t["category"] in TEMPLATE_CATEGORIES, t["key"]
+        spec = parse_spec(t["spec"])  # raises on any bad spec
+        assert 1 <= len(spec.sleeves) <= 12
+        assert abs(sum(s.weight_pct for s in spec.sleeves) - 100.0) < 0.5
+    assert len(seen_keys) >= 15
 
 
 def test_basket_api_rejects_bad_spec():

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.baskets import backtest as bt
 from app.baskets.spec import FREQUENCIES, SpecError, parse_spec
+from app.baskets.templates import categories as _template_categories
 from app.baskets.templates import templates as _starter_templates
 from app.config import Settings
 from app.core.exceptions import NotFoundError, ValidationError
@@ -42,6 +43,7 @@ def serialize(b: Basket, *, full: bool = False) -> dict[str, Any]:
         "id": str(b.id),
         "name": b.name,
         "description": b.description,
+        "category": b.category,
         "benchmark": b.benchmark,
         "rebalance_frequency": b.rebalance_frequency,
         "drift_band_pct": float(b.drift_band_pct),
@@ -114,6 +116,9 @@ def create_basket(db: Session, payload: dict[str, Any]) -> dict[str, Any]:
         description=(str(payload.get("description")).strip() or None)
         if payload.get("description")
         else None,
+        category=(str(payload.get("category")).strip() or None)
+        if payload.get("category")
+        else None,
         benchmark=benchmark,
         rebalance_frequency=frequency,
         drift_band_pct=drift,
@@ -138,6 +143,9 @@ def update_basket(db: Session, basket_id: str, payload: dict[str, Any]) -> dict[
     if "description" in payload:
         desc = payload["description"]
         b.description = str(desc).strip() or None if desc else None
+    if "category" in payload:
+        cat = payload["category"]
+        b.category = str(cat).strip() or None if cat else None
     if "benchmark" in payload and payload["benchmark"]:
         b.benchmark = str(payload["benchmark"])
     if "rebalance_frequency" in payload and payload["rebalance_frequency"]:
@@ -214,5 +222,5 @@ def run_backtest(
     return payload
 
 
-def starter_templates() -> list[dict[str, Any]]:
-    return _starter_templates()
+def starter_templates() -> dict[str, Any]:
+    return {"categories": _template_categories(), "templates": _starter_templates()}

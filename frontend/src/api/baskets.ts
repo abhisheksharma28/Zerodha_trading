@@ -42,6 +42,7 @@ export interface Basket {
   id: string;
   name: string;
   description: string | null;
+  category: string | null;
   benchmark: string;
   rebalance_frequency: Frequency;
   drift_band_pct: number;
@@ -89,10 +90,17 @@ export interface BasketTemplate {
   key: string;
   name: string;
   description: string;
+  category: string;
+  tags: string[];
   benchmark: string;
   rebalance_frequency: Frequency;
   drift_band_pct: number;
   spec: BasketSpec;
+}
+
+export interface BasketTemplateCatalog {
+  categories: string[];
+  templates: BasketTemplate[];
 }
 
 export interface OrderIntent {
@@ -156,6 +164,7 @@ export interface BasketEvent {
 export interface CreateBasketBody {
   name: string;
   description?: string;
+  category?: string;
   benchmark?: string;
   rebalance_frequency?: Frequency;
   drift_band_pct?: number;
@@ -171,7 +180,8 @@ export const basketsApi = {
 
   get: (id: string) => apiClient.get<Basket>(`/baskets/${id}`).then((r) => r.data),
 
-  templates: () => apiClient.get<BasketTemplate[]>("/baskets/templates").then((r) => r.data),
+  templates: () =>
+    apiClient.get<BasketTemplateCatalog>("/baskets/templates").then((r) => r.data),
 
   create: (body: CreateBasketBody) =>
     apiClient.post<Basket>("/baskets", body).then((r) => r.data),
