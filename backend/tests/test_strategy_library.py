@@ -16,6 +16,7 @@ from app.strategies.library import (
     TEMPLATES,
     CrossSectionalMomentumStrategy,
     DonchianBreakoutStrategy,
+    ForceIndexStrategy,
     IndexFuturesArbitrageStrategy,
     LatencyArbitrageStrategy,
     MacdGridStrategy,
@@ -26,8 +27,10 @@ from app.strategies.library import (
     PairsTradingStrategy,
     RegimeAdaptiveStrategy,
     TrendFollowingStrategy,
+    TripleScreenStrategy,
     VolatilityRegimeStrategy,
     WeaponCandleStrategy,
+    ZScoreRegimeStrategy,
 )
 from app.strategies.library.base import ParamError
 
@@ -1028,3 +1031,54 @@ def test_grid_stays_flat_while_the_macd_line_is_falling():
     closes = [100.0 - (i * i) * 0.05 for i in range(40)]
     emitted, positions = run(MacdGridStrategy, _grid_params(), _grid_bars(closes))
     assert not emitted and positions.get("INFY", 0) == 0
+
+
+# --------------------------------------------------------------------------
+# templates derived from the reference material (KB §9)
+# --------------------------------------------------------------------------
+
+def test_zscore_regime_buys_an_oversold_dip_in_an_uptrend():
+    # long slow rise -> price stays above the regime MA, then a sharp dip
+    closes = [100.0 + i * 0.4 for i in range(70)]
+    closes += [closes[-1] * (1 - 0.02 * k) for k in range(1, 5)]  # ~8% dip -> deep z
+    bars = [_bar("INFY", round(c, 2), daily_ts(i)) for i, c in enumerate(closes)]
+    p = ZScoreRegimeStrategy.resolve_params({
+        **ZScoreRegimeStrategy.presets()["balanced"],
+        "regime_ma": 30, "zscore_lookback": 10, "entry_z": -1.3, "rsi_max": 0.0,
+        "sizing_method": "fixed_quantity", "fixed_quantity": 10, "regime_filter_enabled": False,
+    })
+    emitted, _ = run(ZScoreRegimeStrategy, p, bars)
+    assert emitted and emitted[0][1][0].transaction_type == "BUY"
+
+
+def test_triple_screen_enters_on_a_pullback_then_break_in_an_uptide():
+    closes = [100.0 + i * 0.5 for i in range(60)]     # rising tide
+    closes += [closes[-1] - 3, closes[-1] - 5]        # two-bar pullback
+    closes += [closes[-1] + 8]                        # break bar
+    bars = [_bar("INFY", round(c, 2), daily_ts(i), high=round(c, 2) + 1.5, low=round(c, 2) - 1.5)
+            for i, c in enumerate(closes)]
+    p = TripleScreenStrategy.resolve_params({
+        **TripleScreenStrategy.presets()["balanced"],
+        "tide_ma": 20, "tide_slope_bars": 3, "osc_period": 5, "osc_buy": 55.0,
+        "sizing_method": "fixed_quantity", "fixed_quantity": 10, "regime_filter_enabled": False,
+    })
+    emitted, positions = run(TripleScreenStrategy, p, bars)
+    assert emitted and positions.get("INFY", 0) > 0
+
+
+def test_force_index_arms_on_a_dip_and_enters_on_the_break():
+    closes = [100.0 + i * 0.6 for i in range(45)]
+    closes += [closes[-1] - 2]        # down bar on volume -> 2-EMA Force Index <= 0
+    closes += [closes[-1] + 6]        # break the prior high
+    bars = [
+        _bar("INFY", round(c, 2), daily_ts(i), vol=200_000.0 if i in (45,) else 100_000.0,
+             high=round(c, 2) + 1.2, low=round(c, 2) - 1.2)
+        for i, c in enumerate(closes)
+    ]
+    p = ForceIndexStrategy.resolve_params({
+        **ForceIndexStrategy.presets()["balanced"],
+        "trend_ema": 10, "trend_slope_bars": 3, "fi_fast": 2, "fi_slow": 13,
+        "sizing_method": "fixed_quantity", "fixed_quantity": 10, "regime_filter_enabled": False,
+    })
+    emitted, positions = run(ForceIndexStrategy, p, bars)
+    assert emitted and positions.get("INFY", 0) > 0
