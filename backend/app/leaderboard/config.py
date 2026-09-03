@@ -148,10 +148,10 @@ def _xsec(slug: str) -> TestPlan:
 
 
 def _intraday(slug: str) -> TestPlan:
-    return TestPlan(slug, "high_volatility", {"n": 30, "base_n": 120, "vol_window": 90},
-                    "5m", 1.0, max_gross_exposure=4.0,
-                    design_note="Intraday: high-volatility names and a 1-year 5-minute "
-                                "window to keep the data volume bounded.")
+    return TestPlan(slug, "high_volatility", {"n": 12, "base_n": 120, "vol_window": 90},
+                    "5m", 0.5, max_gross_exposure=4.0,
+                    design_note="Intraday: the 12 highest-volatility names over a 6-month "
+                                "5-minute window — 5m data is heavy, so the scope is kept tight.")
 
 
 TEST_PLANS: dict[str, TestPlan] = {
@@ -216,10 +216,10 @@ TEST_PLANS: dict[str, TestPlan] = {
                              design_note="Relative strength needs the stock plus the index it is "
                                          "measured against, on every bar."),
     "vwap-reversion": TestPlan("vwap-reversion", "high_volatility",
-                               {"n": 30, "base_n": 120, "vol_window": 90}, "5m", 1.0,
+                               {"n": 12, "base_n": 120, "vol_window": 90}, "5m", 0.5,
                                max_gross_exposure=4.0,
-                               design_note="Intraday fade needs range: high-volatility names, "
-                                           "1-year 5-minute window."),
+                               design_note="Intraday fade needs range: the 12 highest-volatility "
+                                           "names, 6-month 5-minute window (5m data is heavy)."),
     # intraday
     "opening-range-breakout": _intraday("opening-range-breakout"),
 }
