@@ -17,6 +17,7 @@ from app.api.v1 import (
     options_strategies,
     orderflow,
     orders,
+    paper_account,
     stocks,
     strategies,
     strategy_library,
@@ -41,4 +42,5 @@ api_router.include_router(orderflow.router)
 api_router.include_router(monitoring.router)
 api_router.include_router(audit.router)
 api_router.include_router(orders.router)
+api_router.include_router(paper_account.router)
 api_router.include_router(stocks.router)

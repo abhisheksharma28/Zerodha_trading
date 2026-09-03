@@ -15,6 +15,14 @@ from app.models.instrument import Instrument
 from app.models.market_scanner import ScannerAlert, ScanRecommendation, ScanRun
 from app.models.options_strategy import OptionsStrategyInstance
 from app.models.order import Order, Trade
+from app.models.paper_account import (
+    PaperAccount,
+    PaperHolding,
+    PaperLedger,
+    PaperOrder,
+    PaperPosition,
+    PaperTrade,
+)
 from app.models.strategy import Strategy, StrategyVersion
 
 __all__ = [
@@ -34,6 +42,12 @@ __all__ = [
     "OptionsStrategyInstance",
     "Order",
     "Trade",
+    "PaperAccount",
+    "PaperOrder",
+    "PaperTrade",
+    "PaperPosition",
+    "PaperHolding",
+    "PaperLedger",
     "Strategy",
     "StrategyVersion",
 ]

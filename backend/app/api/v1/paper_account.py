@@ -1,0 +1,131 @@
+"""Paper trading account API - a discretionary demo Kite account.
+
+  GET  /paper-account/summary                funds, margins, P&L, net worth
+  GET  /paper-account/positions              open (or all) positions, marked live
+  GET  /paper-account/holdings               delivered equity, marked live
+  GET  /paper-account/orders                 order book
+  GET  /paper-account/trades                 trade book
+  GET  /paper-account/ledger                 funds statement
+  GET  /paper-account/instrument/{ex}/{sym}  quote + lot/tick for the order pad
+  POST /paper-account/orders                 place an order
+  PUT  /paper-account/orders/{id}            modify a resting order
+  DELETE /paper-account/orders/{id}          cancel a resting order
+  POST /paper-account/positions/{id}/exit    square off a position at market
+  POST /paper-account/funds                  add / adjust virtual cash
+  POST /paper-account/reset                  wipe and reset the demo account
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import APIRouter, Body, Depends, Query
+from sqlalchemy.orm import Session
+
+from app.config import Settings, get_settings
+from app.core.deps import get_db
+from app.paper_account import engine, service
+from app.paper_account.engine import OrderRequest
+
+router = APIRouter(prefix="/paper-account", tags=["paper-account"])
+
+
+@router.get("/summary")
+def get_summary(db: Session = Depends(get_db), settings: Settings = Depends(get_settings)) -> dict[str, Any]:
+    return service.summary(db, settings)
+
+
+@router.get("/positions")
+def get_positions(
+    include_closed: bool = Query(False),
+    db: Session = Depends(get_db), settings: Settings = Depends(get_settings),
+) -> list[dict[str, Any]]:
+    return service.positions(db, settings, include_closed=include_closed)
+
+
+@router.get("/holdings")
+def get_holdings(db: Session = Depends(get_db), settings: Settings = Depends(get_settings)) -> list[dict[str, Any]]:
+    return service.holdings(db, settings)
+
+
+@router.get("/orders")
+def get_orders(status: str | None = Query(None), db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    return service.orders(db, status=status)
+
+
+@router.get("/trades")
+def get_trades(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    return service.trades(db)
+
+
+@router.get("/ledger")
+def get_ledger(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    return service.ledger(db)
+
+
+@router.get("/instrument/{exchange}/{tradingsymbol}")
+def get_instrument(
+    exchange: str, tradingsymbol: str,
+    db: Session = Depends(get_db), settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    return service.instrument_for_order(db, settings, exchange, tradingsymbol)
+
+
+@router.post("/orders", status_code=201)
+def post_order(
+    exchange: str = Body(..., embed=True),
+    tradingsymbol: str = Body(..., embed=True),
+    side: str = Body(..., embed=True),
+    quantity: int = Body(..., embed=True),
+    order_type: str = Body("MARKET", embed=True),
+    product: str = Body("CNC", embed=True),
+    price: float | None = Body(None, embed=True),
+    trigger_price: float | None = Body(None, embed=True),
+    db: Session = Depends(get_db), settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    order = engine.place_order(db, settings, OrderRequest(
+        exchange=exchange, tradingsymbol=tradingsymbol, side=side, quantity=quantity,
+        order_type=order_type, product=product, price=price, trigger_price=trigger_price,
+    ))
+    return service._order_dict(order)  # noqa: SLF001
+
+
+@router.put("/orders/{order_id}")
+def put_order(
+    order_id: str,
+    price: float | None = Body(None, embed=True),
+    trigger_price: float | None = Body(None, embed=True),
+    quantity: int | None = Body(None, embed=True),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return service._order_dict(  # noqa: SLF001
+        engine.modify_order(db, order_id, price=price, trigger_price=trigger_price, quantity=quantity)
+    )
+
+
+@router.delete("/orders/{order_id}")
+def delete_order(order_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+    return service._order_dict(engine.cancel_order(db, order_id))  # noqa: SLF001
+
+
+@router.post("/positions/{position_id}/exit")
+def post_exit(
+    position_id: str,
+    db: Session = Depends(get_db), settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    return service._order_dict(engine.exit_position(db, settings, position_id))  # noqa: SLF001
+
+
+@router.post("/funds")
+def post_funds(amount: float = Body(..., embed=True), db: Session = Depends(get_db)) -> dict[str, Any]:
+    engine.add_funds(db, amount)
+    return service.summary(db, get_settings())
+
+
+@router.post("/reset")
+def post_reset(
+    opening_balance: float | None = Body(None, embed=True),
+    db: Session = Depends(get_db), settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    engine.reset_account(db, opening_balance=opening_balance)
+    return service.summary(db, settings)

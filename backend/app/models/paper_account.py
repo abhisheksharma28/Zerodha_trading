@@ -1,0 +1,172 @@
+"""A standalone discretionary paper-trading account - a demo demat/trading
+account that behaves like Kite: virtual funds, manual buy/sell of equities
+and F&O, positions that mark to the live price, delivered stock in
+holdings, an order book, a trade book and a funds ledger.
+
+Fully isolated from the strategy / deployment / OMS machinery
+(``app/paper_account/``). One account per platform (single-user).
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+
+_MONEY = Numeric(18, 4)
+
+
+class PaperAccount(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    __tablename__ = "paper_accounts"
+
+    name: Mapped[str] = mapped_column(String(80), nullable=False, default="Paper account")
+    opening_balance: Mapped[float] = mapped_column(_MONEY, nullable=False, default=1_000_000)
+    cash: Mapped[float] = mapped_column(_MONEY, nullable=False, default=1_000_000)   # free cash
+    realized_pnl: Mapped[float] = mapped_column(_MONEY, nullable=False, default=0)   # cumulative booked
+    charges_paid: Mapped[float] = mapped_column(_MONEY, nullable=False, default=0)
+    auto_squareoff_mis: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    last_eod_day: Mapped[str | None] = mapped_column(String(10))  # YYYY-MM-DD IST of the last EOD roll
+
+
+class PaperOrder(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    __tablename__ = "paper_orders"
+
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("paper_accounts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    exchange: Mapped[str] = mapped_column(String(12), nullable=False)
+    tradingsymbol: Mapped[str] = mapped_column(String(64), nullable=False)
+    instrument_token: Mapped[str | None] = mapped_column(String(24))
+    segment: Mapped[str | None] = mapped_column(String(24))
+    asset_class: Mapped[str] = mapped_column(String(12), nullable=False, default="EQUITY")  # EQUITY|FUT|OPT
+
+    side: Mapped[str] = mapped_column(String(4), nullable=False)  # BUY | SELL
+    order_type: Mapped[str] = mapped_column(String(6), nullable=False, default="MARKET")  # MARKET|LIMIT|SL|SL-M
+    product: Mapped[str] = mapped_column(String(4), nullable=False, default="CNC")  # CNC|MIS|NRML
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    price: Mapped[float | None] = mapped_column(_MONEY)
+    trigger_price: Mapped[float | None] = mapped_column(_MONEY)
+
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="OPEN", index=True)
+    # OPEN | COMPLETE | CANCELLED | REJECTED
+    status_message: Mapped[str | None] = mapped_column(String(300))
+    filled_qty: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    avg_fill_price: Mapped[float | None] = mapped_column(_MONEY)
+    placed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    filled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    is_squareoff: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    tag: Mapped[str | None] = mapped_column(String(40))
+
+    __table_args__ = (Index("ix_paper_orders_acct_status", "account_id", "status"),)
+
+
+class PaperTrade(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    __tablename__ = "paper_trades"
+
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("paper_accounts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("paper_orders.id", ondelete="CASCADE"), nullable=False
+    )
+    exchange: Mapped[str] = mapped_column(String(12), nullable=False)
+    tradingsymbol: Mapped[str] = mapped_column(String(64), nullable=False)
+    asset_class: Mapped[str] = mapped_column(String(12), nullable=False, default="EQUITY")
+    product: Mapped[str] = mapped_column(String(4), nullable=False)
+    side: Mapped[str] = mapped_column(String(4), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    price: Mapped[float] = mapped_column(_MONEY, nullable=False)
+    value: Mapped[float] = mapped_column(_MONEY, nullable=False)
+    charges: Mapped[float] = mapped_column(_MONEY, nullable=False, default=0)
+    charges_detail: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    realized_pnl: Mapped[float] = mapped_column(_MONEY, nullable=False, default=0)  # booked on this fill
+    traded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (Index("ix_paper_trades_acct_time", "account_id", "traded_at"),)
+
+
+class PaperPosition(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """A net position for one (instrument, product). MIS positions are
+    intraday (``day=True``); CNC/NRML carry overnight. Net qty 0 => CLOSED."""
+
+    __tablename__ = "paper_positions"
+
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("paper_accounts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    exchange: Mapped[str] = mapped_column(String(12), nullable=False)
+    tradingsymbol: Mapped[str] = mapped_column(String(64), nullable=False)
+    instrument_token: Mapped[str | None] = mapped_column(String(24))
+    segment: Mapped[str | None] = mapped_column(String(24))
+    asset_class: Mapped[str] = mapped_column(String(12), nullable=False, default="EQUITY")
+    product: Mapped[str] = mapped_column(String(4), nullable=False)
+
+    net_qty: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    buy_qty: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    sell_qty: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    buy_value: Mapped[float] = mapped_column(_MONEY, nullable=False, default=0)
+    sell_value: Mapped[float] = mapped_column(_MONEY, nullable=False, default=0)
+    avg_price: Mapped[float] = mapped_column(_MONEY, nullable=False, default=0)  # of the open leg
+    realized_pnl: Mapped[float] = mapped_column(_MONEY, nullable=False, default=0)
+    charges: Mapped[float] = mapped_column(_MONEY, nullable=False, default=0)
+    margin_blocked: Mapped[float] = mapped_column(_MONEY, nullable=False, default=0)
+
+    last_price: Mapped[float | None] = mapped_column(_MONEY)
+    prev_close: Mapped[float | None] = mapped_column(_MONEY)
+    day: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)  # MIS
+    status: Mapped[str] = mapped_column(String(8), nullable=False, default="OPEN", index=True)  # OPEN|CLOSED
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    trading_day: Mapped[str] = mapped_column(String(10), nullable=False, index=True)  # YYYY-MM-DD IST
+
+    __table_args__ = (
+        Index("ix_paper_pos_key", "account_id", "tradingsymbol", "product", "status"),
+    )
+
+
+class PaperHolding(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """Delivered equity (CNC). Buys accumulate, sells reduce. ``t1_qty`` is
+    the bit still settling (bought today, not yet deliverable)."""
+
+    __tablename__ = "paper_holdings"
+
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("paper_accounts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    exchange: Mapped[str] = mapped_column(String(12), nullable=False)
+    tradingsymbol: Mapped[str] = mapped_column(String(64), nullable=False)
+    instrument_token: Mapped[str | None] = mapped_column(String(24))
+
+    qty: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    t1_qty: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    avg_price: Mapped[float] = mapped_column(_MONEY, nullable=False, default=0)
+    realized_pnl: Mapped[float] = mapped_column(_MONEY, nullable=False, default=0)
+    last_price: Mapped[float | None] = mapped_column(_MONEY)
+    prev_close: Mapped[float | None] = mapped_column(_MONEY)
+
+    __table_args__ = (
+        Index("ix_paper_hold_key", "account_id", "tradingsymbol"),
+    )
+
+
+class PaperLedger(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    __tablename__ = "paper_ledger"
+
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("paper_accounts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    # FUNDS_ADD | BUY | SELL | CHARGES | MTM_SETTLE | RESET | SQUAREOFF
+    amount: Mapped[float] = mapped_column(_MONEY, nullable=False)  # signed
+    balance_after: Mapped[float] = mapped_column(_MONEY, nullable=False)
+    ref: Mapped[str | None] = mapped_column(String(64))
+    note: Mapped[str | None] = mapped_column(String(200))
+
+    __table_args__ = (Index("ix_paper_ledger_acct_time", "account_id", "at"),)

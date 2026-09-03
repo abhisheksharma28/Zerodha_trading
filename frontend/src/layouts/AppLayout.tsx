@@ -84,6 +84,7 @@ const MENUS: { label: string; items: Item[] }[] = [
   {
     label: "Trading",
     items: [
+      { to: "/paper", label: "Paper Trading", icon: Wallet, desc: "Demo account — buy/sell equity & F&O, live P&L" },
       { to: "/option-chain", label: "Option Chain", icon: Layers, desc: "OI, IV, PCR, max pain" },
       { to: "/option-strategy", label: "Strategy Builder", icon: FlaskConical, desc: "Multi-leg payoff — bull/bear/neutral" },
       { to: "/deployments", label: "Live Trading", icon: Rocket, desc: "Deploy paper / live" },

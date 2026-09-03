@@ -52,6 +52,7 @@ const ReportsPage = lazy(() => import("@/pages/ReportsPage"));
 const LogBookPage = lazy(() => import("@/pages/LogBookPage"));
 const PositionsPage = lazy(() => import("@/pages/PositionsPage"));
 const OrdersPage = lazy(() => import("@/pages/OrdersPage"));
+const PaperTradingPage = lazy(() => import("@/pages/PaperTradingPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
 
 export default function App() {
@@ -99,6 +100,7 @@ export default function App() {
         <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="positions" element={<PositionsPage />} />
         <Route path="orders" element={<OrdersPage />} />
+        <Route path="paper" element={<PaperTradingPage />} />
         <Route path="alerts" element={<AlertsPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="logbook" element={<LogBookPage />} />
