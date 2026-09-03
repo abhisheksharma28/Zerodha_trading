@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.v1 import (
     adaptive_options,
     arbitrage,
+    assistant,
     audit,
     backtests,
     broker,
@@ -28,6 +29,7 @@ api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(health.router)
 api_router.include_router(adaptive_options.router)
 api_router.include_router(arbitrage.router)
+api_router.include_router(assistant.router)
 api_router.include_router(chinese_transformer.router)
 api_router.include_router(strategies.router)
 api_router.include_router(strategy_editor.router)

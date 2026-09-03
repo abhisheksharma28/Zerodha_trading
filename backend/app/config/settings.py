@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     fundamentals_api_key: str = ""
     fundamentals_api_base: str = ""
 
+    # --- Research assistant (Claude) ---
+    # The chat assistant calls the Anthropic Messages API directly over httpx.
+    # No key -> the assistant endpoint reports "not configured" rather than 500.
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-sonnet-4-5"
+    anthropic_base_url: str = "https://api.anthropic.com"
+    assistant_max_tokens: int = 1800
+
     # --- Risk limits (internal ceiling, intentionally tighter than Kite's own) ---
     risk_max_orders_per_second: int = 5
     risk_max_orders_per_minute: int = 200
