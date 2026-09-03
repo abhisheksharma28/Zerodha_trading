@@ -71,6 +71,7 @@ def _score(m: Any) -> FundamentalView:
         de = de / 100.0
     pe = _get(m, "pe", "trailingPE")
     pb = _get(m, "pb", "priceToBook")
+    current_ratio = _get(m, "currentRatio", "current_ratio")
     rev_g = _get(m, "revenueGrowth", "revenue_growth_yoy")
     earn_g = _get(m, "earningsGrowth", "profit_growth_yoy")
 
@@ -106,6 +107,16 @@ def _score(m: Any) -> FundamentalView:
         flags.append("earnings contracting")
     if roe is not None and roe > 18 and (valuation or 0) > 40:
         flags.append("quality at a fair price")
+    # Graham's "defensive investor" screen (The Intelligent Investor, ch. 14):
+    # P/E <= 15, P/B <= 1.5, blended P/E*P/B <= 22.5, current ratio >= 2.
+    if pe is not None and pb is not None and pe > 0 and pb > 0:
+        blend = pe * pb
+        if blend <= 22.5 and (pe <= 15 or pb <= 1.5):
+            flags.append("graham value (P/E x P/B <= 22.5)")
+        elif blend >= 45:
+            flags.append("graham-expensive (P/E x P/B high)")
+    if current_ratio is not None and current_ratio >= 2.0 and (de is None or de <= 1.0):
+        flags.append("graham-strong balance sheet")
 
     strong = [s for s in (quality, growth) if s is not None]
     avg_qg = sum(strong) / len(strong) if strong else 50.0
@@ -116,6 +127,7 @@ def _score(m: Any) -> FundamentalView:
         symbol="", quality=quality, valuation=valuation, growth=growth, bias=bias, flags=flags,
         metrics={
             "pe": pe, "pb": pb, "roe": roe, "debt_equity": de, "operating_margin": op_margin,
+            "current_ratio": current_ratio,
             "revenue_growth_yoy": rev_g, "profit_growth_yoy": earn_g,
             "week52_high": _get(m, "week52High", "week52_high"),
             "week52_low": _get(m, "week52Low", "week52_low"),

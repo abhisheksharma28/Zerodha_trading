@@ -296,3 +296,39 @@ def test_a_weak_negative_news_score_is_ignored():
         news=ctx.NewsSignal(0.1, [{"title": "minor"}], "headline signal")))
     assert setup is not None
     assert not any(f.group == "news" for f in setup.factors)
+
+
+# --------------------------------------------------------------------------
+# Elder Force Index + Graham value flags (from the docs knowledge base)
+# --------------------------------------------------------------------------
+
+def test_force_index_is_positive_in_a_rising_market_on_rising_volume():
+    f = feat_mod.daily_features(_trend_daily_bars(up=True))
+    assert f.force_index_13 is not None and f.force_index_13 > 0
+
+
+def test_force_index_is_negative_in_a_falling_market():
+    f = feat_mod.daily_features(_trend_daily_bars(up=False))
+    assert f.force_index_13 is not None and f.force_index_13 < 0
+
+
+def test_force_index_factor_feeds_the_signal():
+    setup = sig_mod.evaluate(_uptrend_input())
+    assert setup is not None
+    assert any(fac.name == "force_index" for fac in setup.factors)
+
+
+def test_graham_value_and_balance_sheet_flags():
+    from app.market_scanner import fundamentals as fnd
+
+    v = fnd._score({"pe": 12.0, "pb": 1.1, "currentRatio": 2.4, "debtToEquity": 0.3,
+                    "roe": 16.0, "earningsGrowth": 8.0})
+    assert "graham value (P/E x P/B <= 22.5)" in v.flags
+    assert "graham-strong balance sheet" in v.flags
+
+
+def test_graham_expensive_flag():
+    from app.market_scanner import fundamentals as fnd
+
+    v = fnd._score({"pe": 40.0, "pb": 3.0, "currentRatio": 1.1})
+    assert "graham-expensive (P/E x P/B high)" in v.flags

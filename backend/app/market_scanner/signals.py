@@ -214,6 +214,18 @@ def _volume_factors(intra: Features | None, daily: Features, side_sign: float) -
         out.append(Factor("rel_volume", f"volume {rv:.1f}x the 20-bar average", side_sign * 6, "volume"))
     elif rv and rv < 0.6:
         out.append(Factor("thin_volume", f"volume only {rv:.1f}x average - weak participation", -side_sign * 4, "volume"))
+    # Elder Force Index: 13-EMA sign = who controls, slope = who is gaining
+    fi, fi_prev = daily.force_index_13, daily.force_index_13_prev
+    if fi is not None and fi_prev is not None and daily.close:
+        eps = 2e-4  # near-zero band -> trendless, no signal
+        if fi > eps:
+            w = 6.0 if fi > fi_prev else 4.0
+            out.append(Factor("force_index", "Elder Force Index positive"
+                              + (" and rising" if fi > fi_prev else ""), w, "volume"))
+        elif fi < -eps:
+            w = -6.0 if fi < fi_prev else -4.0
+            out.append(Factor("force_index", "Elder Force Index negative"
+                              + (" and falling" if fi < fi_prev else ""), w, "volume"))
     return out
 
 
@@ -234,6 +246,12 @@ def _fundamental_factors(fv: FundamentalView | None, horizon: str) -> list[Facto
             out.append(Factor("fundamental_flag", "rich valuation (PE > 60)", -3, "fundamental"))
         elif flag == "high leverage":
             out.append(Factor("fundamental_flag", "high leverage (D/E > 2)", -3, "fundamental"))
+        elif flag == "graham value (P/E x P/B <= 22.5)":
+            out.append(Factor("fundamental_flag", "Graham value screen: P/E x P/B <= 22.5", 5, "fundamental"))
+        elif flag == "graham-strong balance sheet":
+            out.append(Factor("fundamental_flag", "Graham balance sheet: current ratio >= 2, low debt", 3, "fundamental"))
+        elif flag == "graham-expensive (P/E x P/B high)":
+            out.append(Factor("fundamental_flag", "expensive on Graham's blended multiplier", -4, "fundamental"))
     return out
 
 

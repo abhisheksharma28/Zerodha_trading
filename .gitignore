@@ -56,3 +56,6 @@ logs/
 
 # --- Alembic (keep versions, ignore local sqlite artifacts) ---
 backend/alembic/*.sqlite3
+
+# --- Reference PDFs (copyrighted books; kept locally, never committed) ---
+docs/*.pdf

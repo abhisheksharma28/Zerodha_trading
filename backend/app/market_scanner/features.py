@@ -63,6 +63,10 @@ class Features:
     opening_range_low: float | None = None
 
     rel_volume: float | None = None  # today / 20-bar average
+    # Elder Force Index: 13-EMA of volume*(close-prev_close), normalised by
+    # price. Sign = which side controls; slope = who is gaining.
+    force_index_13: float | None = None
+    force_index_13_prev: float | None = None
     notes: list[str] = field(default_factory=list)
 
 
@@ -155,7 +159,22 @@ def daily_features(bars: list[dict[str, Any]]) -> Features:
     if len(v) >= 21 and sum(v[-21:-1]) > 0:
         avg = sum(v[-21:-1]) / 20.0
         f.rel_volume = v[-1] / avg if avg > 0 else None
+    _force_index(f, c, v)
     return f
+
+
+def _force_index(f: Features, c: list[float], v: list[float]) -> None:
+    """Elder Force Index: 13-EMA of volume*(close-prev_close), price-
+    normalised. Sign = which side controls; slope = who is gaining."""
+    if len(c) < 16 or len(v) < 16:
+        return
+    raw = [v[i] * (c[i] - c[i - 1]) for i in range(1, len(c))]
+    series = _ema_series(raw, 13)
+    if len(series) < 2:
+        return
+    px = c[-1] or 1.0
+    f.force_index_13 = series[-1] / px
+    f.force_index_13_prev = series[-2] / px
 
 
 def intraday_features(bars: list[dict[str, Any]], *, opening_range_bars: int = 2) -> Features:
