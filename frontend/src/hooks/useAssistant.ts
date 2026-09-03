@@ -6,7 +6,10 @@ export function useAssistantStatus() {
   return useQuery({
     queryKey: ["assistant", "status"],
     queryFn: assistantApi.status,
-    staleTime: 5 * 60_000,
+    // short — so switching provider / adding a key in .env shows up on the
+    // next panel open without a hard refresh
+    staleTime: 15_000,
+    refetchOnWindowFocus: true,
   });
 }
 

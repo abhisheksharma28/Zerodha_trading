@@ -72,7 +72,7 @@ function Markdown({ text }: { text: string }) {
 }
 
 export function AssistantPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { data: status } = useAssistantStatus();
+  const { data: status, refetch: refetchStatus } = useAssistantStatus();
   const { data: suggestions = [] } = useAssistantSuggestions();
   const chat = useAssistantChat();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -82,6 +82,12 @@ export function AssistantPanel({ open, onClose }: { open: boolean; onClose: () =
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, chat.isPending]);
+
+  // re-check config each time the panel is opened (a .env change shouldn't
+  // need a full page refresh to show up)
+  useEffect(() => {
+    if (open) void refetchStatus();
+  }, [open, refetchStatus]);
 
   useEffect(() => {
     if (!open) return;
