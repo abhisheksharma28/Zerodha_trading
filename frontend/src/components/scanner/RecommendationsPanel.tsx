@@ -5,6 +5,7 @@ import type { ScanRecommendation } from "@/api/marketScanner";
 import { SectionCard } from "@/components/SectionCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useAddIdeaToPaper } from "@/hooks/usePaperAccount";
 import { useScanRecommendations, useScannerStatus, useTriggerScan } from "@/hooks/useMarketScanner";
 import { inr, num, pctSigned } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -187,6 +188,37 @@ function Factors({ rec }: { rec: ScanRecommendation }) {
   );
 }
 
+function AddToPaper({ rec, taken }: { rec: ScanRecommendation; taken: boolean }) {
+  const add = useAddIdeaToPaper();
+  const done = taken || add.isSuccess;
+  const label =
+    rec.trade_style === "OPTION" ? "Add spread to paper" : "Add to paper portfolio";
+  return (
+    <div className="mt-2 flex items-center gap-2">
+      <button
+        type="button"
+        disabled={done || add.isPending}
+        onClick={() => add.mutate({ recommendation_id: rec.id })}
+        className={cn(
+          "rounded-md border px-2.5 py-1 text-[11px] font-semibold transition-colors",
+          done
+            ? "cursor-default border-pos/40 bg-pos/10 text-pos"
+            : "border-accent/50 text-accent hover:bg-accent-soft disabled:opacity-60",
+        )}
+        title="Place this trade in your paper account — no manual order needed"
+      >
+        {done ? "✓ In paper portfolio" : add.isPending ? "Adding…" : `＋ ${label}`}
+      </button>
+      {add.isError && (
+        <span className="text-[11px] text-neg">
+          {(add.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+            "Could not add — try again."}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function PairNote({ rec, siblingStyle }: { rec: ScanRecommendation; siblingStyle: string | null }) {
   if (!siblingStyle) return null;
   const other = STYLE_LABEL[siblingStyle as ScanRecommendation["trade_style"]] ?? siblingStyle;
@@ -216,7 +248,15 @@ function HedgeNote({ rec }: { rec: ScanRecommendation }) {
   );
 }
 
-function EquityCard({ rec, siblingStyle }: { rec: ScanRecommendation; siblingStyle: string | null }) {
+function EquityCard({
+  rec,
+  siblingStyle,
+  taken,
+}: {
+  rec: ScanRecommendation;
+  siblingStyle: string | null;
+  taken: boolean;
+}) {
   const fund = rec.fundamentals as { bias?: string } | null;
   const days = rec.trade_style === "EQUITY_DELIVERY" ? estDays(rec) : null;
   return (
@@ -277,12 +317,21 @@ function EquityCard({ rec, siblingStyle }: { rec: ScanRecommendation; siblingSty
       <HedgeNote rec={rec} />
       <PairNote rec={rec} siblingStyle={siblingStyle} />
       <Factors rec={rec} />
+      {rec.status === "LIVE" && <AddToPaper rec={rec} taken={taken} />}
       <p className="mt-2 text-[10px] italic text-fg-faint">{rec.disclaimer}</p>
     </div>
   );
 }
 
-function OptionCard({ rec, siblingStyle }: { rec: ScanRecommendation; siblingStyle: string | null }) {
+function OptionCard({
+  rec,
+  siblingStyle,
+  taken,
+}: {
+  rec: ScanRecommendation;
+  siblingStyle: string | null;
+  taken: boolean;
+}) {
   const o = rec.option_overlay;
   return (
     <div className="rounded-lg border border-accent/30 bg-accent-soft/30 p-3">
@@ -345,16 +394,25 @@ function OptionCard({ rec, siblingStyle }: { rec: ScanRecommendation; siblingSty
 
       <PairNote rec={rec} siblingStyle={siblingStyle} />
       <Factors rec={rec} />
+      {rec.status === "LIVE" && <AddToPaper rec={rec} taken={taken} />}
       <p className="mt-2 text-[10px] italic text-fg-faint">{rec.disclaimer}</p>
     </div>
   );
 }
 
-function Card({ rec, siblingStyle }: { rec: ScanRecommendation; siblingStyle: string | null }) {
+function Card({
+  rec,
+  siblingStyle,
+  taken,
+}: {
+  rec: ScanRecommendation;
+  siblingStyle: string | null;
+  taken: boolean;
+}) {
   return rec.trade_style === "OPTION" ? (
-    <OptionCard rec={rec} siblingStyle={siblingStyle} />
+    <OptionCard rec={rec} siblingStyle={siblingStyle} taken={taken} />
   ) : (
-    <EquityCard rec={rec} siblingStyle={siblingStyle} />
+    <EquityCard rec={rec} siblingStyle={siblingStyle} taken={taken} />
   );
 }
 
@@ -406,6 +464,7 @@ export function RecommendationsPanel() {
 
   const phase = data?.market_phase ?? "closed";
   const feedStale = status?.tick_feed?.stale;
+  const paperTaken = useMemo(() => new Set(data?.paper_taken ?? []), [data?.paper_taken]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
@@ -535,7 +594,12 @@ export function RecommendationsPanel() {
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {shown.map((r) => (
-            <Card key={r.id} rec={r} siblingStyle={siblingStyleFor(r)} />
+            <Card
+              key={r.id}
+              rec={r}
+              siblingStyle={siblingStyleFor(r)}
+              taken={paperTaken.has(r.id)}
+            />
           ))}
         </div>
       )}

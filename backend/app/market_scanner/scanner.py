@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from app.config import Settings
 from app.core.logging import get_logger
 from app.market_scanner import candles as candle_mod
+from app.market_scanner import chart_patterns as chart_mod
 from app.market_scanner import context as ctx_mod
 from app.market_scanner import fundamentals as fund_mod
 from app.market_scanner import marketdata as md
@@ -56,6 +57,7 @@ class _Eval:
     inp: SignalInput | None = None
     daily_candles: candle_mod.CandleReport | None = None
     intraday_candles: candle_mod.CandleReport | None = None
+    daily_chart: chart_mod.ChartPatternReport | None = None
 
 
 def _today_ist() -> str:
@@ -75,6 +77,7 @@ def _evaluate_instrument(
     d_feat = daily_features(daily)
     d_struct = st.analyse(daily, min_bars=30)
     d_candles = candle_mod.analyse(daily)
+    d_chart = chart_mod.analyse(daily, d_struct)
 
     i_feat = i_struct = None
     i_candles: candle_mod.CandleReport | None = None
@@ -97,10 +100,10 @@ def _evaluate_instrument(
         daily=d_feat, daily_structure=d_struct,
         intraday=i_feat, intraday_structure=i_struct, fundamentals=None,
         tick_size=0.05,
-        daily_candles=d_candles, intraday_candles=i_candles,
+        daily_candles=d_candles, intraday_candles=i_candles, daily_chart=d_chart,
         sector_nudge=sector_nudge, calendar_nudge=calendar,
     )
-    return _Eval(signals.evaluate(inp, cfg), None, inp, d_candles, i_candles)
+    return _Eval(signals.evaluate(inp, cfg), None, inp, d_candles, i_candles, d_chart)
 
 
 def _existing_open(db: Session, symbol: str, day: str) -> set[str]:
@@ -182,6 +185,8 @@ def _context_payload(
         out.setdefault("candles", {})["daily"] = ev.daily_candles.as_dict()
     if ev.intraday_candles and ev.intraday_candles.patterns:
         out.setdefault("candles", {})["intraday"] = ev.intraday_candles.as_dict()
+    if ev.daily_chart and ev.daily_chart.patterns:
+        out["chart_patterns"] = ev.daily_chart.as_dict()["patterns"]
     inp = ev.inp
     if inp is not None and inp.sector_nudge and abs(inp.sector_nudge[0]) > 0.1:
         out["sector"] = {"nudge": inp.sector_nudge[0], "reason": inp.sector_nudge[1]}

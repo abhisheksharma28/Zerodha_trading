@@ -87,6 +87,17 @@ export function useResetPaper() {
   });
 }
 
+export function useAddIdeaToPaper() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: paperAccountApi.fromIdea,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: KEY });
+      qc.invalidateQueries({ queryKey: ["market-scanner"] });
+    },
+  });
+}
+
 export function usePaperAlgo(refetchMs = 5000) {
   return useQuery({
     queryKey: [...KEY, "algo"],

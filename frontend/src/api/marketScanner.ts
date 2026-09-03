@@ -88,6 +88,14 @@ export interface ScanRecommendation {
   bias_score: number | null;
   pop: number | null;
   factors: ScanFactor[];
+  context: {
+    chart_patterns?: { label: string; direction: string; status: string; target: number }[];
+    candles?: Record<string, unknown>;
+    sector?: { reason: string };
+    calendar?: { reason: string };
+    news?: { score: number; note: string; headlines: { title?: string }[] };
+    options?: { oi_pcr: number | null; max_pain: number | null; read: string };
+  } | null;
   option_overlay: OptionOverlay | null;
   hedge: HedgeLeg | null;
   pair_id: string | null;
@@ -111,6 +119,8 @@ export interface ScanRecommendation {
 
 export interface RecommendationsResponse {
   available: boolean;
+  /** rec ids already taken into the paper account (button or auto-bridge) */
+  paper_taken: string[];
   as_of: string;
   market_phase: "open" | "tracking_only" | "closed";
   reason: string | null;

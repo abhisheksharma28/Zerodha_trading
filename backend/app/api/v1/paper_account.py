@@ -15,6 +15,7 @@
   POST /paper-account/reset                  wipe and reset the demo account
   GET  /paper-account/algo                   auto-trade config + live status
   PUT  /paper-account/algo                   edit the auto-trade rules
+  POST /paper-account/from-idea              take one Trading Idea into the portfolio
 """
 
 from __future__ import annotations
@@ -149,6 +150,21 @@ def put_algo(
 ) -> dict[str, Any]:
     algo.set_config(db, payload)
     return algo.status(db, settings)
+
+
+@router.post("/from-idea", status_code=201)
+def post_from_idea(
+    recommendation_id: str = Body(..., embed=True),
+    quantity: int | None = Body(None, embed=True),
+    pct: float | None = Body(None, embed=True),
+    product: str | None = Body(None, embed=True),
+    with_stop: bool = Body(True, embed=True),
+    db: Session = Depends(get_db), settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    return algo.take_idea(
+        db, settings, recommendation_id,
+        quantity=quantity, pct=pct, product=product, with_stop=with_stop,
+    )
 
 
 # --- strategies deployed inside the paper account -----------------------

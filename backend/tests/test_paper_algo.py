@@ -244,3 +244,60 @@ def test_status_view_shape(db):
     assert set(st) >= {"config", "open_auto_positions", "max_open_auto",
                        "today_realized_pnl", "halted"}
     assert st["config"]["enabled"] is False
+
+
+# --------------------------------------------------------------------------
+# "Add to paper" — take one idea into the portfolio on request
+# --------------------------------------------------------------------------
+
+def test_take_idea_places_a_persistent_delivery_position(db):
+    s = get_settings()
+    _inst(db, instrument_token="408065", tradingsymbol="INFY", exchange="NSE")
+    rec = _rec(db, trade_style="EQUITY_DELIVERY", direction="LONG")
+    db.flush()
+
+    res = algo.take_idea(db, s, str(rec.id), pct=5.0)
+    assert res["ok"] and res["symbol"] == "INFY" and res["product"] == "CNC"
+    assert "paper portfolio" in res["message"]
+
+    from app.models.paper_account import PaperHolding, PaperOrder
+
+    acct = get_or_create_account(db)
+    holds = db.query(PaperHolding).filter(PaperHolding.account_id == acct.id).all()
+    assert holds and holds[0].tradingsymbol == "INFY" and holds[0].qty >= 1
+    tags = [o.tag for o in db.query(PaperOrder).filter(PaperOrder.account_id == acct.id).all()]
+    assert any(t == f"idea:{rec.id}" for t in tags)
+
+
+def test_take_idea_respects_an_explicit_quantity(db):
+    s = get_settings()
+    _inst(db, instrument_token="408065", tradingsymbol="INFY", exchange="NSE")
+    rec = _rec(db)
+    db.flush()
+    res = algo.take_idea(db, s, str(rec.id), quantity=7)
+    assert res["ok"] and res["qty"] == 7
+
+
+def test_take_idea_unknown_recommendation_raises(db):
+    s = get_settings()
+    with pytest.raises(ValidationError):
+        algo.take_idea(db, s, "00000000-0000-0000-0000-000000000000")
+
+
+def test_taken_rec_ids_lists_button_and_auto_positions(db):
+    s = get_settings()
+    _inst(db, instrument_token="408065", tradingsymbol="INFY", exchange="NSE")
+    rec = _rec(db)
+    db.flush()
+    assert algo.taken_rec_ids(db) == set()
+    algo.take_idea(db, s, str(rec.id), quantity=3)
+    assert str(rec.id) in algo.taken_rec_ids(db)
+
+
+def test_account_is_a_stable_singleton(db):
+    # many lookups (mimicking the parallel first-load requests) never fork it
+    ids = {str(get_or_create_account(db).id) for _ in range(6)}
+    assert len(ids) == 1
+    from app.models.paper_account import PaperAccount
+
+    assert db.query(PaperAccount).count() == 1

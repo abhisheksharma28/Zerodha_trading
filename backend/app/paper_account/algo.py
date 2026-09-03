@@ -18,7 +18,7 @@ from datetime import time as dtime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.config import Settings
@@ -27,7 +27,7 @@ from app.core.logging import get_logger
 from app.models.market_scanner import ScanRecommendation
 from app.models.paper_account import PaperAlgoConfig, PaperOrder, PaperTrade
 from app.paper_account import engine, service
-from app.paper_account.engine import OrderRequest, get_or_create_account
+from app.paper_account.engine import OrderRequest, first_account, get_or_create_account
 
 logger = get_logger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
@@ -292,22 +292,29 @@ def run_once(db: Session, settings: Settings, *, now: datetime | None = None) ->
 
 def _take_equity(
     db: Session, settings: Settings, rec: ScanRecommendation, alloc: float, cfg: PaperAlgoConfig,
+    *, tag_prefix: str = "algo", qty_override: int | None = None,
+    product_override: str | None = None, with_stop: bool = True,
 ) -> dict[str, Any]:
     entry = float(rec.entry)
     if entry <= 0:
         return {"ok": False, "reason": "no entry price"}
-    qty = int(alloc // entry)
+    qty = int(qty_override) if qty_override and qty_override > 0 else int(alloc // entry)
     if qty < 1:
         return {"ok": False, "reason": f"allocation Rs {alloc:,.0f} < 1 share @ {entry:,.0f}"}
 
     long = rec.direction == "LONG"
-    # a short can't sit in a delivery (CNC) account, so those go MIS
-    product = cfg.equity_product if (rec.trade_style == "EQUITY_DELIVERY" and long) else "MIS"
+    if product_override:
+        product = product_override.upper()
+    else:
+        # a short can't sit in a delivery (CNC) account, so those go MIS
+        product = cfg.equity_product if (rec.trade_style == "EQUITY_DELIVERY" and long) else "MIS"
+    if product == "CNC" and not long:
+        product = "MIS"  # cannot hold a short in delivery
 
     order = engine.place_order(db, settings, OrderRequest(
         exchange=rec.exchange, tradingsymbol=rec.tradingsymbol,
         side="BUY" if long else "SELL", quantity=qty,
-        order_type="MARKET", product=product, tag=f"algo:{rec.id}",
+        order_type="MARKET", product=product, tag=f"{tag_prefix}:{rec.id}",
     ))
     if order.status != "COMPLETE":
         return {"ok": False, "reason": order.status_message or order.status}
@@ -315,18 +322,18 @@ def _take_equity(
     fill = float(order.avg_fill_price or entry)
     sl = float(rec.stop_loss)
     sl_placed = False
-    sl_ok = (sl < fill) if long else (sl > fill)
+    sl_ok = with_stop and ((sl < fill) if long else (sl > fill))
     if sl_ok:
         try:
             engine.place_order(db, settings, OrderRequest(
                 exchange=rec.exchange, tradingsymbol=rec.tradingsymbol,
                 side="SELL" if long else "BUY", quantity=qty,
                 order_type="SL-M", product=product, trigger_price=round(sl, 2),
-                tag=f"algo:{rec.id}:sl",
+                tag=f"{tag_prefix}:{rec.id}:sl",
             ))
             sl_placed = True
         except Exception as exc:  # noqa: BLE001 - entry still stands without the child SL
-            logger.info("paper_algo_sl_failed", rec=str(rec.id), error=str(exc))
+            logger.info("paper_take_sl_failed", rec=str(rec.id), error=str(exc))
 
     return {
         "ok": True, "rec_id": str(rec.id), "symbol": rec.tradingsymbol,
@@ -338,7 +345,7 @@ def _take_equity(
 
 def _unwind_option_legs(
     db: Session, settings: Settings, rec: ScanRecommendation,
-    placed: list[dict[str, Any]], qty: int,
+    placed: list[dict[str, Any]], qty: int, *, tag_prefix: str = "algo",
 ) -> None:
     """Reverse the legs that already filled when a spread can't be completed."""
     for leg in placed:
@@ -346,14 +353,15 @@ def _unwind_option_legs(
             engine.place_order(db, settings, OrderRequest(
                 exchange="NFO", tradingsymbol=leg["symbol"],
                 side="SELL" if leg["side"] == "BUY" else "BUY", quantity=qty,
-                order_type="MARKET", product="NRML", tag=f"algo:{rec.id}:exit",
+                order_type="MARKET", product="NRML", tag=f"{tag_prefix}:{rec.id}:exit",
             ))
         except Exception as exc:  # noqa: BLE001
-            logger.info("paper_algo_unwind_failed", rec=str(rec.id), sym=leg["symbol"], error=str(exc))
+            logger.info("paper_take_unwind_failed", rec=str(rec.id), sym=leg["symbol"], error=str(exc))
 
 
 def _take_option(
     db: Session, settings: Settings, rec: ScanRecommendation, alloc: float,
+    *, tag_prefix: str = "algo",
 ) -> dict[str, Any]:
     ov = rec.option_overlay or {}
     legs = ov.get("legs") or []
@@ -375,14 +383,14 @@ def _take_option(
         sym = leg.get("tradingsymbol")
         side = str(leg.get("side") or "BUY").upper()
         if not sym:
-            _unwind_option_legs(db, settings, rec, placed, qty)
+            _unwind_option_legs(db, settings, rec, placed, qty, tag_prefix=tag_prefix)
             return {"ok": False, "reason": "option leg missing a tradingsymbol"}
         order = engine.place_order(db, settings, OrderRequest(
             exchange="NFO", tradingsymbol=sym, side=side, quantity=qty,
-            order_type="MARKET", product="NRML", tag=f"algo:{rec.id}",
+            order_type="MARKET", product="NRML", tag=f"{tag_prefix}:{rec.id}",
         ))
         if order.status != "COMPLETE":
-            _unwind_option_legs(db, settings, rec, placed, qty)
+            _unwind_option_legs(db, settings, rec, placed, qty, tag_prefix=tag_prefix)
             return {"ok": False, "reason": f"{side} {sym}: {order.status_message or order.status}"}
         placed.append({"side": side, "symbol": sym, "fill": float(order.avg_fill_price or 0.0)})
 
@@ -431,6 +439,62 @@ def manage(db: Session, settings: Settings) -> dict[str, Any]:
     if closed:
         db.commit()
     return {"closed": closed}
+
+
+# --------------------------------------------------------------------------
+# manual: take one idea into the portfolio (the "Add to paper" button)
+# --------------------------------------------------------------------------
+
+def take_idea(
+    db: Session, settings: Settings, rec_id: str, *,
+    quantity: int | None = None, pct: float | None = None,
+    product: str | None = None, with_stop: bool = True,
+) -> dict[str, Any]:
+    """Place the order(s) for one recommendation in the paper account on the
+    user's explicit request (not the auto-bridge). Tagged ``idea:<rec_id>``;
+    it is a normal position the user then manages/exits themselves - it is
+    NOT auto-squared-off when the source idea expires."""
+    rec = db.get(ScanRecommendation, rec_id)
+    if rec is None:
+        raise ValidationError("recommendation not found")
+    cfg = get_config(db)
+    summ = service.summary(db, settings)
+    net_worth = float(summ.get("net_worth") or 0.0) or float(get_or_create_account(db).opening_balance)
+    use_pct = float(pct) if pct is not None else float(cfg.pct_per_trade)
+    alloc = net_worth * max(0.1, min(use_pct, 100.0)) / 100.0
+
+    if rec.trade_style == "OPTION":
+        res = _take_option(db, settings, rec, alloc, tag_prefix="idea")
+    else:
+        # a hand-picked idea defaults to a *persistent* product: CNC for a
+        # long delivery idea (sits in holdings across days), MIS otherwise.
+        default_product = "CNC" if (rec.trade_style == "EQUITY_DELIVERY"
+                                    and rec.direction == "LONG") else "MIS"
+        res = _take_equity(
+            db, settings, rec, alloc, cfg, tag_prefix="idea",
+            qty_override=quantity, product_override=(product or default_product),
+            with_stop=with_stop,
+        )
+    if not res.get("ok"):
+        raise ValidationError(res.get("reason", "could not place the order"))
+    db.commit()
+    res["message"] = f"Added {rec.tradingsymbol} to your paper portfolio."
+    return res
+
+
+def taken_rec_ids(db: Session) -> set[str]:
+    """rec ids that have any order in the paper account from either the
+    'Add to paper' button (``idea:``) or the auto-bridge (``algo:``)."""
+    acct = first_account(db)
+    if acct is None:
+        return set()
+    rows = db.execute(
+        select(PaperOrder.tag).where(
+            PaperOrder.account_id == acct.id,
+            or_(PaperOrder.tag.like("idea:%"), PaperOrder.tag.like("algo:%")),
+        )
+    ).scalars().all()
+    return {str(t).split(":", 2)[1] for t in rows if t}
 
 
 # --------------------------------------------------------------------------

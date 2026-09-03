@@ -113,8 +113,16 @@ def recommendations(db: Session) -> dict[str, Any]:
     for r in expired:
         by_outcome[r.outcome or "?"] = by_outcome.get(r.outcome or "?", 0) + 1
     available = bool(run and run.data_available) or bool(live)
+    paper_taken: list[str] = []
+    try:
+        from app.paper_account import algo as paper_algo
+
+        paper_taken = sorted(paper_algo.taken_rec_ids(db))
+    except Exception:  # noqa: BLE001 - the "in portfolio" hint is best-effort
+        pass
     return {
         "available": available,
+        "paper_taken": paper_taken,
         "as_of": datetime.now(UTC).isoformat(),
         "market_phase": market_phase(),
         "reason": None if available else (run.reason if run else "No scan has run yet."),

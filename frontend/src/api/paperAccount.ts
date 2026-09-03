@@ -239,6 +239,13 @@ export const paperAccountApi = {
   algo: () => apiClient.get<AlgoStatus>("/paper-account/algo").then((r) => r.data),
   setAlgo: (patch: Partial<AlgoConfig>) =>
     apiClient.put<AlgoStatus>("/paper-account/algo", patch).then((r) => r.data),
+  fromIdea: (body: {
+    recommendation_id: string;
+    quantity?: number | null;
+    pct?: number | null;
+    product?: string | null;
+    with_stop?: boolean;
+  }) => apiClient.post<Record<string, unknown>>("/paper-account/from-idea", body).then((r) => r.data),
 
   strategyRuns: () =>
     apiClient.get<PaperStrategyRun[]>("/paper-account/strategies").then((r) => r.data),

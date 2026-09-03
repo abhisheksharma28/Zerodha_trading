@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.backtesting.costs import CostModel
@@ -33,6 +33,7 @@ from app.paper_account import pricing
 logger = get_logger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
 _COSTS = CostModel()
+_ACCOUNT_LOCK = 776621  # serialize the one-time account creation
 _SIDES = {"BUY", "SELL"}
 _TYPES = {"MARKET", "LIMIT", "SL", "SL-M"}
 _PRODUCTS = {"CNC", "MIS", "NRML"}
@@ -46,15 +47,31 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+def first_account(db: Session) -> PaperAccount | None:
+    # deterministic: always the oldest row, so the account never appears to
+    # "change" between requests even if a stray second row ever exists
+    return db.execute(
+        select(PaperAccount).order_by(PaperAccount.created_at.asc()).limit(1)
+    ).scalar_one_or_none()
+
+
 def get_or_create_account(db: Session) -> PaperAccount:
-    acct = db.execute(select(PaperAccount).limit(1)).scalar_one_or_none()
+    """The single persistent paper account. Its positions, holdings, orders,
+    trades and cash book all live in Postgres and survive restarts / reloads."""
+    acct = first_account(db)
+    if acct is not None:
+        return acct
+    # a fresh DB gets hit by several parallel requests on first page load;
+    # serialize the create so they don't fork the account into duplicates
+    db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": _ACCOUNT_LOCK})
+    acct = first_account(db)
     if acct is None:
         ob = 1_000_000.0
         acct = PaperAccount(opening_balance=ob, cash=0.0, realized_pnl=0.0, charges_paid=0.0)
         db.add(acct)
         db.flush()
         _ledger(db, acct, "FUNDS_ADD", ob, note="Opening balance")  # brings cash 0 -> ob
-        db.commit()
+    db.commit()
     return acct
 
 

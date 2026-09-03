@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.market_scanner.candles import CandleReport
+from app.market_scanner.chart_patterns import ChartPatternReport
 from app.market_scanner.context import NewsSignal
 from app.market_scanner.features import Features
 from app.market_scanner.fundamentals import FundamentalView
@@ -88,6 +89,7 @@ class SignalInput:
     # extra brain inputs (all optional; the engine degrades without them)
     daily_candles: CandleReport | None = None
     intraday_candles: CandleReport | None = None
+    daily_chart: ChartPatternReport | None = None   # multi-swing chart patterns
     sector_nudge: tuple[float, str] | None = None   # (-1..1, reason)
     calendar_nudge: tuple[float, str] | None = None
     news: NewsSignal | None = None
@@ -259,6 +261,61 @@ def _candle_factors(daily: CandleReport | None, intraday: CandleReport | None,
     return out
 
 
+_CHART_WEIGHT = {
+    "head_shoulders_top": 13, "head_shoulders_bottom": 13,
+    "triple_top": 12, "triple_bottom": 12,
+    "double_top": 11, "double_bottom": 11,
+    "ascending_triangle": 10, "descending_triangle": 10, "symmetrical_triangle": 9,
+    "rectangle": 8,
+}
+
+
+def _chart_pattern_factors(rep: ChartPatternReport | None) -> list[Factor]:
+    """A *confirmed* multi-swing chart pattern (breakout has happened). A
+    forming pattern is deliberately ignored - per the reference, a pattern
+    is not active until the breakout."""
+    if rep is None:
+        return []
+    out: list[Factor] = []
+    for p in rep.patterns[:2]:
+        if p.status != "confirmed":
+            continue
+        base = _CHART_WEIGHT.get(p.name, 7)
+        sign = 1.0 if p.direction == "BULLISH" else -1.0
+        out.append(Factor(
+            "chart_pattern",
+            f"{p.label} confirmed (target {p.target:.1f})",
+            round(sign * base * p.strength, 1), "chart_pattern",
+        ))
+    return out
+
+
+def _reflexivity_factor(d: Features, inp: SignalInput, direction: str) -> Factor | None:
+    """A light nod to Soros's reflexivity: a trend is self-reinforcing while
+    price action and its supposed drivers (fundamentals, news) point the same
+    way, but grows fragile once price runs far from equilibrium (the
+    "moment of truth"). Small weight - it nudges, it does not decide."""
+    if not d.ema200 or not d.close or d.ema_stack not in ("BULL", "BEAR"):
+        return None
+    long = direction == "LONG"
+    trend_up = d.ema_stack == "BULL"
+    if long != trend_up:
+        return None  # only speaks to trend-following ideas
+    ext = abs(d.close - d.ema200) / d.ema200
+    fnd_ok = inp.fundamentals is not None and inp.fundamentals.available and (
+        inp.fundamentals.bias == ("SUPPORTIVE_LONG" if long else "SUPPORTIVE_SHORT")
+    )
+    news_ok = inp.news is not None and (inp.news.score > 0.3 if long else inp.news.score < -0.3)
+    sign = 1.0 if long else -1.0
+    if ext >= 0.30:
+        return Factor("reflexivity", f"price {ext * 100:.0f}% from the 200-EMA — trend far from "
+                      "equilibrium, reversal risk rising", -sign * 5, "context")
+    if (fnd_ok or news_ok) and ext <= 0.18:
+        return Factor("reflexivity", "price, fundamentals and headlines reinforcing each other — "
+                      "self-sustaining trend", sign * 4, "context")
+    return None
+
+
 def _context_factors(inp: SignalInput, side_sign: float) -> list[Factor]:
     out: list[Factor] = []
     if inp.sector_nudge and abs(inp.sector_nudge[0]) > 0.1:
@@ -363,6 +420,7 @@ def _entry_stop_targets(
 
 
 _SETUP_LABEL = {
+    "chart_pattern": "Chart-pattern breakout",
     "candlestick": "Candlestick reversal",
     "choch": "Change-of-character reversal",
     "liquidity_sweep": "Liquidity sweep reversal",
@@ -386,6 +444,7 @@ _SETUP_PRIORITY = list(_SETUP_LABEL.keys())
 _REVERSAL_SETUPS = {
     "Change-of-character reversal", "Liquidity sweep reversal",
     "Oversold bounce", "Overbought fade", "Candlestick reversal",
+    "Chart-pattern breakout",
 }
 # strict quality weights (sum ~= 1.0)
 _QW = {
@@ -524,8 +583,9 @@ def evaluate(inp: SignalInput, cfg: SignalConfig | None = None) -> Setup | None:
     horizon0 = _pick_horizon(d, inp.intraday, inp.asset_class, trend_w, struct_i_w)
     candle = _candle_factors(inp.daily_candles, inp.intraday_candles,
                              "15m" if horizon0 == "INTRADAY" else "daily")
+    chart = _chart_pattern_factors(inp.daily_chart)
 
-    provisional = trend + momentum + struct_d + struct_i + location + candle
+    provisional = trend + momentum + struct_d + struct_i + location + candle + chart
     provisional_w = sum(f.weight for f in provisional)
     if abs(provisional_w) < 1:
         return None
@@ -536,6 +596,9 @@ def evaluate(inp: SignalInput, cfg: SignalConfig | None = None) -> Setup | None:
     volume = _volume_factors(inp.intraday, d, side_sign)
     fundamental = _fundamental_factors(inp.fundamentals, horizon)
     context = _context_factors(inp, side_sign)
+    reflex = _reflexivity_factor(d, inp, direction)
+    if reflex is not None:
+        context.append(reflex)
 
     factors = provisional + volume + fundamental + context
     bias_score = max(-100.0, min(100.0, sum(f.weight for f in factors)))
