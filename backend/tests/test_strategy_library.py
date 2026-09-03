@@ -18,6 +18,7 @@ from app.strategies.library import (
     DonchianBreakoutStrategy,
     IndexFuturesArbitrageStrategy,
     LatencyArbitrageStrategy,
+    MacdGridStrategy,
     MeanReversionStrategy,
     MultiFactorStrategy,
     OpeningBreakoutUSStrategy,
@@ -983,3 +984,47 @@ def test_deterministic_same_input_same_output(cls):
         )
 
     assert norm(run1) == norm(run2)
+
+
+# --------------------------------------------------------------------------
+# MACD grid accumulator
+# --------------------------------------------------------------------------
+
+def _grid_params(**over):
+    p = dict(MacdGridStrategy.presets()["balanced"])
+    p.update(macd_fast=3, macd_slow=6, macd_signal=3, grid_step_pct=1.0, max_rungs=6,
+             rung_qty=10, reference="last_entry", require_macd_up=True,
+             exit_on_macd_cross_down=True, product="CNC", regime_filter_enabled=False)
+    p.update(over)
+    return MacdGridStrategy.resolve_params(p)
+
+
+def _grid_bars(closes: list[float]) -> list[Bar]:
+    return [_bar("INFY", float(c), daily_ts(i)) for i, c in enumerate(closes)]
+
+
+def test_grid_averages_down_then_takes_a_rung_off_on_the_bounce():
+    # gentle drift up warms MACD (line rising -> histogram > 0), then a >1%
+    # dip adds a rung and a >1% bounce sells the newest rung back off.
+    closes = [100.0 * (1.003 ** i) for i in range(22)]
+    closes += [closes[-1] * 0.982]   # >1% dip -> add a rung
+    closes += [closes[-1] * 1.03]    # >1% bounce off that rung -> sell it
+    emitted, _ = run(MacdGridStrategy, _grid_params(), _grid_bars(closes))
+    sides = [o.transaction_type for _i, orders in emitted for o in orders]
+    assert sides.count("BUY") >= 2 and sides.count("SELL") >= 1
+
+
+def test_grid_flattens_the_whole_ladder_on_a_macd_cross_down():
+    closes = [100.0 * (1.003 ** i) for i in range(22)]
+    closes += [closes[-1] * (0.95 ** k) for k in range(1, 9)]  # sharp drop -> MACD cross-down
+    emitted, positions = run(MacdGridStrategy, _grid_params(), _grid_bars(closes))
+    assert emitted
+    assert emitted[-1][1][-1].transaction_type == "SELL"
+    assert positions.get("INFY", 0) == 0  # ladder fully sold on the cross-down
+
+
+def test_grid_stays_flat_while_the_macd_line_is_falling():
+    # an accelerating decline keeps the MACD line below its signal the whole way
+    closes = [100.0 - (i * i) * 0.05 for i in range(40)]
+    emitted, positions = run(MacdGridStrategy, _grid_params(), _grid_bars(closes))
+    assert not emitted and positions.get("INFY", 0) == 0

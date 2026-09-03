@@ -17,6 +17,7 @@ from app.models.options_strategy import OptionsStrategyInstance
 from app.models.order import Order, Trade
 from app.models.paper_account import (
     PaperAccount,
+    PaperAlgoConfig,
     PaperHolding,
     PaperLedger,
     PaperOrder,
@@ -44,6 +45,7 @@ __all__ = [
     "Order",
     "Trade",
     "PaperAccount",
+    "PaperAlgoConfig",
     "PaperOrder",
     "PaperTrade",
     "PaperPosition",

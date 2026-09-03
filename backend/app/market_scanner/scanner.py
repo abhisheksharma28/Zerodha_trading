@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -20,6 +20,8 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings
 from app.core.logging import get_logger
+from app.market_scanner import candles as candle_mod
+from app.market_scanner import context as ctx_mod
 from app.market_scanner import fundamentals as fund_mod
 from app.market_scanner import marketdata as md
 from app.market_scanner import options_overlay, signals
@@ -47,37 +49,58 @@ class ScanOutcome:
     recommendation_ids: list[str] = field(default_factory=list)
 
 
+@dataclass
+class _Eval:
+    setup: signals.Setup | None
+    reason: str | None
+    inp: SignalInput | None = None
+    daily_candles: candle_mod.CandleReport | None = None
+    intraday_candles: candle_mod.CandleReport | None = None
+
+
 def _today_ist() -> str:
     return datetime.now(IST).date().isoformat()
 
 
 def _evaluate_instrument(
-    client: Any, settings: Settings, si: ScanInstrument, cfg: SignalConfig, *, deep: bool
-) -> tuple[signals.Setup | None, str | None]:
-    """Returns (setup, skip_reason)."""
+    db: Session, client: Any, settings: Settings, si: ScanInstrument, cfg: SignalConfig,
+    *, deep: bool, calendar: tuple[float, str] | None = None,
+) -> _Eval:
+    """Score one instrument. Candlestick patterns + sector strength + the
+    calendar bias feed the score here; the slow news + fundamentals overlays
+    are added by the caller only for the handful of names that get persisted."""
     daily = md.fetch_bars(client, si.instrument_token, "day")
     if len(daily) < 40:
-        return None, f"only {len(daily)} daily bars"
+        return _Eval(None, f"only {len(daily)} daily bars")
     d_feat = daily_features(daily)
     d_struct = st.analyse(daily, min_bars=30)
+    d_candles = candle_mod.analyse(daily)
 
     i_feat = i_struct = None
+    i_candles: candle_mod.CandleReport | None = None
     if deep:
         intr = md.fetch_bars(client, si.instrument_token, "15minute")
         if len(intr) >= 20:
             i_feat = intraday_features(intr)
             i_struct = st.analyse(intr[-160:], min_bars=20)
+            i_candles = candle_mod.analyse(intr)
 
-    # fundamentals (yfinance) are slow - fetch them only for the handful of
-    # names that get persisted, in the caller, not for every scanned symbol
+    sector_nudge = None
+    try:
+        sector_nudge = ctx_mod.sector_nudge_for(db, settings, si.tradingsymbol)
+    except Exception as exc:  # noqa: BLE001 - context is best-effort
+        logger.info("scanner_sector_nudge_error", ref=si.ref, error=str(exc))
+
     ltp = d_feat.close
     inp = SignalInput(
         ltp=ltp, asset_class=si.asset_class, has_options=si.has_options,
         daily=d_feat, daily_structure=d_struct,
         intraday=i_feat, intraday_structure=i_struct, fundamentals=None,
         tick_size=0.05,
+        daily_candles=d_candles, intraday_candles=i_candles,
+        sector_nudge=sector_nudge, calendar_nudge=calendar,
     )
-    return signals.evaluate(inp, cfg), None
+    return _Eval(signals.evaluate(inp, cfg), None, inp, d_candles, i_candles)
 
 
 def _existing_open(db: Session, symbol: str, day: str) -> set[str]:
@@ -148,10 +171,34 @@ def _protective_hedge(
     }
 
 
+def _context_payload(
+    ev: _Eval, setup: signals.Setup, news: Any, *, overlay: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """The surrounding-context block stored on the recommendation and shown
+    in the "why this idea" panel: candlestick reads, sector strength, the
+    calendar bias, the news-headline heuristic and (for F&O) the chain pulse."""
+    out: dict[str, Any] = {}
+    if ev.daily_candles and ev.daily_candles.patterns:
+        out.setdefault("candles", {})["daily"] = ev.daily_candles.as_dict()
+    if ev.intraday_candles and ev.intraday_candles.patterns:
+        out.setdefault("candles", {})["intraday"] = ev.intraday_candles.as_dict()
+    inp = ev.inp
+    if inp is not None and inp.sector_nudge and abs(inp.sector_nudge[0]) > 0.1:
+        out["sector"] = {"nudge": inp.sector_nudge[0], "reason": inp.sector_nudge[1]}
+    if inp is not None and inp.calendar_nudge and inp.calendar_nudge[1]:
+        out["calendar"] = {"nudge": inp.calendar_nudge[0], "reason": inp.calendar_nudge[1]}
+    if news is not None and (getattr(news, "headlines", None) or getattr(news, "score", 0)):
+        out["news"] = {"score": news.score, "note": news.note, "headlines": news.headlines}
+    if overlay and overlay.get("chain_pulse"):
+        out["options"] = overlay["chain_pulse"]
+    return out or None
+
+
 def _persist(
     db: Session, run: ScanRun, si: ScanInstrument, setup: signals.Setup, *,
     trade_style: str, fv: Any, day: str, overlay: dict[str, Any] | None = None,
     hedge: dict[str, Any] | None = None, pair_id: uuid.UUID | None = None,
+    context: dict[str, Any] | None = None,
 ) -> ScanRecommendation:
     """One recommendation. For ``trade_style="OPTION"`` the entry/stop/target
     stay on the *underlying* (that is the thesis to manage against) and the
@@ -168,6 +215,7 @@ def _persist(
         rr=setup.rr, atr=setup.atr,
         confidence=setup.confidence, bias_score=setup.bias_score,
         score_detail=setup.score_detail or None,
+        context=context or None,
         pop=(overlay or {}).get("pop") if is_option else None,
         factors=setup.factor_dicts(),
         option_overlay=overlay if is_option else None,
@@ -234,21 +282,28 @@ def _run_scan_locked(
     cfg = SignalConfig()
     day = _today_ist()
     skipped: dict[str, str] = {}
-    setups: list[tuple[ScanInstrument, signals.Setup]] = []
+    setups: list[tuple[ScanInstrument, _Eval]] = []
     scanned = 0
+
+    # scan-wide context: build the sector maps once, read the calendar bias once
+    try:
+        ctx_mod.prime_sector_maps(db, settings)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("scanner_prime_sector_failed", error=str(exc))
+    calendar = ctx_mod.calendar_bias()
 
     # --- core tier: deep scan --------------------------------------------
     for si in uni.core:
         scanned += 1
         try:
-            setup, reason = _evaluate_instrument(client, settings, si, cfg, deep=True)
+            ev = _evaluate_instrument(db, client, settings, si, cfg, deep=True, calendar=calendar)
         except Exception as exc:  # noqa: BLE001 - one bad symbol must not kill the sweep
             skipped[si.ref] = f"{type(exc).__name__}: {exc}"
             continue
-        if reason:
-            skipped[si.ref] = reason
-        elif setup:
-            setups.append((si, setup))
+        if ev.reason:
+            skipped[si.ref] = ev.reason
+        elif ev.setup:
+            setups.append((si, ev))
 
     # --- broad tier: liquid cash equities, daily-bar scan for delivery /
     #     swing ideas (no F&O needed). Daily bars cache ~1h so repeat scans
@@ -256,22 +311,24 @@ def _run_scan_locked(
     for si in uni.broad:
         scanned += 1
         try:
-            setup, reason = _evaluate_instrument(client, settings, si, cfg, deep=False)
+            ev = _evaluate_instrument(db, client, settings, si, cfg, deep=False, calendar=calendar)
         except Exception as exc:  # noqa: BLE001
             skipped[si.ref] = f"{type(exc).__name__}: {exc}"
             continue
-        if reason:
-            skipped[si.ref] = reason
-        elif setup:
-            setups.append((si, setup))
+        if ev.reason:
+            skipped[si.ref] = ev.reason
+        elif ev.setup:
+            setups.append((si, ev))
 
     # --- rank, de-dupe, attach overlay, persist -------------------------
-    setups.sort(key=lambda x: (-x[1].confidence, -abs(x[1].bias_score)))
+    setups.sort(key=lambda x: (-x[1].setup.confidence, -abs(x[1].setup.bias_score)))  # type: ignore[union-attr]
     produced_ids: list[str] = []
     live_now = db.execute(
         select(func.count()).select_from(ScanRecommendation).where(ScanRecommendation.status == "LIVE")
     ).scalar_one()
-    for si, setup in setups:
+    for si, ev in setups:
+        setup = ev.setup
+        assert setup is not None  # noqa: S101 - only setups with a .setup reach here
         if live_now + len(produced_ids) >= settings.market_scanner_max_live:
             skipped[si.ref] = "live-recommendation cap reached"
             continue
@@ -281,6 +338,19 @@ def _run_scan_locked(
         fv = None
         if si.asset_class == "EQUITY":
             fv = fund_mod.view(settings, si.tradingsymbol, asset_class=si.asset_class)
+
+        # slow overlays only for names that will be persisted: pull recent
+        # headlines and re-score with the news nudge folded in (a nudge, not
+        # a veto - keep the original call if news would flip the direction)
+        news = None
+        if si.asset_class == "EQUITY" and ev.inp is not None:
+            try:
+                news = ctx_mod.news_signal(settings, si.tradingsymbol)
+                rescored = signals.evaluate(replace(ev.inp, news=news, fundamentals=fv), cfg)
+                if rescored is not None and rescored.direction == setup.direction:
+                    setup = rescored
+            except Exception as exc:  # noqa: BLE001 - news overlay is optional
+                logger.info("scanner_news_error", ref=si.ref, error=str(exc))
 
         # 1. the equity idea (delivery / intraday) - the primary card.
         #    Indices have no cash leg, so skip a bare equity card for them
@@ -297,6 +367,8 @@ def _run_scan_locked(
                 logger.info("scanner_overlay_error", ref=si.ref, error=str(exc))
 
         pair_id = uuid.uuid4() if overlay is not None else None
+        ctx_equity = _context_payload(ev, setup, news, overlay=None)
+        ctx_option = _context_payload(ev, setup, news, overlay=overlay)
 
         if si.asset_class != "INDEX" or overlay is None:
             hedge = None
@@ -306,14 +378,14 @@ def _run_scan_locked(
                 except Exception as exc:  # noqa: BLE001 - hedge suggestion is optional
                     logger.info("scanner_hedge_error", ref=si.ref, error=str(exc))
             rec = _persist(db, run, si, setup, trade_style=style, fv=fv, day=day,
-                           hedge=hedge, pair_id=pair_id)
+                           hedge=hedge, pair_id=pair_id, context=ctx_equity)
             produced_ids.append(str(rec.id))
 
         # 2. a separate OPTION card when a defined-risk spread expresses the
         #    same view (its own KPIs; entry/stop/target stay on the underlying)
         if overlay is not None and live_now + len(produced_ids) < settings.market_scanner_max_live:
             orec = _persist(db, run, si, setup, trade_style="OPTION", fv=fv, day=day,
-                            overlay=overlay, pair_id=pair_id)
+                            overlay=overlay, pair_id=pair_id, context=ctx_option)
             produced_ids.append(str(orec.id))
 
     run.finished_at = datetime.now(UTC)

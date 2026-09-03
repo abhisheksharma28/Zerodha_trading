@@ -149,6 +149,14 @@ def run_cycle(db: Session, settings: Settings) -> None:
     except Exception:  # noqa: BLE001 - strategy runner must not break the loop
         logger.exception("paper_strategy_tick_all_error")
         db.rollback()
+    try:
+        from app.paper_account import algo
+
+        algo.run_once(db, settings)
+        algo.manage(db, settings)
+    except Exception:  # noqa: BLE001 - the auto-trade bridge must not break the loop
+        logger.exception("paper_algo_cycle_error")
+        db.rollback()
     if phase == "squareoff":
         _squareoff_mis(db, settings)
     # keep tokens flowing on the tick feed

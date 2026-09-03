@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import type { PaperHolding, PaperOrder, PaperPosition, PaperStrategyRun } from "@/api/paperAccount";
 import { DataTable, type Column } from "@/components/DataTable";
+import { AlgoPanel, AlgoPill } from "@/components/paper/AlgoPanel";
 import { OrderPad, type OrderPadInit } from "@/components/paper/OrderPad";
 import { StrategyDeploy } from "@/components/paper/StrategyDeploy";
 import { PageHeader } from "@/components/PageHeader";
@@ -13,6 +14,7 @@ import {
   useCancelOrder,
   useDeletePaperStrategy,
   useExitPosition,
+  usePaperAlgo,
   usePaperHoldings,
   usePaperLedger,
   usePaperOrders,
@@ -26,7 +28,7 @@ import {
 import { inr, num, pctSigned } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-const TABS = ["Holdings", "Positions", "Orders", "Strategies", "Funds"] as const;
+const TABS = ["Holdings", "Positions", "Orders", "Algo", "Strategies", "Funds"] as const;
 const pnlTone = (v: number | null | undefined) =>
   (v ?? 0) > 0 ? "text-pos" : (v ?? 0) < 0 ? "text-neg" : "text-fg-muted";
 
@@ -63,6 +65,7 @@ export default function PaperTradingPage() {
   const { data: trades = [] } = usePaperTrades();
   const { data: ledger = [] } = usePaperLedger();
   const { data: strategyRuns = [] } = usePaperStrategyRuns();
+  const { data: algo } = usePaperAlgo();
   const exitPos = useExitPosition();
   const cancelOrder = useCancelOrder();
   const addFunds = useAddFunds();
@@ -162,7 +165,18 @@ export default function PaperTradingPage() {
 
   const orderCols: Column<PaperOrder>[] = [
     { key: "time", header: "Time", cell: (o) => <span className="tabular-nums text-fg-faint">{o.placed_at ? new Date(o.placed_at).toLocaleTimeString("en-IN") : "—"}</span>, sortValue: (o) => o.placed_at ?? "" },
-    { key: "sym", header: "Instrument", cell: (o) => <span className="font-medium text-fg">{o.tradingsymbol}</span>, sortValue: (o) => o.tradingsymbol },
+    {
+      key: "sym",
+      header: "Instrument",
+      cell: (o) => (
+        <span className="flex items-center gap-1.5">
+          <span className="font-medium text-fg">{o.tradingsymbol}</span>
+          {o.tag?.startsWith("algo:") && <Badge variant="default" className="text-[9px]">AUTO</Badge>}
+          {o.tag?.startsWith("strat:") && <Badge variant="default" className="text-[9px]">STRAT</Badge>}
+        </span>
+      ),
+      sortValue: (o) => o.tradingsymbol,
+    },
     { key: "side", header: "Side", cell: (o) => <span className={cn("text-xs font-bold", o.side === "BUY" ? "text-[#4184f3]" : "text-[#ff5722]")}>{o.side}</span>, sortValue: (o) => o.side },
     { key: "type", header: "Type", cell: (o) => <span className="text-fg-muted">{o.order_type} · {o.product}</span>, sortValue: (o) => o.order_type },
     { key: "qty", header: "Qty", align: "right", cell: (o) => <span className="tabular-nums">{o.filled_qty}/{o.quantity}</span>, sortValue: (o) => o.quantity },
@@ -198,6 +212,7 @@ export default function PaperTradingPage() {
         subtitle="A demo trading account — virtual funds, real live prices. Buy / sell equity and F&O; positions mark to the tape."
         actions={
           <div className="flex items-center gap-2">
+            <AlgoPill status={algo} />
             <Button size="sm" onClick={() => openPad({})} className="bg-[#4184f3] hover:bg-[#356fd0]">
               + New order
             </Button>
@@ -259,6 +274,7 @@ export default function PaperTradingPage() {
             {t === "Holdings" && ` (${holdings.length})`}
             {t === "Positions" && ` (${positions.length})`}
             {t === "Orders" && ` (${orders.filter((o) => o.status === "OPEN").length})`}
+            {t === "Algo" && algo?.config.enabled && " ●"}
             {t === "Strategies" && ` (${strategyRuns.filter((r) => r.status === "ACTIVE").length})`}
           </button>
         ))}
@@ -281,6 +297,8 @@ export default function PaperTradingPage() {
           <DataTable columns={orderCols} rows={orders} rowKey={(o) => o.id} searchable searchPlaceholder="Filter orders…" initialSort={{ key: "time", dir: "desc" }} empty="No orders yet." />
         </SectionCard>
       )}
+
+      {tab === "Algo" && <AlgoPanel />}
 
       {tab === "Strategies" && (
         <div className="flex flex-col gap-4">

@@ -2,7 +2,6 @@ import { Suspense, useCallback, useRef, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   Activity,
-  BarChart3,
   Bell,
   BookOpen,
   CandlestickChart,
@@ -11,15 +10,11 @@ import {
   FileText,
   FlaskConical,
   Gauge,
-  Layers,
   LibraryBig,
   ListChecks,
   Plug,
   Radar,
-  Rocket,
   Settings as SettingsIcon,
-  Scale,
-  Trophy,
   Wallet,
 } from "lucide-react";
 
@@ -34,74 +29,34 @@ import { useMarketOverview } from "@/hooks/useMarket";
 
 type Item = { to: string; label: string; icon: typeof Gauge; desc?: string };
 
+// Exactly 7 nav entries: Market Breadth (hover panel), Trading Ideas, Paper
+// Trading, Charting, Dashboard, then the Backtest and System menus. Every
+// other route is still registered in App.tsx — just no longer in the nav.
 const PRIMARY: Item[] = [
-  { to: "/", label: "Trade Ideas", icon: Radar },
-  { to: "/dashboard", label: "Dashboard", icon: Gauge },
+  { to: "/", label: "Trading Ideas", icon: Radar },
+  { to: "/paper", label: "Paper Trading", icon: Wallet },
   { to: "/charting", label: "Charting", icon: CandlestickChart },
+  { to: "/dashboard", label: "Dashboard", icon: Gauge },
 ];
 
 const MENUS: { label: string; items: Item[] }[] = [
   {
-    label: "Research",
+    label: "System",
+    items: [
+      { to: "/reports", label: "Reports", icon: FileText, desc: "Strategy & account reports" },
+      { to: "/audit-logs", label: "Audit Logs", icon: FileClock, desc: "Every state change, replayable" },
+      { to: "/broker", label: "Broker", icon: Plug, desc: "Zerodha session & connection" },
+      { to: "/settings", label: "Settings", icon: SettingsIcon, desc: "Platform preferences" },
+      { to: "/logbook", label: "Scanner Log Book", icon: BookOpen, desc: "Idea outcomes & hit-rate" },
+      { to: "/alerts", label: "Alerts", icon: Bell, desc: "Fired scanner & risk alerts" },
+    ],
+  },
+  {
+    label: "Backtest",
     items: [
       { to: "/backtests", label: "Backtest", icon: FlaskConical, desc: "Run & analyse strategies" },
       { to: "/strategy-library", label: "Strategy Library", icon: LibraryBig, desc: "Research-backed templates" },
-      { to: "/leaderboard", label: "Leaderboard", icon: Trophy, desc: "Strategy ranking — backtest & paper" },
       { to: "/strategies", label: "My Strategies", icon: ListChecks, desc: "Your saved strategies" },
-      { to: "/options-hni", label: "NIFTY Monthly HNI", icon: Layers, desc: "1:3:2 CALL ratio spread" },
-      { to: "/analytics", label: "Analytics", icon: BarChart3, desc: "Aggregate performance" },
-    ],
-  },
-  {
-    label: "Arbitrage Lab",
-    items: [
-      { to: "/arbitrage", label: "Strategy Library", icon: Scale, desc: "Honesty-classified arb strategies" },
-      { to: "/arbitrage/pair-discovery", label: "Pair Discovery", icon: Radar, desc: "Cointegrated tradeable pairs" },
-      { to: "/arbitrage/backtest", label: "Backtesting", icon: FlaskConical, desc: "Dedicated multi-leg engine" },
-      { to: "/arbitrage/scanner", label: "Opportunity Scanner", icon: Activity, desc: "Live net-edge screening" },
-      { to: "/arbitrage/paper", label: "Paper Trading", icon: Rocket, desc: "Multi-leg paper execution" },
-      { to: "/arbitrage/live", label: "Live Monitor", icon: Activity, desc: "Open structures & hedge state" },
-      { to: "/arbitrage/portfolio", label: "Portfolio", icon: Wallet, desc: "Arb runs — separate from leaderboard" },
-      { to: "/arbitrage/analytics", label: "Analytics", icon: BarChart3, desc: "Backtest vs paper, edge capture" },
-    ],
-  },
-  {
-    label: "Adaptive Options",
-    items: [
-      { to: "/adaptive-options", label: "Dashboard", icon: Gauge, desc: "Market + positioning at a glance" },
-      { to: "/adaptive-options/intelligence", label: "Market Intelligence", icon: Activity, desc: "Regime · PCR · OI · IV · expected move" },
-      { to: "/adaptive-options/risk-greeks", label: "Risk & Greeks", icon: Scale, desc: "Per-strike & ATM greeks + warnings" },
-      { to: "/adaptive-options/strategy-engine", label: "Strategy Engine", icon: ListChecks, desc: "Adaptive selection" },
-      { to: "/adaptive-options/strategy-builder", label: "Strategy Builder", icon: Layers, desc: "Strike selection" },
-      { to: "/adaptive-options/backtesting", label: "Backtesting", icon: FlaskConical, desc: "Bhavcopy + synthetic" },
-      { to: "/adaptive-options/validation", label: "Validation", icon: Radar, desc: "Walk-forward / MC" },
-      { to: "/adaptive-options/paper-trading", label: "Paper Trading", icon: Rocket, desc: "Live decision engine" },
-      { to: "/adaptive-options/comparison", label: "Strategy Comparison", icon: BarChart3, desc: "Why one over another" },
-      { to: "/adaptive-options/decision-log", label: "Decision Log", icon: FileClock, desc: "Every decision, replayable" },
-      { to: "/adaptive-options/settings", label: "Settings", icon: SettingsIcon, desc: "Presets & overridable parameters" },
-    ],
-  },
-  {
-    label: "Trading",
-    items: [
-      { to: "/paper", label: "Paper Trading", icon: Wallet, desc: "Demo account — buy/sell equity & F&O, live P&L" },
-      { to: "/option-chain", label: "Option Chain", icon: Layers, desc: "OI, IV, PCR, max pain" },
-      { to: "/option-strategy", label: "Strategy Builder", icon: FlaskConical, desc: "Multi-leg payoff — bull/bear/neutral" },
-      { to: "/deployments", label: "Live Trading", icon: Rocket, desc: "Deploy paper / live" },
-      { to: "/monitoring", label: "Monitoring", icon: Activity, desc: "Running deployments" },
-      { to: "/positions", label: "Positions", icon: Wallet },
-      { to: "/orders", label: "Orders", icon: CandlestickChart },
-      { to: "/alerts", label: "Alerts", icon: Bell },
-    ],
-  },
-  {
-    label: "System",
-    items: [
-      { to: "/logbook", label: "Scanner Log Book", icon: BookOpen, desc: "Recommendation outcomes & hit-rate" },
-      { to: "/reports", label: "Reports", icon: FileText },
-      { to: "/audit-logs", label: "Audit Logs", icon: FileClock },
-      { to: "/broker", label: "Broker", icon: Plug },
-      { to: "/settings", label: "Settings", icon: SettingsIcon },
     ],
   },
 ];
@@ -131,17 +86,24 @@ function NavBreadthMenu({
 
   return (
     <div className="relative" onMouseEnter={onOpen} onMouseLeave={onClose}>
-      <button
-        type="button"
-        onClick={() => (open ? onClose() : onOpen())}
-        className={cn(
-          "flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors",
-          open ? "bg-elevated text-fg" : "text-fg-muted hover:bg-elevated hover:text-fg",
-        )}
+      <NavLink
+        to="/breadth"
+        onClick={onClose}
+        className={({ isActive }) =>
+          cn(
+            "flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors",
+            isActive
+              ? "bg-accent-soft text-accent"
+              : open
+                ? "bg-elevated text-fg"
+                : "text-fg-muted hover:bg-elevated hover:text-fg",
+          )
+        }
       >
-        Breadth
+        <Activity className="h-4 w-4" />
+        Market Breadth
         <ChevronDown className="h-3.5 w-3.5" />
-      </button>
+      </NavLink>
       {open && (
         <div
           className="animate-menu absolute left-0 top-full z-50 w-[30rem] rounded-lg border border-line-strong bg-surface p-3 shadow-xl"
@@ -247,17 +209,17 @@ export function AppLayout() {
           </button>
 
           <nav className="flex items-center gap-0.5" onMouseLeave={closeSoon}>
+            <NavBreadthMenu
+              open={openMenu === "__breadth"}
+              onOpen={() => openNow("__breadth")}
+              onClose={closeSoon}
+            />
             {PRIMARY.map(({ to, label, icon: Icon }) => (
               <NavLink key={to} to={to} end={to === "/"} className={linkCls}>
                 <Icon className="h-4 w-4" />
                 {label}
               </NavLink>
             ))}
-            <NavBreadthMenu
-              open={openMenu === "__breadth"}
-              onOpen={() => openNow("__breadth")}
-              onClose={closeSoon}
-            />
             {MENUS.map((menu) => (
               <div
                 key={menu.label}

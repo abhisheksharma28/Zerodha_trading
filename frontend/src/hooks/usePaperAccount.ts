@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { paperAccountApi, type PlaceOrderBody } from "@/api/paperAccount";
+import { paperAccountApi, type AlgoConfig, type PlaceOrderBody } from "@/api/paperAccount";
 
 const KEY = ["paper-account"];
 
@@ -83,6 +83,22 @@ export function useResetPaper() {
   const invalidate = useInvalidateAll();
   return useMutation({
     mutationFn: (opening?: number) => paperAccountApi.reset(opening),
+    onSuccess: invalidate,
+  });
+}
+
+export function usePaperAlgo(refetchMs = 5000) {
+  return useQuery({
+    queryKey: [...KEY, "algo"],
+    queryFn: paperAccountApi.algo,
+    refetchInterval: refetchMs,
+  });
+}
+
+export function useSetPaperAlgo() {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: (patch: Partial<AlgoConfig>) => paperAccountApi.setAlgo(patch),
     onSuccess: invalidate,
   });
 }

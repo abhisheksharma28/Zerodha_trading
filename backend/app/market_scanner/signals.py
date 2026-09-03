@@ -16,6 +16,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.market_scanner.candles import CandleReport
+from app.market_scanner.context import NewsSignal
 from app.market_scanner.features import Features
 from app.market_scanner.fundamentals import FundamentalView
 from app.market_scanner.structure import StructureReport, Zone
@@ -83,6 +85,12 @@ class SignalInput:
     intraday_structure: StructureReport | None = None
     fundamentals: FundamentalView | None = None
     tick_size: float = 0.05
+    # extra brain inputs (all optional; the engine degrades without them)
+    daily_candles: CandleReport | None = None
+    intraday_candles: CandleReport | None = None
+    sector_nudge: tuple[float, str] | None = None   # (-1..1, reason)
+    calendar_nudge: tuple[float, str] | None = None
+    news: NewsSignal | None = None
 
 
 # --------------------------------------------------------------------------
@@ -227,6 +235,44 @@ def _fundamental_factors(fv: FundamentalView | None, horizon: str) -> list[Facto
     return out
 
 
+_CANDLE_WEIGHT = {
+    "morning_star": 11, "evening_star": 11, "bullish_engulfing": 10, "bearish_engulfing": 10,
+    "hammer": 9, "hanging_man": 9, "shooting_star": 9, "bullish_piercing": 8, "bearish_piercing": 8,
+    "bullish_harami": 6, "bearish_harami": 6, "bullish_doji": 6, "bearish_doji": 6,
+}
+
+
+def _candle_factors(daily: CandleReport | None, intraday: CandleReport | None,
+                    tf_pref: str) -> list[Factor]:
+    """A confirmed reversal candlestick pattern, weighted by shape confidence
+    and which timeframe it printed on."""
+    out: list[Factor] = []
+    for rep, tf, scale in ((intraday, "15m", 0.8), (daily, "daily", 1.0)):
+        if rep is None:
+            continue
+        for p in rep.patterns[:2]:
+            base = _CANDLE_WEIGHT.get(p.name, 5)
+            w = base * p.strength * scale * (1.15 if tf == tf_pref else 1.0)
+            sign = 1.0 if p.direction == "BULLISH" else -1.0
+            out.append(Factor("candlestick", f"{tf} {p.label} at the swing", round(sign * w, 1),
+                              "candlestick"))
+    return out
+
+
+def _context_factors(inp: SignalInput, side_sign: float) -> list[Factor]:
+    out: list[Factor] = []
+    if inp.sector_nudge and abs(inp.sector_nudge[0]) > 0.1:
+        out.append(Factor("sector", inp.sector_nudge[1], round(inp.sector_nudge[0] * 6, 1), "context"))
+    if inp.calendar_nudge and abs(inp.calendar_nudge[0]) > 0.1 and inp.calendar_nudge[1]:
+        # calendar bias is long-favouring only
+        w = inp.calendar_nudge[0] * 4
+        out.append(Factor("calendar", inp.calendar_nudge[1], round(w, 1), "context"))
+    if inp.news and abs(inp.news.score) >= 0.3:
+        out.append(Factor("news", f"recent headlines lean {'positive' if inp.news.score > 0 else 'negative'}"
+                          f" — {inp.news.note}", round(inp.news.score * 7, 1), "news"))
+    return out
+
+
 # --------------------------------------------------------------------------
 # assembly
 # --------------------------------------------------------------------------
@@ -317,6 +363,7 @@ def _entry_stop_targets(
 
 
 _SETUP_LABEL = {
+    "candlestick": "Candlestick reversal",
     "choch": "Change-of-character reversal",
     "liquidity_sweep": "Liquidity sweep reversal",
     "golden_cross": "Golden-cross trend",
@@ -338,7 +385,7 @@ _SETUP_PRIORITY = list(_SETUP_LABEL.keys())
 
 _REVERSAL_SETUPS = {
     "Change-of-character reversal", "Liquidity sweep reversal",
-    "Oversold bounce", "Overbought fade",
+    "Oversold bounce", "Overbought fade", "Candlestick reversal",
 }
 # strict quality weights (sum ~= 1.0)
 _QW = {
@@ -474,7 +521,11 @@ def evaluate(inp: SignalInput, cfg: SignalConfig | None = None) -> Setup | None:
     struct_i_w = sum(f.weight for f in struct_i)
     location = _location_factors(inp.intraday, d)
 
-    provisional = trend + momentum + struct_d + struct_i + location
+    horizon0 = _pick_horizon(d, inp.intraday, inp.asset_class, trend_w, struct_i_w)
+    candle = _candle_factors(inp.daily_candles, inp.intraday_candles,
+                             "15m" if horizon0 == "INTRADAY" else "daily")
+
+    provisional = trend + momentum + struct_d + struct_i + location + candle
     provisional_w = sum(f.weight for f in provisional)
     if abs(provisional_w) < 1:
         return None
@@ -484,8 +535,9 @@ def evaluate(inp: SignalInput, cfg: SignalConfig | None = None) -> Setup | None:
     horizon = _pick_horizon(d, inp.intraday, inp.asset_class, trend_w, struct_i_w)
     volume = _volume_factors(inp.intraday, d, side_sign)
     fundamental = _fundamental_factors(inp.fundamentals, horizon)
+    context = _context_factors(inp, side_sign)
 
-    factors = provisional + volume + fundamental
+    factors = provisional + volume + fundamental + context
     bias_score = max(-100.0, min(100.0, sum(f.weight for f in factors)))
     if abs(bias_score) < cfg.min_bias:
         return None

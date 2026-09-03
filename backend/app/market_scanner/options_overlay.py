@@ -122,6 +122,7 @@ def build(db: Session, settings: Settings, inp: OverlayInput) -> dict[str, Any] 
         pop = norm_cdf(z) if is_call else norm_cdf(-z)
 
     lot = long_row.get("lot_size") or short_row.get("lot_size") or 0
+    pulse = chain_pulse(db, settings, inp.underlying, inp.spot, expiry, dte, inp.atr_daily)
     return {
         "structure": "bull_call_spread" if is_call else "bear_put_spread",
         "underlying": inp.underlying,
@@ -143,5 +144,98 @@ def build(db: Session, settings: Settings, inp: OverlayInput) -> dict[str, Any] 
         "rr": round(max_profit / net_debit, 2) if net_debit > 0 else None,
         "pop": round(pop, 4) if pop is not None else None,
         "iv": round(iv, 4) if iv else None,
+        "chain_pulse": pulse,
         "note": "Real Kite option quotes. Defined risk. Not advice.",
+    }
+
+
+def chain_pulse(
+    db: Session, settings: Settings, underlying: str, spot: float,
+    expiry: str, dte: int, atr_daily: float | None,
+) -> dict[str, Any] | None:
+    """A quick read of the near-expiry option chain around the money:
+    open-interest PCR, a crude max-pain strike, ATM implied vol and the
+    1-expiry expected move. One extra quote call; greeks-flavoured context
+    for the F&O idea, not a trade trigger."""
+    try:
+        client = broker_service.build_authenticated_client(db, settings)
+    except Exception:  # noqa: BLE001
+        return None
+    strikes = instrument_service.option_strikes(db, underlying, expiry)
+    if not strikes:
+        return None
+    ce = sorted((s for s in strikes if s["option_type"] == "CE" and s.get("strike")),
+                key=lambda s: s["strike"])
+    pe = {s["strike"]: s for s in strikes if s["option_type"] == "PE" and s.get("strike")}
+    if len(ce) < 5 or not pe:
+        return None
+    atm = min((s["strike"] for s in ce), key=lambda k: abs(k - spot))
+    band = [s for s in ce if abs(s["strike"] - atm) <= 6 * max(
+        (ce[i + 1]["strike"] - ce[i]["strike"] for i in range(len(ce) - 1)), default=1)]
+    refs: list[str] = []
+    for s in band:
+        refs.append(f"NFO:{s['tradingsymbol']}")
+        if s["strike"] in pe:
+            refs.append(f"NFO:{pe[s['strike']]['tradingsymbol']}")
+    if not refs:
+        return None
+    try:
+        q = client.get_quote(refs)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("scanner_chain_pulse_quote_failed", underlying=underlying, error=str(exc))
+        return None
+
+    def _row(ref: str) -> dict[str, Any]:
+        return q.get(ref) or q.get(ref.replace("NFO:", "")) or {}
+
+    call_oi = put_oi = 0.0
+    pain: dict[float, float] = {}
+    atm_iv_vals: list[float] = []
+    t = max(dte, 1) / 365.0
+    for s in band:
+        k = s["strike"]
+        cr = _row(f"NFO:{s['tradingsymbol']}")
+        pr = _row(f"NFO:{pe[k]['tradingsymbol']}") if k in pe else {}
+        c_oi = float(cr.get("oi") or 0.0)
+        p_oi = float(pr.get("oi") or 0.0)
+        call_oi += c_oi
+        put_oi += p_oi
+        # cash paid out by writers if expiry settled at k
+        pain[k] = pain.get(k, 0.0) + sum(
+            max(0.0, exp_k - k) * c_oi + max(0.0, k - exp_k) * p_oi
+            for exp_k in (kk["strike"] for kk in band)
+        )
+        if abs(k - atm) < 1e-6:
+            for px_row, cp in ((cr, True), (pr, False)):
+                px = float(px_row.get("last_price") or 0.0)
+                if px > 0:
+                    v = implied_vol(px, spot, k, t, is_call=cp)
+                    if v and v > 0:
+                        atm_iv_vals.append(v)
+    if call_oi <= 0 and put_oi <= 0:
+        return None
+    oi_pcr = round(put_oi / call_oi, 2) if call_oi > 0 else None
+    max_pain = min(pain, key=lambda k: pain[k]) if pain else None
+    atm_iv = round(sum(atm_iv_vals) / len(atm_iv_vals), 4) if atm_iv_vals else None
+    em = _expected_move(spot, atr_daily, dte)
+
+    nudge = 0.0
+    read = "balanced positioning"
+    if oi_pcr is not None:
+        if oi_pcr >= 1.3:
+            nudge, read = 0.5, f"OI PCR {oi_pcr} - put writers supporting (contrarian bullish)"
+        elif oi_pcr <= 0.7:
+            nudge, read = -0.5, f"OI PCR {oi_pcr} - call writers capping upside"
+        else:
+            read = f"OI PCR {oi_pcr} - neutral"
+    return {
+        "oi_pcr": oi_pcr,
+        "max_pain": max_pain,
+        "atm_iv": atm_iv,
+        "expected_move": round(em, 2),
+        "expected_move_pct": round(100.0 * em / spot, 2) if spot else None,
+        "spot_vs_max_pain_pct": round(100.0 * (spot - max_pain) / spot, 2)
+        if max_pain and spot else None,
+        "nudge": nudge,
+        "read": read,
     }

@@ -90,6 +90,9 @@ class ScanRecommendation(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     factors: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)  # [{name, detail, weight, side}]
     # the weighted sub-scores + penalties + caps behind ``confidence``
     score_detail: Mapped[dict | None] = mapped_column(JSONB)
+    # surrounding context: candlestick patterns, sector strength, calendar
+    # bias, news-headline heuristic, options greeks/PCR (for F&O ideas)
+    context: Mapped[dict | None] = mapped_column(JSONB)
 
     # optional attached defined-risk option structure
     option_overlay: Mapped[dict | None] = mapped_column(JSONB)

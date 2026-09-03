@@ -177,6 +177,29 @@ export interface CreateStrategyBody {
   flatten_on_stop?: boolean;
 }
 
+export interface AlgoConfig {
+  enabled: boolean;
+  min_grade: "A" | "B" | "C";
+  pct_per_trade: number;
+  max_open_auto: number;
+  daily_loss_stop_pct: number;
+  cutoff_ist: string;
+  allow_delivery: boolean;
+  allow_intraday: boolean;
+  allow_options: boolean;
+  equity_product: "CNC" | "MIS";
+  halted_reason: string | null;
+  halted_day: string | null;
+}
+
+export interface AlgoStatus {
+  config: AlgoConfig;
+  open_auto_positions: number;
+  max_open_auto: number;
+  today_realized_pnl: number;
+  halted: boolean;
+}
+
 export interface PlaceOrderBody {
   exchange: string;
   tradingsymbol: string;
@@ -212,6 +235,10 @@ export const paperAccountApi = {
     apiClient.post<PaperSummary>("/paper-account/funds", { amount }).then((r) => r.data),
   reset: (opening_balance?: number) =>
     apiClient.post<PaperSummary>("/paper-account/reset", { opening_balance }).then((r) => r.data),
+
+  algo: () => apiClient.get<AlgoStatus>("/paper-account/algo").then((r) => r.data),
+  setAlgo: (patch: Partial<AlgoConfig>) =>
+    apiClient.put<AlgoStatus>("/paper-account/algo", patch).then((r) => r.data),
 
   strategyRuns: () =>
     apiClient.get<PaperStrategyRun[]>("/paper-account/strategies").then((r) => r.data),

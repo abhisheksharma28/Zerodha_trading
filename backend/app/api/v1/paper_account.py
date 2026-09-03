@@ -13,6 +13,8 @@
   POST /paper-account/positions/{id}/exit    square off a position at market
   POST /paper-account/funds                  add / adjust virtual cash
   POST /paper-account/reset                  wipe and reset the demo account
+  GET  /paper-account/algo                   auto-trade config + live status
+  PUT  /paper-account/algo                   edit the auto-trade rules
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.core.deps import get_db
-from app.paper_account import engine, service, strategies
+from app.paper_account import algo, engine, service, strategies
 from app.paper_account.engine import OrderRequest
 
 router = APIRouter(prefix="/paper-account", tags=["paper-account"])
@@ -129,6 +131,24 @@ def post_reset(
 ) -> dict[str, Any]:
     engine.reset_account(db, opening_balance=opening_balance)
     return service.summary(db, settings)
+
+
+# --- auto-trade bridge (algo toggle) ----------------------------------
+
+@router.get("/algo")
+def get_algo(
+    db: Session = Depends(get_db), settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    return algo.status(db, settings)
+
+
+@router.put("/algo")
+def put_algo(
+    payload: dict[str, Any] = Body(...),
+    db: Session = Depends(get_db), settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    algo.set_config(db, payload)
+    return algo.status(db, settings)
 
 
 # --- strategies deployed inside the paper account -----------------------

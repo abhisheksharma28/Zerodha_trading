@@ -64,6 +64,7 @@ def rec_dict(r: ScanRecommendation) -> dict[str, Any]:
         "grade": (r.score_detail or {}).get("grade")
         or ("A" if (r.confidence or 0) >= 74 else "B" if (r.confidence or 0) >= 58 else "C"),
         "score_detail": r.score_detail,
+        "context": r.context,
         "bias_score": _f(r.bias_score),
         "pop": _f(r.pop),
         "factors": r.factors or [],

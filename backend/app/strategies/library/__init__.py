@@ -19,6 +19,7 @@ from app.strategies.library.chinese_transformer import ChineseTransformerStrateg
 from app.strategies.library.donchian_breakout import DonchianBreakoutStrategy
 from app.strategies.library.index_futures_arbitrage import IndexFuturesArbitrageStrategy
 from app.strategies.library.latency_arbitrage import LatencyArbitrageStrategy
+from app.strategies.library.macd_grid import MacdGridStrategy
 from app.strategies.library.mean_reversion import MeanReversionStrategy
 from app.strategies.library.momentum import CrossSectionalMomentumStrategy
 from app.strategies.library.multi_factor import MultiFactorStrategy
@@ -38,6 +39,7 @@ TEMPLATES: list[type[TemplateStrategy]] = [
     MeanReversionStrategy,
     MultiFactorStrategy,
     WeaponCandleStrategy,
+    MacdGridStrategy,
     VolatilityRegimeStrategy,
     RegimeAdaptiveStrategy,
     OpeningRangeBreakoutStrategy,
@@ -68,6 +70,7 @@ __all__ = [
     "MeanReversionStrategy",
     "MultiFactorStrategy",
     "WeaponCandleStrategy",
+    "MacdGridStrategy",
     "VolatilityRegimeStrategy",
     "RegimeAdaptiveStrategy",
     "OpeningRangeBreakoutStrategy",

@@ -155,6 +155,30 @@ class PaperHolding(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
 
 
+class PaperAlgoConfig(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """One row: the auto-trade ('Algo') settings for the paper account. When
+    ``enabled``, LIVE Market-Scanner recommendations that pass the filters
+    are auto-placed into this account and managed to the idea's stop/target."""
+
+    __tablename__ = "paper_algo_config"
+
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("paper_accounts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    min_grade: Mapped[str] = mapped_column(String(1), nullable=False, default="B")   # A | B | C
+    pct_per_trade: Mapped[float] = mapped_column(Numeric(6, 3), nullable=False, default=2.0)
+    max_open_auto: Mapped[int] = mapped_column(Integer, nullable=False, default=8)
+    daily_loss_stop_pct: Mapped[float] = mapped_column(Numeric(6, 3), nullable=False, default=5.0)
+    cutoff_ist: Mapped[str] = mapped_column(String(5), nullable=False, default="14:45")
+    allow_delivery: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    allow_intraday: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    allow_options: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    equity_product: Mapped[str] = mapped_column(String(4), nullable=False, default="MIS")  # CNC | MIS
+    halted_reason: Mapped[str | None] = mapped_column(String(200))  # set when the daily loss stop trips
+    halted_day: Mapped[str | None] = mapped_column(String(10))
+
+
 class PaperStrategyRun(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     """A strategy from the library, deployed to trade *inside* the paper
     account. Its fills flow through the same engine as manual orders and
