@@ -33,6 +33,7 @@ const AdaptivePaperTradingPage = lazy(() => import("@/pages/AdaptiveOptionsPhase
 const AdaptiveDecisionLogPage = lazy(() => import("@/pages/AdaptiveOptionsPhases").then((m) => ({ default: m.AdaptiveDecisionLogPage })));
 const OptionsHniPage = lazy(() => import("@/pages/OptionsHniPage"));
 const BacktestsPage = lazy(() => import("@/pages/BacktestsPage"));
+const StrategyEditorPage = lazy(() => import("@/pages/StrategyEditorPage"));
 const BacktestDetailPage = lazy(() => import("@/pages/BacktestDetailPage"));
 const DeploymentsPage = lazy(() => import("@/pages/DeploymentsPage"));
 const DeploymentDetailPage = lazy(() => import("@/pages/DeploymentDetailPage"));
@@ -88,6 +89,7 @@ export default function App() {
         <Route path="strategies/:strategyId" element={<StrategyDetailPage />} />
         <Route path="backtests" element={<BacktestsPage />} />
         <Route path="backtests/:backtestId" element={<BacktestDetailPage />} />
+        <Route path="strategy-editor" element={<StrategyEditorPage />} />
         <Route path="deployments" element={<DeploymentsPage />} />
         <Route path="deployments/:deploymentId" element={<DeploymentDetailPage />} />
         <Route path="monitoring" element={<MonitoringPage />} />

@@ -6,6 +6,7 @@ import {
   BookOpen,
   CandlestickChart,
   ChevronDown,
+  Code2,
   FileClock,
   FileText,
   FlaskConical,
@@ -54,7 +55,8 @@ const MENUS: { label: string; items: Item[] }[] = [
   {
     label: "Backtest",
     items: [
-      { to: "/backtests", label: "Backtest", icon: FlaskConical, desc: "Run & analyse strategies" },
+      { to: "/backtests", label: "Backtest", icon: FlaskConical, desc: "Run & analyse strategies + the catalog" },
+      { to: "/strategy-editor", label: "Python Editor", icon: Code2, desc: "Code a strategy, compile & backtest it" },
       { to: "/strategy-library", label: "Strategy Library", icon: LibraryBig, desc: "Research-backed templates" },
       { to: "/strategies", label: "My Strategies", icon: ListChecks, desc: "Your saved strategies" },
     ],

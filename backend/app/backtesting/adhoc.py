@@ -34,7 +34,7 @@ from app.market_data.cache import get_candles
 from app.market_data.instruments import resolve_instrument_token
 from app.services import broker_service
 from app.strategies.library import get_template
-from app.strategies.library.base import ParamError
+from app.strategies.library.base import ParamError, TemplateStrategy
 
 _MAX_SYMBOLS = 30
 _DEFAULT_DAYS = {"1m": 20, "3m": 40, "5m": 120, "15m": 250, "30m": 400, "1h": 500, "1d": 900}
@@ -206,11 +206,17 @@ def run_adhoc(
     overrides: dict[str, Any] | None = None,
     max_gross_exposure: float = 4.0,
     max_symbols: int = _MAX_SYMBOLS,
+    template_cls: type[TemplateStrategy] | None = None,
 ) -> AdhocReport:
-    try:
-        template = get_template(slug)
-    except KeyError as exc:
-        raise ValidationError(str(exc)) from exc
+    """``slug`` names a library template; pass ``template_cls`` to run an
+    arbitrary ``TemplateStrategy`` subclass instead (the Python editor path)."""
+    if template_cls is not None:
+        template = template_cls
+    else:
+        try:
+            template = get_template(slug)
+        except KeyError as exc:
+            raise ValidationError(str(exc)) from exc
 
     try:
         tf = resolve(timeframe)

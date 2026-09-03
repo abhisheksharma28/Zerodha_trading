@@ -20,6 +20,7 @@ from app.api.v1 import (
     paper_account,
     stocks,
     strategies,
+    strategy_editor,
     strategy_library,
 )
 
@@ -29,6 +30,7 @@ api_router.include_router(adaptive_options.router)
 api_router.include_router(arbitrage.router)
 api_router.include_router(chinese_transformer.router)
 api_router.include_router(strategies.router)
+api_router.include_router(strategy_editor.router)
 api_router.include_router(strategy_library.router)
 api_router.include_router(options_strategies.router)
 api_router.include_router(backtests.router)
