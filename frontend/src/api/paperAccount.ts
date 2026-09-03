@@ -131,6 +131,52 @@ export interface PaperInstrument {
   prev_close: number | null;
 }
 
+export interface StrategyTemplate {
+  slug: string;
+  name: string;
+  category: string;
+  min_instruments: number;
+  max_instruments: number | null;
+  supported_timeframes: string[];
+  params: Record<string, { type: string; default: unknown; description: string; group?: string; choices?: string[]; min?: number; max?: number }>;
+  presets: Record<string, Record<string, unknown>>;
+  time_horizon: string | null;
+  description: string | null;
+  warning: string | null;
+}
+
+export interface PaperStrategyRun {
+  id: string;
+  slug: string;
+  name: string;
+  status: "ACTIVE" | "PAUSED" | "STOPPED";
+  instruments: string[];
+  timeframe: string;
+  product: Product;
+  params: Record<string, unknown>;
+  flatten_on_stop: boolean;
+  started_at: string | null;
+  last_tick_at: string | null;
+  signals: number;
+  orders_placed: number;
+  error: string | null;
+  trades: number;
+  realized_pnl: number;
+  charges: number;
+  turnover: number;
+  open_exposure: Record<string, number>;
+}
+
+export interface CreateStrategyBody {
+  slug: string;
+  name?: string;
+  instruments: string[];
+  timeframe: string;
+  product: Product;
+  params?: Record<string, unknown>;
+  flatten_on_stop?: boolean;
+}
+
 export interface PlaceOrderBody {
   exchange: string;
   tradingsymbol: string;
@@ -166,4 +212,14 @@ export const paperAccountApi = {
     apiClient.post<PaperSummary>("/paper-account/funds", { amount }).then((r) => r.data),
   reset: (opening_balance?: number) =>
     apiClient.post<PaperSummary>("/paper-account/reset", { opening_balance }).then((r) => r.data),
+
+  strategyRuns: () =>
+    apiClient.get<PaperStrategyRun[]>("/paper-account/strategies").then((r) => r.data),
+  strategyTemplates: () =>
+    apiClient.get<StrategyTemplate[]>("/paper-account/strategies/templates").then((r) => r.data),
+  createStrategy: (body: CreateStrategyBody) =>
+    apiClient.post<PaperStrategyRun>("/paper-account/strategies", body).then((r) => r.data),
+  setStrategyStatus: (id: string, status: string) =>
+    apiClient.patch<PaperStrategyRun>(`/paper-account/strategies/${id}`, { status }).then((r) => r.data),
+  deleteStrategy: (id: string) => apiClient.delete(`/paper-account/strategies/${id}`).then(() => undefined),
 };

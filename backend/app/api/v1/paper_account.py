@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.core.deps import get_db
-from app.paper_account import engine, service
+from app.paper_account import engine, service, strategies
 from app.paper_account.engine import OrderRequest
 
 router = APIRouter(prefix="/paper-account", tags=["paper-account"])
@@ -129,3 +129,48 @@ def post_reset(
 ) -> dict[str, Any]:
     engine.reset_account(db, opening_balance=opening_balance)
     return service.summary(db, settings)
+
+
+# --- strategies deployed inside the paper account -----------------------
+
+@router.get("/strategies")
+def get_strategy_runs(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    return service.strategy_runs(db)
+
+
+@router.get("/strategies/templates")
+def get_strategy_templates() -> list[dict[str, Any]]:
+    return strategies.templates()
+
+
+@router.post("/strategies", status_code=201)
+def post_strategy_run(
+    slug: str = Body(..., embed=True),
+    name: str = Body("", embed=True),
+    instruments: list[str] = Body(..., embed=True),
+    timeframe: str = Body("1d", embed=True),
+    product: str = Body("CNC", embed=True),
+    params: dict[str, Any] | None = Body(None, embed=True),
+    flatten_on_stop: bool = Body(True, embed=True),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    run = strategies.create_run(
+        db, slug=slug, name=name, instruments=instruments, timeframe=timeframe,
+        product=product, params=params, flatten_on_stop=flatten_on_stop,
+    )
+    return next((r for r in service.strategy_runs(db) if r["id"] == str(run.id)), {"id": str(run.id)})
+
+
+@router.patch("/strategies/{run_id}")
+def patch_strategy_run(
+    run_id: str,
+    status: str = Body(..., embed=True),
+    db: Session = Depends(get_db), settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    strategies.set_status(db, settings, run_id, status)
+    return next((r for r in service.strategy_runs(db) if r["id"] == run_id), {"id": run_id})
+
+
+@router.delete("/strategies/{run_id}", status_code=204)
+def delete_strategy_run(run_id: str, db: Session = Depends(get_db)) -> None:
+    strategies.delete_run(db, run_id)

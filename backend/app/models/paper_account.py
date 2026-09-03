@@ -61,7 +61,7 @@ class PaperOrder(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     filled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     is_squareoff: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    tag: Mapped[str | None] = mapped_column(String(40))
+    tag: Mapped[str | None] = mapped_column(String(64))  # e.g. "strat:<uuid>", "exit", "mis-squareoff"
 
     __table_args__ = (Index("ix_paper_orders_acct_status", "account_id", "status"),)
 
@@ -153,6 +153,38 @@ class PaperHolding(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __table_args__ = (
         Index("ix_paper_hold_key", "account_id", "tradingsymbol"),
     )
+
+
+class PaperStrategyRun(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """A strategy from the library, deployed to trade *inside* the paper
+    account. Its fills flow through the same engine as manual orders and
+    show up in the same positions / holdings / P&L; orders it places are
+    tagged ``strat:<id>`` for per-strategy attribution."""
+
+    __tablename__ = "paper_strategy_runs"
+
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("paper_accounts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    slug: Mapped[str] = mapped_column(String(64), nullable=False)  # template slug
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    params: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    instruments: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)  # ["NSE:INFY", ...]
+    timeframe: Mapped[str] = mapped_column(String(16), nullable=False, default="day")
+    product: Mapped[str] = mapped_column(String(4), nullable=False, default="CNC")
+
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="ACTIVE", index=True)
+    # ACTIVE | PAUSED | STOPPED
+    flatten_on_stop: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    stopped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_tick_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_bar_ts: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)  # {symbol: iso}
+    signals: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    orders_placed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error: Mapped[str | None] = mapped_column(String(500))
+
+    __table_args__ = (Index("ix_paper_strat_acct_status", "account_id", "status"),)
 
 
 class PaperLedger(Base, UUIDPrimaryKeyMixin, TimestampMixin):

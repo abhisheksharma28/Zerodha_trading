@@ -15,6 +15,7 @@ from app.models.paper_account import (
     PaperLedger,
     PaperOrder,
     PaperPosition,
+    PaperStrategyRun,
     PaperTrade,
 )
 from app.paper_account import pricing
@@ -235,6 +236,51 @@ def ledger(db: Session, *, limit: int = 300) -> list[dict[str, Any]]:
         }
         for r in rows
     ]
+
+
+def strategy_runs(db: Session) -> list[dict[str, Any]]:
+    acct = get_or_create_account(db)
+    runs = list(db.execute(
+        select(PaperStrategyRun).where(PaperStrategyRun.account_id == acct.id)
+        .order_by(PaperStrategyRun.started_at.desc())
+    ).scalars().all())
+    out: list[dict[str, Any]] = []
+    for r in runs:
+        tag = f"strat:{r.id}"
+        agg = db.execute(
+            select(
+                func.count(PaperTrade.id),
+                func.coalesce(func.sum(PaperTrade.realized_pnl), 0.0),
+                func.coalesce(func.sum(PaperTrade.charges), 0.0),
+                func.coalesce(func.sum(PaperTrade.value), 0.0),
+            )
+            .select_from(PaperTrade)
+            .join(PaperOrder, PaperOrder.id == PaperTrade.order_id)
+            .where(PaperOrder.tag == tag)
+        ).one()
+        net = db.execute(
+            select(PaperOrder.tradingsymbol, PaperOrder.side, func.sum(PaperOrder.filled_qty))
+            .where(PaperOrder.tag == tag, PaperOrder.status == "COMPLETE")
+            .group_by(PaperOrder.tradingsymbol, PaperOrder.side)
+        ).all()
+        exposure: dict[str, int] = {}
+        for sym, side, qty in net:
+            exposure[sym] = exposure.get(sym, 0) + (int(qty) if side == "BUY" else -int(qty))
+        out.append({
+            "id": str(r.id),
+            "slug": r.slug, "name": r.name, "status": r.status,
+            "instruments": r.instruments, "timeframe": r.timeframe, "product": r.product,
+            "params": r.params, "flatten_on_stop": r.flatten_on_stop,
+            "started_at": r.started_at.isoformat() if r.started_at else None,
+            "last_tick_at": r.last_tick_at.isoformat() if r.last_tick_at else None,
+            "signals": r.signals, "orders_placed": r.orders_placed, "error": r.error,
+            "trades": int(agg[0]),
+            "realized_pnl": round(float(agg[1]) - float(agg[2]), 2),
+            "charges": round(float(agg[2]), 2),
+            "turnover": round(float(agg[3]), 2),
+            "open_exposure": {k: v for k, v in exposure.items() if v != 0},
+        })
+    return out
 
 
 def instrument_for_order(db: Session, settings: Settings, exchange: str, tradingsymbol: str) -> dict[str, Any]:

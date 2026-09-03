@@ -21,6 +21,7 @@ from app.models.paper_account import (
     PaperLedger,
     PaperOrder,
     PaperPosition,
+    PaperStrategyRun,
     PaperTrade,
 )
 from app.models.strategy import Strategy, StrategyVersion
@@ -48,6 +49,7 @@ __all__ = [
     "PaperPosition",
     "PaperHolding",
     "PaperLedger",
+    "PaperStrategyRun",
     "Strategy",
     "StrategyVersion",
 ]

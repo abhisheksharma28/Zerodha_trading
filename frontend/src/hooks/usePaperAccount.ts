@@ -86,3 +86,41 @@ export function useResetPaper() {
     onSuccess: invalidate,
   });
 }
+
+export function usePaperStrategyRuns(refetchMs = 5000) {
+  return useQuery({
+    queryKey: [...KEY, "strategy-runs"],
+    queryFn: paperAccountApi.strategyRuns,
+    refetchInterval: refetchMs,
+  });
+}
+
+export function usePaperStrategyTemplates() {
+  return useQuery({
+    queryKey: [...KEY, "strategy-templates"],
+    queryFn: paperAccountApi.strategyTemplates,
+    staleTime: 10 * 60_000,
+  });
+}
+
+export function useCreatePaperStrategy() {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: paperAccountApi.createStrategy,
+    onSuccess: invalidate,
+  });
+}
+
+export function useSetPaperStrategyStatus() {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
+      paperAccountApi.setStrategyStatus(id, status),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeletePaperStrategy() {
+  const invalidate = useInvalidateAll();
+  return useMutation({ mutationFn: (id: string) => paperAccountApi.deleteStrategy(id), onSuccess: invalidate });
+}

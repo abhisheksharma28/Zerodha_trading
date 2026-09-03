@@ -121,3 +121,79 @@ def test_limit_order_rests_then_fills_on_tick(db, _fixed_prices):
     assert scheduler._fill_resting(db, s) == 1
     db.refresh(o)
     assert o.status == "COMPLETE"
+
+
+# --------------------------------------------------------------------------
+# strategies deployed inside the paper account
+# --------------------------------------------------------------------------
+
+def test_deploy_strategy_lifecycle_and_tagged_fills(db, monkeypatch, _fixed_prices):
+    from app.paper_account import strategies as strat
+    from app.paper_account.service import strategy_runs
+    from app.strategies.base import StrategyContext
+    from app.strategies.library import get_template
+
+    _mk(db, instrument_token="738561", tradingsymbol="RELIANCE", exchange="NSE")
+    db.flush()
+    s = get_settings()
+
+    # a fake template: buys 3 on the first bar, does nothing after
+    class _Fake:
+        SLUG = "fake-buy"
+        NAME = "Fake buy-once"
+        CATEGORY = "Test"
+        MIN_INSTRUMENTS = 1
+        MAX_INSTRUMENTS = 1
+        SUPPORTED_TIMEFRAMES = ("1d",)
+
+        def __init__(self, ctx: StrategyContext):
+            self.ctx = ctx
+            self._done = False
+
+        def on_start(self):
+            pass
+
+        def on_bar(self, bar):
+            # buy to a target of 3 whenever flat (real templates re-signal)
+            if self.ctx.positions.get("RELIANCE", 0) != 0:
+                return
+            from app.brokers.base import OrderRequest as BrokerOrderRequest
+            self.ctx.submit_order(BrokerOrderRequest(
+                tradingsymbol="RELIANCE", exchange="NSE", transaction_type="BUY",
+                order_type="MARKET", quantity=3, product="CNC",
+            ))
+
+        @classmethod
+        def resolve_params(cls, supplied):
+            return dict(supplied)
+
+    monkeypatch.setattr(strat, "get_by_slug", lambda slug: _Fake if slug == "fake-buy" else get_template(slug))
+    monkeypatch.setattr(strat, "_client", lambda *_a, **_k: object())
+
+    from app.strategies.base import Bar
+    bars = [Bar(timestamp=f"2026-08-{d:02d}", open=1300, high=1310, low=1290, close=1300 + d,
+                volume=1000, instrument="RELIANCE") for d in range(1, 6)]
+    monkeypatch.setattr(strat, "_bars_for", lambda *_a, **_k: bars)
+
+    run = strat.create_run(db, slug="fake-buy", name="t1", instruments=["NSE:RELIANCE"],
+                           timeframe="1d", product="CNC", params={})
+    assert run.status == "ACTIVE"
+    placed = strat.tick_run(db, s, run)
+    assert placed == 1
+
+    rows = strategy_runs(db)
+    assert rows and rows[0]["orders_placed"] == 1 and rows[0]["open_exposure"] == {"RELIANCE": 3}
+
+    # stop with flatten -> a SELL 3 is placed
+    strat.set_status(db, s, str(run.id), "STOPPED")
+    from app.paper_account.service import positions as _positions
+    assert _positions(db, s) == []  # net flat
+
+
+def test_create_run_rejects_bad_input(db, _fixed_prices):
+    from app.core.exceptions import ValidationError
+    from app.paper_account import strategies as strat
+
+    with pytest.raises(ValidationError):
+        strat.create_run(db, slug="does-not-exist", name="x", instruments=["NSE:INFY"],
+                         timeframe="1d", product="CNC", params={})

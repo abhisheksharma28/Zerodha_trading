@@ -1,8 +1,9 @@
 import { useState } from "react";
 
-import type { PaperHolding, PaperOrder, PaperPosition } from "@/api/paperAccount";
+import type { PaperHolding, PaperOrder, PaperPosition, PaperStrategyRun } from "@/api/paperAccount";
 import { DataTable, type Column } from "@/components/DataTable";
 import { OrderPad, type OrderPadInit } from "@/components/paper/OrderPad";
+import { StrategyDeploy } from "@/components/paper/StrategyDeploy";
 import { PageHeader } from "@/components/PageHeader";
 import { SectionCard } from "@/components/SectionCard";
 import { Badge } from "@/components/ui/badge";
@@ -10,19 +11,22 @@ import { Button } from "@/components/ui/button";
 import {
   useAddFunds,
   useCancelOrder,
+  useDeletePaperStrategy,
   useExitPosition,
   usePaperHoldings,
   usePaperLedger,
   usePaperOrders,
   usePaperPositions,
+  usePaperStrategyRuns,
   usePaperSummary,
   usePaperTrades,
   useResetPaper,
+  useSetPaperStrategyStatus,
 } from "@/hooks/usePaperAccount";
 import { inr, num, pctSigned } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-const TABS = ["Holdings", "Positions", "Orders", "Funds"] as const;
+const TABS = ["Holdings", "Positions", "Orders", "Strategies", "Funds"] as const;
 const pnlTone = (v: number | null | undefined) =>
   (v ?? 0) > 0 ? "text-pos" : (v ?? 0) < 0 ? "text-neg" : "text-fg-muted";
 
@@ -51,16 +55,20 @@ export default function PaperTradingPage() {
   const [pad, setPad] = useState<{ open: boolean; init: OrderPadInit }>({ open: false, init: {} });
   const openPad = (init: OrderPadInit = {}) => setPad({ open: true, init });
 
+  const [deploying, setDeploying] = useState(false);
   const { data: sm } = usePaperSummary();
   const { data: positions = [] } = usePaperPositions();
   const { data: holdings = [] } = usePaperHoldings();
   const { data: orders = [] } = usePaperOrders();
   const { data: trades = [] } = usePaperTrades();
   const { data: ledger = [] } = usePaperLedger();
+  const { data: strategyRuns = [] } = usePaperStrategyRuns();
   const exitPos = useExitPosition();
   const cancelOrder = useCancelOrder();
   const addFunds = useAddFunds();
   const reset = useResetPaper();
+  const setStratStatus = useSetPaperStrategyStatus();
+  const deleteStrat = useDeletePaperStrategy();
 
   const dayPnl = (sm?.pnl.positions_unrealized ?? 0) + (sm?.pnl.holdings_day ?? 0) + (sm?.pnl.booked ?? 0);
 
@@ -101,6 +109,52 @@ export default function PaperTradingPage() {
         <div className="flex justify-end gap-1">
           <button type="button" onClick={() => openPad({ ref: `${p.exchange}:${p.tradingsymbol}`, side: p.net_qty >= 0 ? "BUY" : "SELL", product: p.product })} className="rounded px-1.5 py-0.5 text-[11px] font-medium text-fg-muted hover:bg-elevated">Add</button>
           <button type="button" onClick={() => exitPos.mutate(p.id)} className="rounded px-1.5 py-0.5 text-[11px] font-medium text-[#ff5722] hover:bg-[#ff5722]/10">Exit</button>
+        </div>
+      ),
+    },
+  ];
+
+  const stratCols: Column<PaperStrategyRun>[] = [
+    { key: "name", header: "Strategy", cell: (r) => (<span><span className="font-medium text-fg">{r.name}</span><span className="ml-1 text-[11px] text-fg-faint">{r.slug}</span></span>), sortValue: (r) => r.name },
+    { key: "inst", header: "Instruments", cell: (r) => <span className="text-fg-muted">{r.instruments.map((i) => i.split(":")[1]).join(", ")}</span>, sortValue: (r) => r.instruments.length },
+    { key: "tf", header: "TF · Prod", cell: (r) => <span className="text-fg-muted">{r.timeframe} · {r.product}</span>, sortValue: (r) => r.timeframe },
+    { key: "trd", header: "Trades", align: "right", cell: (r) => <span className="tabular-nums">{r.trades}</span>, sortValue: (r) => r.trades },
+    { key: "exp", header: "Exposure", align: "right", cell: (r) => <span className="tabular-nums text-fg-faint">{Object.entries(r.open_exposure).map(([k, v]) => `${k} ${v > 0 ? "+" : ""}${v}`).join(", ") || "flat"}</span>, sortValue: (r) => Object.keys(r.open_exposure).length },
+    { key: "pnl", header: "Realised P&L", align: "right", cell: (r) => <span className={cn("tabular-nums font-medium", pnlTone(r.realized_pnl))}>{inr(r.realized_pnl)}</span>, sortValue: (r) => r.realized_pnl },
+    {
+      key: "status",
+      header: "Status",
+      cell: (r) => (
+        <span className="flex items-center gap-2">
+          <Badge variant={r.status === "ACTIVE" ? "success" : r.status === "PAUSED" ? "warning" : "default"} className="text-[10px]">
+            {r.status}
+          </Badge>
+          {r.error && <span className="text-[11px] text-neg" title={r.error}>error</span>}
+        </span>
+      ),
+      sortValue: (r) => r.status,
+    },
+    {
+      key: "act",
+      header: "",
+      align: "right",
+      cell: (r) => (
+        <div className="flex justify-end gap-1">
+          {r.status !== "STOPPED" && (
+            <button type="button" onClick={() => setStratStatus.mutate({ id: r.id, status: r.status === "ACTIVE" ? "PAUSED" : "ACTIVE" })} className="rounded px-1.5 py-0.5 text-[11px] font-medium text-fg-muted hover:bg-elevated">
+              {r.status === "ACTIVE" ? "Pause" : "Resume"}
+            </button>
+          )}
+          {r.status !== "STOPPED" && (
+            <button type="button" onClick={() => setStratStatus.mutate({ id: r.id, status: "STOPPED" })} className="rounded px-1.5 py-0.5 text-[11px] font-medium text-[#ff5722] hover:bg-[#ff5722]/10">
+              Stop
+            </button>
+          )}
+          {r.status === "STOPPED" && (
+            <button type="button" onClick={() => window.confirm("Remove this stopped strategy from the list?") && deleteStrat.mutate(r.id)} className="rounded px-1.5 py-0.5 text-[11px] font-medium text-fg-faint hover:bg-elevated">
+              Delete
+            </button>
+          )}
         </div>
       ),
     },
@@ -205,6 +259,7 @@ export default function PaperTradingPage() {
             {t === "Holdings" && ` (${holdings.length})`}
             {t === "Positions" && ` (${positions.length})`}
             {t === "Orders" && ` (${orders.filter((o) => o.status === "OPEN").length})`}
+            {t === "Strategies" && ` (${strategyRuns.filter((r) => r.status === "ACTIVE").length})`}
           </button>
         ))}
       </div>
@@ -225,6 +280,25 @@ export default function PaperTradingPage() {
         <SectionCard title="Order book" bodyClassName="p-0">
           <DataTable columns={orderCols} rows={orders} rowKey={(o) => o.id} searchable searchPlaceholder="Filter orders…" initialSort={{ key: "time", dir: "desc" }} empty="No orders yet." />
         </SectionCard>
+      )}
+
+      {tab === "Strategies" && (
+        <div className="flex flex-col gap-4">
+          <div className="flex justify-end">
+            <Button size="sm" onClick={() => setDeploying((v) => !v)}>
+              {deploying ? "Close" : "+ Deploy strategy"}
+            </Button>
+          </div>
+          {deploying && <StrategyDeploy onDone={() => setDeploying(false)} />}
+          <SectionCard title="Deployed strategies" bodyClassName="p-0">
+            <DataTable
+              columns={stratCols}
+              rows={strategyRuns}
+              rowKey={(r) => r.id}
+              empty="No strategies deployed. Click ‘Deploy strategy’ to run a library template in this account."
+            />
+          </SectionCard>
+        </div>
       )}
 
       {tab === "Funds" && (

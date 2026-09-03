@@ -142,6 +142,13 @@ def run_cycle(db: Session, settings: Settings) -> None:
         _eod_roll(db)
         return
     _fill_resting(db, settings)
+    try:
+        from app.paper_account import strategies
+
+        strategies.tick_all(db, settings)
+    except Exception:  # noqa: BLE001 - strategy runner must not break the loop
+        logger.exception("paper_strategy_tick_all_error")
+        db.rollback()
     if phase == "squareoff":
         _squareoff_mis(db, settings)
     # keep tokens flowing on the tick feed
