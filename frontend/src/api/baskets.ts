@@ -66,7 +66,24 @@ export interface RebalanceSnapshot {
   n_orders: number;
   turnover_pct: number;
   cash_pct: number;
+  regime?: string;
+  changes?: OrderIntent[];
   notes: string[];
+}
+
+export interface OosSegment {
+  start?: string;
+  end?: string;
+  return_pct: number | null;
+  sharpe_ratio: number | null;
+  max_drawdown_pct: number | null;
+  benchmark_return_pct?: number | null;
+}
+
+export interface RegimeSegment {
+  days: number;
+  return_pct: number | null;
+  ann_vol_pct: number | null;
 }
 
 export interface BasketBacktest {
@@ -79,6 +96,8 @@ export interface BasketBacktest {
   equity_curve: [string, number][];
   benchmark_curve: [string, number][];
   metrics: Record<string, number | null>;
+  oos?: { in_sample?: OosSegment; out_of_sample?: OosSegment };
+  regime_breakdown?: { bull_tape?: RegimeSegment; bear_tape?: RegimeSegment };
   rebalances: RebalanceSnapshot[];
   final_holdings: Record<string, number>;
   skipped: { symbol: string; reason: string }[];

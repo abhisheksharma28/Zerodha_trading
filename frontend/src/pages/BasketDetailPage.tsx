@@ -319,6 +319,41 @@ export default function BasketDetailPage() {
                 Benchmark {inr(chart.at(-1)?.benchmark ?? 0)} · start {inr(bt.capital)}
               </p>
 
+              {(bt.oos?.out_of_sample?.return_pct != null ||
+                bt.regime_breakdown?.bull_tape) && (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {bt.oos?.out_of_sample?.return_pct != null && (
+                    <div className="rounded-md border border-line/70 bg-bg/40 p-2.5">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-fg-faint">
+                        In-sample vs out-of-sample
+                      </p>
+                      <p className="mt-1 text-[11px] text-fg-muted">
+                        Trained on the first ~65% of the window, tested on the rest — a
+                        strong number here is not just an artefact of the early years.
+                      </p>
+                      <div className="mt-1.5 grid grid-cols-2 gap-2 text-xs tabular-nums">
+                        <SplitCell label="In-sample" s={bt.oos.in_sample} />
+                        <SplitCell label="Out-of-sample" s={bt.oos.out_of_sample} />
+                      </div>
+                    </div>
+                  )}
+                  {bt.regime_breakdown?.bull_tape && (
+                    <div className="rounded-md border border-line/70 bg-bg/40 p-2.5">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-fg-faint">
+                        Bull tape vs bear tape
+                      </p>
+                      <p className="mt-1 text-[11px] text-fg-muted">
+                        Return split by whether {bt.benchmark} was above or below its own
+                        200-day average that day.
+                      </p>
+                      <div className="mt-1.5 grid grid-cols-2 gap-2 text-xs tabular-nums">
+                        <RegimeCell label="Bull tape" r={bt.regime_breakdown.bull_tape} />
+                        <RegimeCell label="Bear tape" r={bt.regime_breakdown.bear_tape} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
               {bt.rebalances.length > 0 && <RebalanceTable rows={bt.rebalances} />}
               {bt.caveats.length > 0 && (
                 <ul className="list-disc space-y-0.5 pl-4 text-[11px] text-fg-faint">
@@ -392,8 +427,16 @@ function MetricsRow({ m }: { m: Record<string, number | null> }) {
     ["Benchmark", pctSigned(m.benchmark_return_pct ?? null, 1), true],
     ["vs benchmark", `${(m.excess_return_pct ?? 0) >= 0 ? "+" : ""}${num(m.excess_return_pct, 1)} pts`, true],
     ["Sharpe", num(m.sharpe_ratio, 2), false],
+    ["Sortino", num(m.sortino_ratio, 2), false],
+    ["Calmar", num(m.calmar_ratio, 2), false],
     ["Max DD", `${num(Math.abs(m.max_drawdown_pct ?? 0), 1)}%`, false],
     ["Volatility", `${num(m.volatility_pct, 1)}%`, false],
+    ["Beta", num(m.beta, 2), false],
+    ["Alpha (ann.)", `${(m.alpha_pct ?? 0) >= 0 ? "+" : ""}${num(m.alpha_pct, 1)}%`, true],
+    ["Info ratio", num(m.information_ratio, 2), false],
+    ["Monthly win", `${num(m.monthly_win_rate_pct, 0)}%`, false],
+    ["Avg hold", m.avg_holding_days == null ? "–" : `${num(m.avg_holding_days, 0)}d`, false],
+    ["Best / worst yr", `${pctSigned(m.best_year_pct ?? null, 0)} / ${pctSigned(m.worst_year_pct ?? null, 0)}`, false],
     ["Ann. turnover", `${num(m.annual_turnover_pct, 0)}%`, false],
   ];
   return (
@@ -414,6 +457,34 @@ function MetricsRow({ m }: { m: Record<string, number | null> }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function SplitCell({ label, s }: { label: string; s?: import("@/api/baskets").OosSegment }) {
+  return (
+    <div className="rounded bg-surface p-1.5">
+      <p className="text-[9px] uppercase tracking-wide text-fg-faint">{label}</p>
+      <p className={cn("font-semibold", (s?.return_pct ?? 0) < 0 ? "text-neg" : "text-pos")}>
+        {pctSigned(s?.return_pct ?? null, 1)}
+      </p>
+      <p className="text-[10px] text-fg-faint">
+        Sharpe {num(s?.sharpe_ratio, 2)} · vs bench {pctSigned(s?.benchmark_return_pct ?? null, 1)}
+      </p>
+    </div>
+  );
+}
+
+function RegimeCell({ label, r }: { label: string; r?: import("@/api/baskets").RegimeSegment }) {
+  return (
+    <div className="rounded bg-surface p-1.5">
+      <p className="text-[9px] uppercase tracking-wide text-fg-faint">
+        {label} · {r?.days ?? 0}d
+      </p>
+      <p className={cn("font-semibold", (r?.return_pct ?? 0) < 0 ? "text-neg" : "text-pos")}>
+        {pctSigned(r?.return_pct ?? null, 1)}
+      </p>
+      <p className="text-[10px] text-fg-faint">vol {num(r?.ann_vol_pct, 1)}%</p>
     </div>
   );
 }
