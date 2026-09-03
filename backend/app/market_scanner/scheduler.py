@@ -14,6 +14,7 @@ the API is started with several workers.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from datetime import datetime
 from datetime import time as dtime
 from zoneinfo import ZoneInfo
@@ -87,39 +88,55 @@ def run_tracker_cycle(db: Session, settings: Settings) -> tracker.TrackOutcome:
     return tracker.run_tracker(db, settings)
 
 
-async def _loop() -> None:
-    settings = get_settings()
-    db = SessionLocal()
-    if not _try_lock(db):
-        logger.info("market_scanner_loop_not_leader")
-        db.close()
-        return
-    logger.info("market_scanner_loop_started",
-                scan_every=settings.market_scanner_scan_interval_seconds,
-                track_every=settings.market_scanner_track_interval_seconds)
+async def _sleep_or_stop(seconds: float) -> None:
+    with contextlib.suppress(TimeoutError):
+        await asyncio.wait_for(_stop.wait(), timeout=seconds)
+
+
+async def _leader_loop(db: Session, settings: Settings) -> None:
     last_scan = 0.0
-    try:
-        while not _stop.is_set():
-            loop_now = asyncio.get_event_loop().time()
-            phase = market_phase()
-            try:
-                if phase == "open" and loop_now - last_scan >= settings.market_scanner_scan_interval_seconds:
-                    await asyncio.to_thread(run_scan_cycle, db, settings)
-                    last_scan = loop_now
-                    await _subscribe_live_tokens(db)
-                if phase in ("open", "tracking_only"):
-                    await asyncio.to_thread(run_tracker_cycle, db, settings)
-            except Exception:  # noqa: BLE001 - never let the loop die
-                logger.exception("market_scanner_cycle_error")
-                db.rollback()
-            await asyncio.wait(
-                [asyncio.create_task(_stop.wait())],
-                timeout=settings.market_scanner_track_interval_seconds,
-            )
-    finally:
-        _unlock(db)
-        db.close()
-        logger.info("market_scanner_loop_stopped")
+    while not _stop.is_set():
+        loop_now = asyncio.get_event_loop().time()
+        phase = market_phase()
+        try:
+            if phase == "open" and loop_now - last_scan >= settings.market_scanner_scan_interval_seconds:
+                await asyncio.to_thread(run_scan_cycle, db, settings)
+                last_scan = loop_now
+                await _subscribe_live_tokens(db)
+            if phase in ("open", "tracking_only"):
+                await asyncio.to_thread(run_tracker_cycle, db, settings)
+        except Exception:  # noqa: BLE001 - never let the loop die
+            logger.exception("market_scanner_cycle_error")
+            db.rollback()
+        await _sleep_or_stop(settings.market_scanner_track_interval_seconds)
+
+
+async def _loop() -> None:
+    """Outer supervisor: keep trying to become the single scan leader. If
+    another process (another API replica, a dev box on the same DB) holds
+    the advisory lock, wait and retry - so the loop self-heals when that
+    process goes away, instead of giving up for the life of the process."""
+    settings = get_settings()
+    while not _stop.is_set():
+        db = SessionLocal()
+        try:
+            if not _try_lock(db):
+                db.close()
+                await _sleep_or_stop(45.0)
+                continue
+            logger.info("market_scanner_loop_started",
+                        scan_every=settings.market_scanner_scan_interval_seconds,
+                        track_every=settings.market_scanner_track_interval_seconds)
+            await _leader_loop(db, settings)
+        except Exception:  # noqa: BLE001
+            logger.exception("market_scanner_loop_crashed")
+        finally:
+            with contextlib.suppress(Exception):
+                _unlock(db)
+            db.close()
+        if not _stop.is_set():
+            await _sleep_or_stop(15.0)
+    logger.info("market_scanner_loop_stopped")
 
 
 _task: asyncio.Task[None] | None = None
