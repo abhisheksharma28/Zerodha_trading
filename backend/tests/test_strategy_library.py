@@ -32,11 +32,15 @@ from app.strategies.library import (
     PairsTradingStrategy,
     RegimeAdaptiveStrategy,
     Rsi2ReversionStrategy,
+    RsLineHighStrategy,
     SectorMomentumRotationStrategy,
     SupertrendStrategy,
     TrendFollowingStrategy,
     TripleScreenStrategy,
+    TtmSqueezeStrategy,
+    TurnOfMonthStrategy,
     VolatilityRegimeStrategy,
+    VwapReversionStrategy,
     WeaponCandleStrategy,
     ZScoreRegimeStrategy,
 )
@@ -1219,3 +1223,66 @@ def test_sector_momentum_rotation_rotates_into_the_leading_sector():
     _emitted, positions = run(SectorMomentumRotationStrategy, p, steps)
     assert positions.get("NIFTY IT", 0) > 0
     assert positions.get("NIFTY PHARMA", 0) == 0 and positions.get("NIFTY METAL", 0) == 0
+
+
+def test_ttm_squeeze_fires_long_after_a_coil():
+    # a very tight coil (BB collapses inside the Keltner channel) then a clean
+    # breakout up with rising momentum -> the squeeze fires long.
+    closes = [100.0 + 0.02 * (i % 2) for i in range(60)]         # near-flat: squeeze ON
+    closes += [100.0 + 1.6 * i for i in range(1, 25)]            # sharp expansion up
+    bars = [_bar("DIXON", round(c, 2), daily_ts(i)) for i, c in enumerate(closes)]
+    p = TtmSqueezeStrategy.resolve_params({
+        **TtmSqueezeStrategy.presets()["balanced"], "bb_period": 20, "kc_mult": 1.5,
+        "atr_period": 20, "mom_period": 20, "mom_slope_bars": 3, "allow_short": False,
+        "regime_filter_enabled": False,
+    })
+    emitted, positions = run(TtmSqueezeStrategy, p, bars)
+    assert any(o.transaction_type == "BUY" for _, orders in emitted for o in orders)
+    assert positions.get("DIXON", 0) > 0
+
+
+def test_turn_of_month_is_long_only_around_the_boundary():
+    bars = [_bar("NIFTY 50", 100.0 + 0.01 * i, daily_ts(i)) for i in range(120)]
+    p = TurnOfMonthStrategy.resolve_params({
+        **TurnOfMonthStrategy.presets()["balanced"], "enter_dom": 26, "exit_dom": 4,
+        "sizing_method": "fixed_capital", "max_position_size_pct": 90.0,
+        "capital_allocation": 1_000_000.0, "regime_filter_enabled": False,
+    })
+    # day index 14 -> 2026-01-15 (mid month): flat.  index 27 -> 2026-01-28: long.
+    _e_mid, pos_mid = run(TurnOfMonthStrategy, p, bars[:15])
+    _e_end, pos_end = run(TurnOfMonthStrategy, p, bars[:28])
+    assert pos_mid.get("NIFTY 50", 0) == 0
+    assert pos_end.get("NIFTY 50", 0) > 0
+
+
+def test_vwap_reversion_fades_a_drop_below_vwap():
+    day = datetime(2026, 3, 2)
+    steps = []
+    for i in range(24):
+        steps.append(_bar("RELIANCE", 100.0, intraday_ts(day, i * 5), vol=50_000))
+    # a sharp drop several ATRs below the settled VWAP
+    steps.append(_bar("RELIANCE", 96.0, intraday_ts(day, 24 * 5), vol=50_000,
+                      high=100.0, low=96.0))
+    p = VwapReversionStrategy.resolve_params({
+        **VwapReversionStrategy.presets()["balanced"], "warmup_bars": 6, "entry_dev": 2.0,
+        "atr_period": 14, "allow_short": False, "session_bars": 75,
+        "regime_filter_enabled": False,
+    })
+    emitted, _ = run(VwapReversionStrategy, p, steps)
+    assert emitted and emitted[-1][1][0].transaction_type == "BUY"
+
+
+def test_rs_line_high_buys_a_relative_strength_leader():
+    steps = []
+    for i in range(300):
+        steps.append(_bar("NIFTY 50", round(100.0 * (1.0002 ** i), 2), daily_ts(i)))
+        steps.append(_bar("LEADER", round(80.0 * (1.002 ** i), 2), daily_ts(i)))
+    p = RsLineHighStrategy.resolve_params({
+        **RsLineHighStrategy.presets()["balanced"], "benchmark": "NIFTY 50",
+        "rs_lookback": 120, "price_high_window": 120, "price_band_pct": 8.0,
+        "trend_ma_period": 0, "sizing_method": "fixed_capital", "max_position_size_pct": 20.0,
+        "regime_filter_enabled": False,
+    })
+    _emitted, positions = run(RsLineHighStrategy, p, steps)
+    assert positions.get("LEADER", 0) > 0
+    assert positions.get("NIFTY 50", 0) == 0

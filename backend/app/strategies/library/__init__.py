@@ -33,12 +33,16 @@ from app.strategies.library.opening_breakout_us import OpeningBreakoutUSStrategy
 from app.strategies.library.opening_range_breakout import OpeningRangeBreakoutStrategy
 from app.strategies.library.pairs_trading import PairsTradingStrategy
 from app.strategies.library.regime_adaptive import RegimeAdaptiveStrategy
+from app.strategies.library.rs_line_high import RsLineHighStrategy
 from app.strategies.library.rsi2_reversion import Rsi2ReversionStrategy
 from app.strategies.library.sector_momentum_rotation import SectorMomentumRotationStrategy
 from app.strategies.library.supertrend import SupertrendStrategy
 from app.strategies.library.trend_following import TrendFollowingStrategy
 from app.strategies.library.triple_screen import TripleScreenStrategy
+from app.strategies.library.ttm_squeeze import TtmSqueezeStrategy
+from app.strategies.library.turn_of_month import TurnOfMonthStrategy
 from app.strategies.library.volatility_regime import VolatilityRegimeStrategy
+from app.strategies.library.vwap_reversion import VwapReversionStrategy
 from app.strategies.library.weapon_candle import WeaponCandleStrategy
 from app.strategies.library.zscore_regime import ZScoreRegimeStrategy
 
@@ -67,6 +71,10 @@ TEMPLATES: list[type[TemplateStrategy]] = [
     OpeningRangeBreakoutStrategy,
     OpeningBreakoutUSStrategy,
     PairsTradingStrategy,
+    TtmSqueezeStrategy,
+    TurnOfMonthStrategy,
+    VwapReversionStrategy,
+    RsLineHighStrategy,
     LatencyArbitrageStrategy,
     IndexFuturesArbitrageStrategy,
 ]
@@ -109,6 +117,10 @@ __all__ = [
     "OpeningRangeBreakoutStrategy",
     "OpeningBreakoutUSStrategy",
     "PairsTradingStrategy",
+    "TtmSqueezeStrategy",
+    "TurnOfMonthStrategy",
+    "VwapReversionStrategy",
+    "RsLineHighStrategy",
     "LatencyArbitrageStrategy",
     "IndexFuturesArbitrageStrategy",
 ]

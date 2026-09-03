@@ -195,9 +195,24 @@ TEST_PLANS: dict[str, TestPlan] = {
                               {"base_n": 30, "window": 252, "max_half_life": 60.0}, "1d", 3.0,
                               design_note="The tool picks the pair: the most stationary "
                                           "spread among the 30 most liquid names."),
+    # new — classic retail systems
+    "ttm-squeeze": TestPlan("ttm-squeeze", "trend_persistent", {"n": 40, "base_n": 150}, "1d", 5.0,
+                            design_note="A squeeze marks potential energy; it only pays on names "
+                                        "that then actually trend."),
+    "turn-of-month": TestPlan("turn-of-month", "index_proxy", {"which": ("NIFTY 50",)}, "1d", 5.0,
+                              design_note="A calendar effect measured at the index level, so it "
+                                          "runs on the index as one instrument."),
+    "rs-line-high": TestPlan("rs-line-high", "leaders_with_benchmark",
+                             {"n": 60, "benchmark": "NIFTY 50"}, "1d", 5.0,
+                             design_note="Relative strength needs the stock plus the index it is "
+                                         "measured against, on every bar."),
+    "vwap-reversion": TestPlan("vwap-reversion", "high_volatility",
+                               {"n": 30, "base_n": 120, "vol_window": 90}, "5m", 1.0,
+                               max_gross_exposure=4.0,
+                               design_note="Intraday fade needs range: high-volatility names, "
+                                           "1-year 5-minute window."),
     # intraday
     "opening-range-breakout": _intraday("opening-range-breakout"),
-    "opening-breakout-us": _intraday("opening-breakout-us"),
 }
 
 
@@ -244,8 +259,12 @@ CANONICAL: dict[str, CanonicalConfig] = {
     slug: cfg for slug in TEST_PLANS if (cfg := canonical_for(slug)) is not None
 }
 
-# Templates that need a bespoke instrument pair/basket outside the screen suite.
+# Templates outside the screen suite.
 UNSUITED: dict[str, str] = {
     "latency-arbitrage": "Needs a correlated lead/lag instrument pair.",
     "index-futures-arbitrage": "Needs an index future + its spot.",
+    "opening-breakout-us": (
+        "Models US-market-open microstructure (RVOL 'stocks in play', session mechanics); "
+        "not comparable on the NSE screen suite. Use opening-range-breakout for NSE."
+    ),
 }

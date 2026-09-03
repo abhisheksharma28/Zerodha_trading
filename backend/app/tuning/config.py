@@ -76,6 +76,18 @@ TUNING_GRID: dict[str, dict[str, list]] = {
         "entry_zscore": [1.5, 2.0, 2.5],
         "lookback": [40, 60, 90],
     },
+    "ttm-squeeze": {
+        "kc_mult": [1.0, 1.5, 2.0],
+        "mom_period": [12, 20, 30],
+    },
+    "turn-of-month": {
+        "enter_dom": [24, 26, 28],
+        "exit_dom": [3, 4, 5],
+    },
+    "rs-line-high": {
+        "rs_lookback": [63, 126, 189],
+        "price_band_pct": [5.0, 8.0, 12.0],
+    },
     # intraday templates excluded — 5-minute grid runs are too slow.
 }
 

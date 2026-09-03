@@ -242,6 +242,25 @@ surfaced on every result.
 | `sector-momentum-rotation` — hold the top-N NSE sector indices by 6-month return, monthly, absolute-momentum gate | Faber, *Relative Strength Strategies for Investing* | `sector_index_basket` |
 | `pairs-trading` (promoted out of `UNSUITED`) — spread z-score reversion; the tool now screens for the pair | Gatev–Goetzmann–Rouwenhorst | `cointegrated_pair` |
 
+**New strategies (2026-09, Phase B):**
+
+| Template | Source | Screen |
+|---|---|---|
+| `ttm-squeeze` — Bollinger contracting inside Keltner ("squeeze on"), enter on the release bar in the direction of momentum | Carter, *Mastering the Trade* | `trend_persistent` |
+| `turn-of-month` — hold the index long only from ~day 26 through ~day 4 of the next month | Ariel 1987; Lakonishok–Smidt 1988; McConnell–Xu 2008 | `index_proxy` (NIFTY 50) |
+| `rs-line-high` — long when the relative-strength line (price / index) makes a new high and price is near its own high | IBD / Minervini | `leaders_with_benchmark` (liquid names + NIFTY 50) |
+| `vwap-reversion` — intraday fade of extension from the running session VWAP, flat by the close | desk-standard | `high_volatility` (screened on daily, backtested on 5m) |
+
+`opening-breakout-us` moved to `UNSUITED` — it models US-market-open microstructure
+(RVOL "stocks in play", session mechanics) and is a 1,900-line template that
+CPU-hung the refresh twice on NSE 5-minute data; `opening-range-breakout` is the
+NSE version.
+
+> Refresh operational note: run the canonical suite as a **standalone process**
+> (`SessionLocal()` + `service.refresh_all`), not through the uvicorn worker — a
+> synchronous `POST /leaderboard/refresh` blocks the single web worker for the
+> whole run and `--reload` can't restart it, wedging the server.
+
 ---
 
 ## 10. Risk & money management — 📖 (rules baked into the paper algo + scorer)

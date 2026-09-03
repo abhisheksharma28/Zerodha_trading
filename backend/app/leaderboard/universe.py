@@ -324,6 +324,23 @@ def broad_cross_section(
     return ScreenResult(res.symbols, rationale, res.metrics, res.caveats)
 
 
+def leaders_with_benchmark(
+    bars: dict[str, list[Bar]], as_of: date, *,
+    n: int = 60, benchmark: str = "NIFTY 50", min_bars: int = 260,
+) -> ScreenResult:
+    base = _base_syms(bars, as_of, n)
+    syms = [s for s in base if s != benchmark]
+    if len(bars.get(benchmark, [])) >= min_bars:
+        syms.append(benchmark)
+    rationale = (
+        f"Relative-strength leadership is measured against an index, so this runs the "
+        f"{len(syms) - 1} most liquid names *plus* {benchmark} as the yardstick — the "
+        f"strategy needs both legs on every bar."
+    )
+    return ScreenResult(syms, rationale,
+                        {"selected": len(syms), "benchmark": benchmark}, [_SURVIVORSHIP])
+
+
 def sector_index_basket(
     bars: dict[str, list[Bar]], as_of: date, *, min_bars: int = 260,
 ) -> ScreenResult:
@@ -408,6 +425,7 @@ SCREENS: dict[str, Screen] = {
     "high_volatility": high_volatility,
     "low_volatility": low_volatility,
     "broad_cross_section": broad_cross_section,
+    "leaders_with_benchmark": leaders_with_benchmark,
     "sector_index_basket": sector_index_basket,
     "index_proxy": index_proxy,
     "cointegrated_pair": cointegrated_pair,
