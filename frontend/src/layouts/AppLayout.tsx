@@ -19,7 +19,7 @@ import {
   Wallet,
 } from "lucide-react";
 
-import { AssistantLauncher } from "@/components/assistant/AssistantPanel";
+import { AssistantHeaderButton } from "@/components/assistant/AssistantPanel";
 import { IndexStrip } from "@/components/IndexStrip";
 import { LatencyPill } from "@/components/LatencyPill";
 import { NavInstrumentSearch } from "@/components/NavInstrumentSearch";
@@ -286,6 +286,7 @@ export function AppLayout() {
               </span>
             </span>
             <span className="h-4 w-px bg-line-strong" />
+            <AssistantHeaderButton />
             <LatencyPill />
             <ThemeToggle />
           </div>
@@ -312,7 +313,6 @@ export function AppLayout() {
       </main>
 
       <StockDrawer />
-      <AssistantLauncher />
     </div>
   );
 }

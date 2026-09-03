@@ -231,17 +231,20 @@ export function AssistantPanel({ open, onClose }: { open: boolean; onClose: () =
   );
 }
 
-export function AssistantLauncher() {
+/** Header trigger for the assistant — lives in the top nav so it doesn't
+ *  collide with dev-tool floating widgets in the bottom-right corner. */
+export function AssistantHeaderButton() {
   const [open, setOpen] = useState(false);
   return (
     <>
       <button
         type="button"
         onClick={() => setOpen(true)}
-        aria-label="Open research assistant"
-        className="fixed bottom-5 right-5 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-accent to-accent-strong text-accent-fg shadow-[0_8px_30px_-6px_var(--color-accent)] transition-transform hover:scale-105 active:scale-95"
+        aria-label="Open the research assistant"
+        className="flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent-soft px-2.5 py-1.5 text-xs font-semibold text-accent transition-colors hover:bg-accent/15"
       >
-        <Sparkles className="h-5 w-5" />
+        <Sparkles className="h-3.5 w-3.5" />
+        <span className="hidden sm:inline">Ask AI</span>
       </button>
       <AssistantPanel open={open} onClose={() => setOpen(false)} />
     </>
