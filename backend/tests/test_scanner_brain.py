@@ -61,6 +61,39 @@ def test_same_shape_in_an_uptrend_is_a_hanging_man():
     assert any(p.name == "hanging_man" and p.direction == "BEARISH" for p in rep.patterns)
 
 
+def test_bullish_marubozu_regardless_of_trend():
+    bars = _down_run(14, start=120.0)
+    # near-shadowless full green body, range ~2.7% of price
+    bars.append(_bar(103.0, 105.85, 102.95, 105.8))
+    rep = cnd.analyse(bars)
+    m = next((p for p in rep.patterns if p.name == "bull_marubozu"), None)
+    assert m is not None and m.direction == "BULLISH"
+    assert m.entry == 105.8 and m.stop == 102.95  # buy the close, stop the low
+
+
+def test_bearish_marubozu():
+    bars = _up_run(14, start=100.0)
+    bars.append(_bar(115.0, 115.05, 111.9, 112.0))  # full red body, tiny wicks
+    rep = cnd.analyse(bars)
+    m = next((p for p in rep.patterns if p.name == "bear_marubozu"), None)
+    assert m is not None and m.direction == "BEARISH" and m.stop == 115.05
+
+
+def test_marubozu_rejects_an_over_extended_candle():
+    bars = _down_run(14, start=200.0)
+    bars.append(_bar(180.0, 205.0, 179.5, 204.5))  # >12% range -> skipped (stop too deep)
+    rep = cnd.analyse(bars)
+    assert not any(p.name in ("bull_marubozu", "bear_marubozu") for p in rep.patterns)
+
+
+def test_spinning_top_flags_indecision_in_a_trend():
+    bars = _up_run(14, start=100.0)
+    bars.append(_bar(115.0, 117.4, 112.6, 115.3))  # small body, ~equal 2.1/2.4 shadows
+    rep = cnd.analyse(bars)
+    s = next((p for p in rep.patterns if p.name == "spinning_top"), None)
+    assert s is not None and s.direction == "BEARISH" and s.strength < 0.5
+
+
 def test_bullish_engulfing_in_a_downtrend():
     bars = _down_run(13, start=120.0)
     bars.append(_bar(106.0, 106.3, 103.6, 104.0))   # red, body 2.0

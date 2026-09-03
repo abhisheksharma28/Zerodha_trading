@@ -172,6 +172,46 @@ def _doji_reversal(bars: list[dict], i: int, trend: str) -> Pattern | None:
     return None
 
 
+def _marubozu(bars: list[dict], i: int, trend: str) -> Pattern | None:
+    """A near-shadowless full-body candle: the day printed one-directional
+    conviction. Per Zerodha Varsity it works irrespective of the prior
+    trend - entry at the close, stop at the opposite extreme. Candles whose
+    range is < 1% or > 10% of price are skipped (subdued / stop-too-deep)."""
+    o, h, lo, c = bars[i]["open"], bars[i]["high"], bars[i]["low"], bars[i]["close"]
+    body, rng = _body(o, c), _range(h, lo)
+    if body <= 0 or body / rng < 0.9:
+        return None
+    if _upper_wick(o, h, c) > 0.08 * rng or _lower_wick(o, lo, c) > 0.08 * rng:
+        return None
+    range_pct = rng / max(c, 1e-9)
+    if range_pct < 0.01 or range_pct > 0.10:
+        return None
+    strength = min(1.0, body / rng)
+    if _bull(o, c):
+        return Pattern("bull_marubozu", "Bullish Marubozu", "BULLISH", strength, c, lo, i)
+    return Pattern("bear_marubozu", "Bearish Marubozu", "BEARISH", strength, c, h, i)
+
+
+def _spinning_top(bars: list[dict], i: int, trend: str) -> Pattern | None:
+    """Small body, near-equal upper and lower shadows - indecision. Not an
+    entry on its own; a soft warning that the trend may pause or turn ("the
+    calm before the storm"). Direction is read from the prevailing trend."""
+    o, h, lo, c = bars[i]["open"], bars[i]["high"], bars[i]["low"], bars[i]["close"]
+    body, rng = _body(o, c), _range(h, lo)
+    up_w, low_w = _upper_wick(o, h, c), _lower_wick(o, lo, c)
+    if rng <= 0 or body / rng > 0.3:
+        return None
+    if up_w < 0.25 * rng or low_w < 0.25 * rng:
+        return None
+    if min(up_w, low_w) < 0.6 * max(up_w, low_w):
+        return None
+    if trend == "UP":
+        return Pattern("spinning_top", "Spinning Top (uptrend)", "BEARISH", 0.35, c, h, i)
+    if trend == "DOWN":
+        return Pattern("spinning_top", "Spinning Top (downtrend)", "BULLISH", 0.35, c, lo, i)
+    return None
+
+
 def _star(bars: list[dict], i: int, trend: str) -> Pattern | None:
     if i < 2:
         return None
@@ -190,7 +230,8 @@ def _star(bars: list[dict], i: int, trend: str) -> Pattern | None:
     return None
 
 
-_DETECTORS = (_hammer_family, _shooting_star, _engulfing, _piercing, _harami, _doji_reversal, _star)
+_DETECTORS = (_hammer_family, _shooting_star, _marubozu, _spinning_top,
+              _engulfing, _piercing, _harami, _doji_reversal, _star)
 
 
 def analyse(bars: list[dict[str, Any]], *, lookback: int = 4) -> CandleReport:

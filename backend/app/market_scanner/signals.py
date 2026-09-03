@@ -239,8 +239,10 @@ def _fundamental_factors(fv: FundamentalView | None, horizon: str) -> list[Facto
 
 _CANDLE_WEIGHT = {
     "morning_star": 11, "evening_star": 11, "bullish_engulfing": 10, "bearish_engulfing": 10,
+    "bull_marubozu": 10, "bear_marubozu": 10,
     "hammer": 9, "hanging_man": 9, "shooting_star": 9, "bullish_piercing": 8, "bearish_piercing": 8,
     "bullish_harami": 6, "bearish_harami": 6, "bullish_doji": 6, "bearish_doji": 6,
+    "spinning_top": 4,
 }
 
 
