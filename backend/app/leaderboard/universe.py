@@ -398,7 +398,10 @@ def seasonal_sector_stock_leaders(
         kept = list(base)
 
     sectors = [s for s in SECTOR_INDICES if len(bars.get(s, [])) >= 260]
-    syms = kept + [s for s in sectors if s not in kept]
+    extras = [*sectors]
+    if len(bars.get("NIFTY 50", [])) >= 260:
+        extras.append("NIFTY 50")             # market-regime gate yardstick
+    syms = kept + [s for s in extras if s not in kept]
     med_q = float(np.median(q_vals)) if q_vals else None
     gate = (f"pass a current-fundamentals quality gate (>= {min_quality:.0f}"
             + (f", valuation >= {min_valuation:.0f}" if min_valuation > 0 else "") + ")")
@@ -440,14 +443,20 @@ def leaders_with_benchmark(
 
 def sector_index_basket(
     bars: dict[str, list[Bar]], as_of: date, *, min_bars: int = 260,
+    benchmark: str = "NIFTY 50",
 ) -> ScreenResult:
     present = [s for s in SECTOR_INDICES if len(bars.get(s, [])) >= min_bars]
+    syms = list(present)
+    if len(bars.get(benchmark, [])) >= min_bars and benchmark not in syms:
+        syms.append(benchmark)                # for the market-regime gate
     rationale = (
         f"Sector-rotation trades the {len(present)} NSE sector indices "
         f"themselves, not single stocks, so idiosyncratic company noise does "
-        f"not swamp the relative-strength signal."
+        f"not swamp the relative-strength signal"
+        + (f"; {benchmark} is included as the market-regime yardstick"
+           if benchmark in syms else "") + "."
     )
-    return ScreenResult(present, rationale,
+    return ScreenResult(syms, rationale,
                         {"candidates": len(SECTOR_INDICES), "selected": len(present)},
                         ["Sector indices are not directly tradable; treat as sector-ETF proxies."])
 

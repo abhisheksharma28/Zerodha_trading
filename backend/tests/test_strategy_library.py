@@ -1309,24 +1309,57 @@ def test_volatility_contraction_breakout_buys_the_base_break():
 
 
 def test_seasonal_sector_rotation_favours_a_seasonally_strong_sector():
-    # NIFTY IT rallies +10% every December, flat otherwise; NIFTY FMCG always flat.
+    # NIFTY IT rallies ~10% (+/- a bit) every December, flat otherwise; NIFTY FMCG flat.
+    import random
+
+    rng = random.Random(5)
     steps = []
     start = datetime(2026, 1, 1)
-    for i in range(1090):                       # ~3 years, ending in December of year 3
+    dec_gain: dict[int, float] = {}
+    for i in range(1460):                       # ~4 years, ending in December of year 4
         d = start + timedelta(days=i)
         ts = d.strftime("%Y-%m-%dT00:00:00") + IST_OFFSET
-        it_px = 100.0 + 10.0 * (d.day / 31.0) if d.month == 12 else 100.0
+        g = dec_gain.setdefault(d.year, 8.0 + rng.uniform(0.0, 4.0))
+        it_px = 100.0 + g * (d.day / 31.0) if d.month == 12 else 100.0
         steps.append(_bar("NIFTY IT", round(it_px, 2), ts))
-        steps.append(_bar("NIFTY FMCG", 100.0, ts))
+        steps.append(_bar("NIFTY FMCG", round(100.0 + rng.uniform(-0.2, 0.2), 2), ts))
     p = SeasonalSectorRotationStrategy.resolve_params({
         **SeasonalSectorRotationStrategy.presets()["balanced"],
-        "hold_n": 1, "min_years": 2, "metric": "mean_pct", "min_hit_rate": 0.5,
-        "history_window": 3000, "sizing_method": "fixed_capital",
+        "hold_n": 1, "min_years": 3, "metric": "mean_pct", "min_hit_rate": 0.5,
+        "min_t_stat": 0.8, "use_demeaned": True, "market_regime_ma": 0,
+        "history_window": 4000, "sizing_method": "fixed_capital",
         "capital_allocation": 1_000_000.0, "regime_filter_enabled": False,
     })
     _emitted, positions = run(SeasonalSectorRotationStrategy, p, steps)
     assert positions.get("NIFTY IT", 0) > 0
     assert positions.get("NIFTY FMCG", 0) == 0
+
+
+def test_seasonal_sector_rotation_regime_gate_sits_in_cash_in_a_downtrend():
+    import random
+
+    rng = random.Random(6)
+    steps = []
+    start = datetime(2026, 1, 1)
+    dec_gain: dict[int, float] = {}
+    for i in range(1460):
+        d = start + timedelta(days=i)
+        ts = d.strftime("%Y-%m-%dT00:00:00") + IST_OFFSET
+        g = dec_gain.setdefault(d.year, 8.0 + rng.uniform(0.0, 4.0))
+        it_px = 100.0 + g * (d.day / 31.0) if d.month == 12 else 100.0
+        steps.append(_bar("NIFTY IT", round(it_px, 2), ts))
+        steps.append(_bar("NIFTY FMCG", round(100.0 + rng.uniform(-0.2, 0.2), 2), ts))
+        steps.append(_bar("NIFTY 50", round(300.0 - 0.12 * i, 2), ts))   # steady downtrend
+    p = SeasonalSectorRotationStrategy.resolve_params({
+        **SeasonalSectorRotationStrategy.presets()["balanced"],
+        "hold_n": 1, "min_years": 3, "metric": "mean_pct", "min_t_stat": 0.8,
+        "market_regime_ma": 100, "benchmark": "NIFTY 50", "history_window": 4000,
+        "sizing_method": "fixed_capital", "capital_allocation": 1_000_000.0,
+        "regime_filter_enabled": False,
+    })
+    _emitted, positions = run(SeasonalSectorRotationStrategy, p, steps)
+    assert positions.get("NIFTY IT", 0) == 0        # regime gate keeps it flat
+    assert positions.get("NIFTY 50", 0) == 0
 
 
 def test_seasonal_sector_stock_rotation_holds_it_stocks_in_december():
@@ -1335,18 +1368,21 @@ def test_seasonal_sector_stock_rotation_holds_it_stocks_in_december():
     rng = random.Random(11)
     steps = []
     start = datetime(2026, 1, 1)
-    for i in range(1085):                       # ~3y, ending in December of year 3
+    dec_gain: dict[int, float] = {}
+    for i in range(1460):                       # ~4y, ending in December of year 4
         d = start + timedelta(days=i)
         ts = d.strftime("%Y-%m-%dT00:00:00") + IST_OFFSET
         dec = d.month == 12
-        it_idx = 100.0 + 10.0 * (d.day / 31.0) if dec else 100.0
+        g = dec_gain.setdefault(d.year, 8.0 + rng.uniform(0.0, 4.0))
+        it_idx = 100.0 + g * (d.day / 31.0) if dec else 100.0
         ph_f = rng.uniform(-0.6, 0.6)                      # pharma common factor
         ph_idx = 100.0 + ph_f
         # IT stocks: gentle noisy uptrend + the same December bump -> track NIFTY IT
-        bump = 1.0 + 0.09 * (d.day / 31.0) if dec else 1.0
+        bump = 1.0 + (g / 111.0) * (d.day / 31.0) if dec else 1.0
         jit = lambda: 1.0 + rng.uniform(-0.009, 0.009)     # noqa: E731 - keeps RSI off 100
         steps.append(_bar("NIFTY IT", round(it_idx, 2), ts))
         steps.append(_bar("NIFTY PHARMA", round(ph_idx, 2), ts))
+        steps.append(_bar("NIFTY 50", round(200.0 + 0.05 * i, 2), ts))   # gentle uptrend
         steps.append(_bar("TCS", round(1000.0 * (1.0004 ** i) * bump * jit(), 2), ts))
         steps.append(_bar("INFY", round(1400.0 * (1.00035 ** i) * bump * jit(), 2), ts))
         # pharma stocks: gentle noisy uptrend + the pharma factor -> track NIFTY PHARMA
@@ -1356,9 +1392,10 @@ def test_seasonal_sector_stock_rotation_holds_it_stocks_in_december():
                           round(900.0 * (1.00035 ** i) * (1 + ph_f / 60.0) * jit(), 2), ts))
     p = SeasonalSectorStockRotationStrategy.resolve_params({
         **SeasonalSectorStockRotationStrategy.presets()["balanced"],
-        "top_sectors": 1, "hold_n": 2, "corr_window": 200, "mom_lookback": 40,
-        "trend_ma_period": 100, "rsi_max": 95.0, "min_years": 2, "min_hit_rate": 0.5,
-        "history_window": 3000, "sizing_method": "fixed_capital",
+        "top_sectors": 1, "hold_n": 2, "corr_window": 400, "mom_lookback": 40,
+        "trend_ma_period": 100, "rsi_max": 95.0, "min_years": 3, "min_hit_rate": 0.5,
+        "min_t_stat": 0.8, "use_demeaned": True, "market_regime_ma": 50,
+        "history_window": 4000, "sizing_method": "fixed_capital",
         "capital_allocation": 1_000_000.0, "regime_filter_enabled": False,
     })
     _emitted, positions = run(SeasonalSectorStockRotationStrategy, p, steps)

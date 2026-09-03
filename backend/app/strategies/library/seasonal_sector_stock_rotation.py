@@ -69,13 +69,21 @@ class SeasonalSectorStockRotationStrategy(TemplateStrategy):
                                 group="filter"),
         "rsi_max": ParamSpec("number", 75.0, "Technical gate: skip a stock with RSI above this "
                              "(overbought).", min=40.0, max=95.0, group="filter"),
-        "min_years": ParamSpec("integer", 3, "A calendar month needs this many yearly "
+        "min_years": ParamSpec("integer", 5, "A calendar month needs this many yearly "
                                "observations before its sectors are traded.", min=2, max=15),
         "min_hit_rate": ParamSpec("number", 0.5, "A sector's month must have closed positive at "
                                   "least this often historically.", min=0.0, max=1.0,
                                   group="filter"),
-        "season_metric": ParamSpec("enum", "mean_pct", "Rank sectors by historical mean or "
-                                   "median return for the month.", choices=("mean_pct", "median_pct")),
+        "min_t_stat": ParamSpec("number", 0.8, "A sector's month seasonal edge must clear this "
+                                "Student t-stat (0 disables).", min=0.0, max=4.0, group="filter"),
+        "use_demeaned": ParamSpec("boolean", True, "Score each month relative to that year's "
+                                  "average month (isolates the seasonal component)."),
+        "season_metric": ParamSpec("enum", "mean_pct", "Rank sectors by seasonal-edge mean, "
+                                   "median, mean rank or t-stat.",
+                                   choices=("mean_pct", "median_pct", "mean_rank", "t_stat")),
+        "market_regime_ma": ParamSpec("integer", 200, "Only trade while NIFTY 50 closes above "
+                              "SMA(this); otherwise sit in cash (0 disables).", min=0, max=400,
+                              group="filter"),
         "history_window": ParamSpec("integer", 2600, "Bars of sector-index history for the "
                                     "seasonal table (~2600 = ten years).", min=300, max=4000),
         "exchange": ParamSpec("string", "NSE", "Order exchange."),
@@ -84,16 +92,19 @@ class SeasonalSectorStockRotationStrategy(TemplateStrategy):
 
     PRESETS: ClassVar[dict[str, dict[str, Any]]] = {
         "conservative": preset(top_sectors=2, hold_n=6, corr_window=252, mom_lookback=126,
-                               trend_ma_period=200, rsi_max=70.0, min_years=5, min_hit_rate=0.6,
-                               season_metric="median_pct", history_window=2600, product="CNC",
+                               trend_ma_period=200, rsi_max=70.0, min_years=6, min_hit_rate=0.6,
+                               min_t_stat=1.2, use_demeaned=True, season_metric="median_pct",
+                               market_regime_ma=200, history_window=2600, product="CNC",
                                sizing_method="fixed_capital", max_position_size_pct=15.0),
         "balanced": preset(top_sectors=2, hold_n=8, corr_window=252, mom_lookback=63,
-                           trend_ma_period=100, rsi_max=75.0, min_years=3, min_hit_rate=0.5,
-                           season_metric="mean_pct", history_window=2600, product="CNC",
+                           trend_ma_period=100, rsi_max=75.0, min_years=5, min_hit_rate=0.5,
+                           min_t_stat=0.8, use_demeaned=True, season_metric="mean_pct",
+                           market_regime_ma=200, history_window=2600, product="CNC",
                            sizing_method="fixed_capital", max_position_size_pct=12.0),
         "aggressive": preset(top_sectors=3, hold_n=12, corr_window=189, mom_lookback=42,
-                             trend_ma_period=0, rsi_max=82.0, min_years=3, min_hit_rate=0.4,
-                             season_metric="mean_pct", history_window=1800, product="MIS",
+                             trend_ma_period=0, rsi_max=82.0, min_years=4, min_hit_rate=0.4,
+                             min_t_stat=0.0, use_demeaned=True, season_metric="mean_rank",
+                             market_regime_ma=0, history_window=1800, product="MIS",
                              sizing_method="fixed_capital", max_position_size_pct=10.0),
     }
 
@@ -141,11 +152,26 @@ class SeasonalSectorStockRotationStrategy(TemplateStrategy):
             self._rebalance(dt.month, ym)
         self._last_month = ym
 
+    def _regime_ok(self) -> bool:
+        ma = int(self.p["market_regime_ma"])
+        if ma <= 0:
+            return True
+        buf = self._buffers.get("NIFTY 50")
+        if buf is None or len(buf.closes) < ma + 1:
+            return True
+        m = sma(list(buf.closes), ma)
+        return m is not None and buf.closes[-1] > m
+
     def _rebalance(self, month: int, current_ym: tuple[int, int]) -> None:
+        if not self._regime_ok():
+            self._flatten_all()
+            return
         hw = int(self.p["history_window"])
         sector_bars: dict[str, list[Bar]] = {}
         stock_syms: list[str] = []
         for sym, buf in self._buffers.items():
+            if sym == "NIFTY 50":
+                continue
             if sym in _SECTORS:
                 bs = [b for b in list(buf.bars)[-hw:]
                       if (self.bar_dt(b).year, self.bar_dt(b).month) != current_ym]
@@ -156,10 +182,12 @@ class SeasonalSectorStockRotationStrategy(TemplateStrategy):
         if len(sector_bars) < 2 or not stock_syms:
             return
 
-        stats = monthly_sector_stats(sector_bars, min_years=int(self.p["min_years"]))
+        stats = monthly_sector_stats(sector_bars, min_years=int(self.p["min_years"]),
+                                     demean=bool(self.p["use_demeaned"]))
         winners = best_sectors_for_month(
             stats, month, top_n=int(self.p["top_sectors"]),
-            metric=str(self.p["season_metric"]), min_hit_rate=float(self.p["min_hit_rate"]))
+            metric=str(self.p["season_metric"]), min_hit_rate=float(self.p["min_hit_rate"]),
+            min_t_stat=float(self.p["min_t_stat"]))
         chosen = {s for s, _v in winners}
         if not chosen:
             self._flatten_all()

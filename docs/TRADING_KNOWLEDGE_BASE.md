@@ -272,6 +272,23 @@ Seasonality helper: `app/strategies/seasonality.py::monthly_sector_stats` /
 `TestPlan.pool_scope="indices"` skips the ~400 equity pulls for sector/index
 strategies.
 
+**Method (from the seasonality papers in `docs/` — Gultekin & Gultekin 1983,
+Heston & Sadka 2008, Keloharju et al. 2021, Kapalczynski 2022):**
+- **De-mean per year.** The seasonal edge for a month is its return *minus that
+  year's average month* (`tau_m`, `sum(tau_m) ~ 0`), so a name that merely had a
+  good year does not look "seasonally strong" every month (`use_demeaned=True`).
+- **Winsorise** the per-calendar-month sample at 3 SD (monthly returns are
+  fat-tailed) and offer a **Kruskal-Wallis-style `mean_rank`** metric.
+- **`t_stat` per month** + a `min_t_stat` filter — require the edge to be
+  statistically distinguishable, not just a positive average.
+- **Market-regime gate** (`market_regime_ma`, benchmark = NIFTY 50) — sit in
+  cash while the broad index is below its long MA, because seasonality
+  historically **inverts in recessions / bear markets**.
+- **India anchors** annotated in the report: fiscal-year turn = **Mar/Apr**
+  (fiscal year starts 1 Apr), Union Budget = **Feb**, calendar year-end = **Dec**.
+- `min_years` default raised 3 → 5 (the papers use 15–20 yr samples). SWEEP /
+  TUNING_GRID now sweep `min_t_stat` and the metric.
+
 **Fundamentals in a backtest:** no point-in-time fundamentals exist (yfinance
 `get_key_metrics` is present-day). So `seasonal_sector_stock_leaders` applies the
 quality gate *once, at screen time, with current data* — a mild look-ahead on

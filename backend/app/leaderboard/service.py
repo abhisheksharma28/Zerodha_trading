@@ -154,7 +154,7 @@ def sector_seasonality(db: Session, settings: Settings, *, years: float = 10.0) 
     from app.market_data.nse_universe import SECTOR_INDICES
 
     sectors = {s: pool[s] for s in SECTOR_INDICES if s in pool and len(pool[s]) > 260}
-    out = report(sectors, min_years=3)
+    out = report(sectors, min_years=5)
     out["window_years"] = years
     out["sector_count"] = len(sectors)
     return out
