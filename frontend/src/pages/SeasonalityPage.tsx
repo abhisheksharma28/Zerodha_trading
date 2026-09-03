@@ -10,15 +10,25 @@ import {
 } from "recharts";
 import { Loader2, RefreshCw } from "lucide-react";
 
-import type { MonthRankingRow, SeasonCell, WalkForwardResult } from "@/api/seasonality";
+import type {
+  MonthRankingRow,
+  SeasonalSignal,
+  SeasonCell,
+  WalkForwardResult,
+} from "@/api/seasonality";
 import { STRATEGY_LABELS } from "@/api/seasonality";
 import { PageHeader } from "@/components/PageHeader";
 import { SectionCard } from "@/components/SectionCard";
 import { Button } from "@/components/ui/button";
 import {
+  useFreezeModel,
+  useGenerateSignal,
+  useModelVersions,
   useRefreshSeasonality,
+  useReviewSignal,
   useSeasonalityBacktest,
   useSeasonalityReport,
+  useSeasonalSignals,
   useSeasonalityStatus,
 } from "@/hooks/useSeasonality";
 import { num } from "@/lib/format";
@@ -283,9 +293,151 @@ export default function SeasonalityPage() {
 
           {/* 9 — BACKTEST */}
           <BacktestPanel />
+
+          {/* 10 — MODEL FREEZE + PROSPECTIVE SIGNALS */}
+          <VersionsPanel canFreeze={!!data.available} />
         </>
       )}
     </div>
+  );
+}
+
+function VersionsPanel({ canFreeze }: { canFreeze: boolean }) {
+  const { data: versions = [] } = useModelVersions();
+  const { data: signals = [] } = useSeasonalSignals();
+  const freeze = useFreezeModel();
+  const genSignal = useGenerateSignal();
+  const review = useReviewSignal();
+  const [ver, setVer] = useState("v1.0");
+
+  return (
+    <SectionCard title="Model freeze & prospective signals" index={10}>
+      <div className="flex flex-col gap-4 p-4">
+        <p className="text-[13px] text-fg-muted">
+          Freeze the current methodology + parameters + report as a named version. A frozen
+          model is never mutated by live results; each month it emits one immutable signal
+          snapshot that can be reviewed once the month completes (predicted vs actual, rank IC).
+        </p>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            className="h-8 w-28 rounded border border-line bg-surface px-2 text-sm tabular-nums"
+            value={ver}
+            onChange={(e) => setVer(e.target.value)}
+            placeholder="v1.0"
+          />
+          <Button
+            size="sm"
+            disabled={!canFreeze || freeze.isPending}
+            onClick={() =>
+              freeze.mutate({ version: ver, name: `Seasonality ${ver}` })
+            }
+          >
+            {freeze.isPending && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
+            Freeze current model
+          </Button>
+          {freeze.isError && (
+            <span className="text-xs text-neg">
+              {(freeze.error as { response?: { data?: { message?: string } } })?.response?.data
+                ?.message ?? "Freeze failed"}
+            </span>
+          )}
+        </div>
+
+        {versions.length === 0 ? (
+          <p className="text-xs text-fg-faint">No frozen versions yet.</p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {versions.map((v) => {
+              const vSignals = signals.filter((s: SeasonalSignal) => s.model_version_id === v.id);
+              return (
+                <div key={v.id} className="rounded-md border border-line/70 bg-bg/40 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <span className="text-sm font-semibold text-fg">{v.version}</span>
+                      <span className="ml-2 text-xs text-fg-faint">{v.name}</span>
+                      <span
+                        className={cn(
+                          "ml-2 rounded px-1.5 py-0.5 text-[10px] font-semibold",
+                          v.status === "frozen"
+                            ? "bg-pos/10 text-pos"
+                            : "bg-elevated text-fg-faint",
+                        )}
+                      >
+                        {v.status}
+                      </span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={genSignal.isPending}
+                      onClick={() => genSignal.mutate({ versionId: v.id })}
+                    >
+                      Generate next-month signal
+                    </Button>
+                  </div>
+                  <p className="mt-1 text-[11px] text-fg-faint">
+                    frozen {v.frozen_at ? new Date(v.frozen_at).toLocaleDateString("en-IN") : "—"} ·
+                    hash {v.methodology_hash} · verdict: {v.verdict}
+                  </p>
+
+                  {vSignals.length > 0 && (
+                    <div className="mt-2 overflow-x-auto">
+                      <table className="w-full min-w-[560px] text-[11px] tabular-nums">
+                        <thead>
+                          <tr className="border-b border-line/60 text-fg-faint">
+                            <th className="px-1.5 py-1 text-left">Signal</th>
+                            <th className="px-1.5 py-1 text-left">For</th>
+                            <th className="px-1.5 py-1 text-left">Longs</th>
+                            <th className="px-1.5 py-1 text-right">Rank IC</th>
+                            <th className="px-1.5 py-1 text-right">L/S spread</th>
+                            <th className="px-1.5 py-1 text-right"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {vSignals.map((s: SeasonalSignal) => (
+                            <tr key={s.id} className="border-b border-line/40 last:border-0">
+                              <td className="px-1.5 py-1 text-left text-fg-muted">{s.signal_ref}</td>
+                              <td className="px-1.5 py-1 text-left">{s.for_month}</td>
+                              <td className="px-1.5 py-1 text-left text-fg-muted">
+                                {s.long_candidates.slice(0, 3).map((c: MonthRankingRow) => short(c.sector)).join(", ") || "—"}
+                              </td>
+                              <td className="px-1.5 py-1 text-right">
+                                {s.review?.rank_ic == null ? "—" : num(s.review.rank_ic, 3)}
+                              </td>
+                              <td
+                                className={cn(
+                                  "px-1.5 py-1 text-right",
+                                  (s.review?.long_short_spread_pct ?? 0) < 0 ? "text-neg" : "text-pos",
+                                )}
+                              >
+                                {s.review?.long_short_spread_pct == null
+                                  ? "—"
+                                  : `${num(s.review.long_short_spread_pct, 2)}%`}
+                              </td>
+                              <td className="px-1.5 py-1 text-right">
+                                {s.status === "generated" && (
+                                  <button
+                                    className="text-accent hover:underline"
+                                    onClick={() => review.mutate(s.id)}
+                                  >
+                                    review
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </SectionCard>
   );
 }
 

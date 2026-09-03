@@ -177,6 +177,42 @@ export interface SeasonalityStatus {
   pid?: number;
 }
 
+export interface ModelVersion {
+  id: string;
+  version: string;
+  name: string;
+  status: "frozen" | "retired";
+  frozen_at: string | null;
+  methodology_hash: string;
+  params: Record<string, unknown>;
+  verdict: string | null;
+  notes: string | null;
+}
+
+export interface SeasonalSignal {
+  id: string;
+  signal_ref: string;
+  model_version_id: string;
+  for_month: string;
+  generated_at: string | null;
+  data_cutoff: string;
+  rankings: MonthRankingRow[];
+  long_candidates: MonthRankingRow[];
+  short_candidates: MonthRankingRow[];
+  status: "generated" | "reviewed";
+  review: {
+    rank_ic: number | null;
+    predicted_best: string | null;
+    actual_best: string | null;
+    predicted_worst: string | null;
+    actual_worst: string | null;
+    long_return_pct: number | null;
+    short_return_pct: number | null;
+    long_short_spread_pct: number | null;
+  } | null;
+  reviewed_at: string | null;
+}
+
 export const seasonalityApi = {
   report: () => apiClient.get<SeasonalityReport>("/seasonality").then((r) => r.data),
   status: () => apiClient.get<SeasonalityStatus>("/seasonality/status").then((r) => r.data),
@@ -189,6 +225,28 @@ export const seasonalityApi = {
     long_cost_bps?: number;
     short_cost_bps?: number;
   }) => apiClient.get<WalkForwardResult>("/seasonality/backtest", { params }).then((r) => r.data),
+
+  versions: () => apiClient.get<ModelVersion[]>("/seasonality/versions").then((r) => r.data),
+  freeze: (body: { version: string; name: string; notes?: string }) =>
+    apiClient.post<ModelVersion>("/seasonality/versions", body).then((r) => r.data),
+  signals: (versionId?: string) =>
+    apiClient
+      .get<SeasonalSignal[]>("/seasonality/signals", { params: versionId ? { version_id: versionId } : {} })
+      .then((r) => r.data),
+  generateSignal: (versionId: string, forMonth?: string) =>
+    apiClient
+      .post<SeasonalSignal>(
+        `/seasonality/versions/${versionId}/signal`,
+        null,
+        { params: forMonth ? { for_month: forMonth } : {} },
+      )
+      .then((r) => r.data),
+  reviewSignal: (signalId: string) =>
+    apiClient.post<SeasonalSignal>(`/seasonality/signals/${signalId}/review`).then((r) => r.data),
+  health: (versionId: string) =>
+    apiClient
+      .get<Record<string, unknown>>(`/seasonality/versions/${versionId}/health`)
+      .then((r) => r.data),
 };
 
 export const STRATEGY_LABELS: Record<string, string> = {

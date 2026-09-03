@@ -41,3 +41,39 @@ export function useSeasonalityBacktest(params: {
     staleTime: 5 * 60_000,
   });
 }
+
+export function useModelVersions() {
+  return useQuery({ queryKey: [...KEY, "versions"], queryFn: seasonalityApi.versions });
+}
+
+export function useSeasonalSignals(versionId?: string) {
+  return useQuery({
+    queryKey: [...KEY, "signals", versionId ?? "all"],
+    queryFn: () => seasonalityApi.signals(versionId),
+  });
+}
+
+export function useFreezeModel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: seasonalityApi.freeze,
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+  });
+}
+
+export function useGenerateSignal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ versionId, forMonth }: { versionId: string; forMonth?: string }) =>
+      seasonalityApi.generateSignal(versionId, forMonth),
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+  });
+}
+
+export function useReviewSignal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (signalId: string) => seasonalityApi.reviewSignal(signalId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+  });
+}
