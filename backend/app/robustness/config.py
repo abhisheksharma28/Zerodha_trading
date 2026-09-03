@@ -20,6 +20,12 @@ SWEEP: dict[str, tuple[str, list[float]] | None] = {
     "weapon-candle": ("arm_expiry_bars", [1, 2, 3, 5, 8]),
     "volatility-regime": ("trend_ma_period", [20, 35, 50, 75, 100]),
     "regime-adaptive": ("adx_trend_min", [18, 22, 25, 30, 35]),
+    "supertrend": ("multiplier", [1.5, 2.0, 2.5, 3.0, 3.5, 4.0]),
+    "golden-cross": ("slow_period", [100, 150, 200, 250, 300]),
+    "rsi2-reversion": ("entry_rsi", [5, 10, 15, 20, 25]),
+    "bollinger-reversion": ("bb_stdev", [1.5, 2.0, 2.5, 3.0]),
+    "fiftytwo-week-high": ("band_pct", [1.0, 2.0, 3.0, 5.0, 8.0]),
+    "dual-momentum": ("lookback", [63, 126, 189, 252]),
     # intraday templates: MC + walk-forward only (5m sweeps are too slow)
     "opening-range-breakout": None,
     "opening-breakout-us": None,

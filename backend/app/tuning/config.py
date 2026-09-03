@@ -40,6 +40,30 @@ TUNING_GRID: dict[str, dict[str, list]] = {
         "adx_trend_min": [20, 25, 30],
         "er_trend_min": [0.25, 0.35, 0.45],
     },
+    "supertrend": {
+        "multiplier": [2.0, 3.0, 4.0],
+        "atr_period": [7, 10, 14],
+    },
+    "golden-cross": {
+        "slow_period": [100, 150, 200],
+        "ma_type": ["sma", "ema"],
+    },
+    "rsi2-reversion": {
+        "entry_rsi": [5, 10, 15],
+        "regime_window": [100, 150, 200],
+    },
+    "bollinger-reversion": {
+        "bb_stdev": [1.8, 2.0, 2.5],
+        "regime_window": [0, 100, 200],
+    },
+    "fiftytwo-week-high": {
+        "band_pct": [2.0, 3.0, 5.0],
+        "exit_pct": [8.0, 12.0, 15.0],
+    },
+    "dual-momentum": {
+        "lookback": [126, 189, 252],
+        "top_n": [2, 3, 5],
+    },
     # intraday templates excluded — 5-minute grid runs are too slow.
 }
 
