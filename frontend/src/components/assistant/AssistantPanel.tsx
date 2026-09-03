@@ -128,8 +128,10 @@ export function AssistantPanel({ open, onClose }: { open: boolean; onClose: () =
             </span>
             <div>
               <p className="font-display text-sm font-semibold text-fg">Research assistant</p>
-              <p className="text-[11px] text-fg-faint">
-                {status?.available ? `Claude · ${status.model}` : "Not configured"}
+              <p className="max-w-[260px] truncate text-[11px] text-fg-faint">
+                {status?.available
+                  ? `${status.provider} · ${status.model}`
+                  : "Not configured"}
               </p>
             </div>
           </div>

@@ -1,7 +1,7 @@
 """Research assistant (Claude) — long-horizon stock / sector questions
 answered from the platform's own fundamentals + engine signals.
 
-  GET  /assistant/status        is it configured (ANTHROPIC_API_KEY)?
+  GET  /assistant/status        is the active LLM provider configured?
   GET  /assistant/suggestions   placeholder prompts for the empty state
   POST /assistant/chat          {messages: [{role, content}]} -> {reply, grounding}
 """
@@ -13,7 +13,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends
 from sqlalchemy.orm import Session
 
-from app.assistant import anthropic_client, service
+from app.assistant import llm, service
 from app.config import Settings, get_settings
 from app.core.deps import get_db
 from app.core.exceptions import ValidationError
@@ -39,7 +39,7 @@ def post_chat(
 ) -> dict[str, Any]:
     try:
         return service.chat(db, settings, messages)
-    except anthropic_client.AssistantNotConfigured as exc:
+    except llm.AssistantNotConfigured as exc:
         raise ValidationError(str(exc)) from exc
-    except anthropic_client.AssistantError as exc:
+    except llm.AssistantError as exc:
         raise ValidationError(f"assistant upstream error: {exc}") from exc

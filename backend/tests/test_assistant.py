@@ -1,5 +1,5 @@
-"""The Claude-backed research assistant: grounding + the chat orchestration
-(the Anthropic call itself is stubbed)."""
+"""The research assistant: grounding + the chat orchestration (the LLM call
+itself is stubbed)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from datetime import datetime
 
 import pytest
 
-from app.assistant import anthropic_client, context, service
+from app.assistant import context, llm, service
 from app.config import get_settings
 from app.core.exceptions import ValidationError
 from app.market_scanner import tracker as trk
@@ -27,9 +27,18 @@ def test_detect_sectors():
 
 def test_status_reports_not_configured(monkeypatch):
     s = get_settings()
-    monkeypatch.setattr(s, "anthropic_api_key", "", raising=False)
+    monkeypatch.setattr(s, "assistant_provider", "openai", raising=False)
+    monkeypatch.setattr(s, "assistant_openai_api_key", "", raising=False)
     st = service.status(s)
-    assert st["available"] is False and "ANTHROPIC_API_KEY" in st["reason"]
+    assert st["available"] is False and "ASSISTANT_OPENAI_API_KEY" in st["reason"]
+    assert st["provider"] == "openai"
+
+
+def test_status_ok_for_ollama_without_a_key(monkeypatch):
+    s = get_settings()
+    monkeypatch.setattr(s, "assistant_provider", "ollama", raising=False)
+    st = service.status(s)
+    assert st["available"] is True and "ollama" in st["model"].lower()
 
 
 def test_suggestions_are_offered():
@@ -40,7 +49,8 @@ def test_suggestions_are_offered():
 
 def test_chat_grounds_then_calls_the_model(db, monkeypatch):
     s = get_settings()
-    monkeypatch.setattr(s, "anthropic_api_key", "test-key", raising=False)
+    monkeypatch.setattr(s, "assistant_provider", "openai", raising=False)
+    monkeypatch.setattr(s, "assistant_openai_api_key", "test-key", raising=False)
 
     # a live engine idea for RELIANCE so the grounding block has something
     db.add(ScanRecommendation(
@@ -60,7 +70,7 @@ def test_chat_grounds_then_calls_the_model(db, monkeypatch):
         captured["messages"] = messages
         return "Thesis: solid. ...\n\nNot investment advice. Do your own due diligence."
 
-    monkeypatch.setattr(anthropic_client, "complete", _fake_complete)
+    monkeypatch.setattr(llm, "complete", _fake_complete)
 
     out = service.chat(db, s, [{"role": "user", "content": "Is RELIANCE a good 5-year hold?"}])
     assert "Not investment advice" in out["reply"]
@@ -80,8 +90,16 @@ def test_chat_rejects_empty_or_non_user_tail(db):
         service.chat(db, s, [{"role": "assistant", "content": "hi"}])
 
 
-def test_complete_raises_when_no_key():
+def test_complete_raises_when_no_key(monkeypatch):
     s = get_settings()
-    object.__setattr__(s, "anthropic_api_key", "")
-    with pytest.raises(anthropic_client.AssistantNotConfigured):
-        anthropic_client.complete(s, system="x", messages=[{"role": "user", "content": "hi"}])
+    monkeypatch.setattr(s, "assistant_provider", "gemini", raising=False)
+    monkeypatch.setattr(s, "gemini_api_key", "", raising=False)
+    with pytest.raises(llm.AssistantNotConfigured):
+        llm.complete(s, system="x", messages=[{"role": "user", "content": "hi"}])
+
+
+def test_unknown_provider_is_reported_not_crashed(monkeypatch):
+    s = get_settings()
+    monkeypatch.setattr(s, "assistant_provider", "bogus", raising=False)
+    ok, reason, _ = llm.configured(s)
+    assert ok is False and "bogus" in reason

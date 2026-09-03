@@ -7,7 +7,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.assistant import anthropic_client, context
+from app.assistant import context, llm
 from app.config import Settings
 from app.core.exceptions import ValidationError
 
@@ -46,11 +46,12 @@ _SUGGESTIONS = [
 
 
 def status(settings: Settings) -> dict[str, Any]:
+    ok, reason, model = llm.configured(settings)
     return {
-        "available": anthropic_client.is_configured(settings),
-        "model": settings.anthropic_model if anthropic_client.is_configured(settings) else None,
-        "reason": None if anthropic_client.is_configured(settings)
-        else "Set ANTHROPIC_API_KEY to enable the research assistant.",
+        "available": ok,
+        "provider": settings.assistant_provider,
+        "model": model if ok else None,
+        "reason": reason,
     }
 
 
@@ -75,10 +76,10 @@ def chat(db: Session, settings: Settings, messages: list[dict[str, str]]) -> dic
         "content": f"{convo[-1]['content']}\n\n---\nPLATFORM DATA:\n{ctx['text']}",
     }
 
-    reply = anthropic_client.complete(settings, system=_SYSTEM, messages=convo)
+    reply = llm.complete(settings, system=_SYSTEM, messages=convo)
     return {
         "reply": reply,
-        "model": settings.anthropic_model,
+        "model": llm.configured(settings)[2],
         "grounding": {"symbols": ctx["symbols"], "sectors": ctx["sectors"],
                       "had_data": ctx["text"] != "(no platform data matched this question)"},
     }

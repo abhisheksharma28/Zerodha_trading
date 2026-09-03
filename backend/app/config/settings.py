@@ -46,13 +46,33 @@ class Settings(BaseSettings):
     fundamentals_api_key: str = ""
     fundamentals_api_base: str = ""
 
-    # --- Research assistant (Claude) ---
-    # The chat assistant calls the Anthropic Messages API directly over httpx.
-    # No key -> the assistant endpoint reports "not configured" rather than 500.
+    # --- Research assistant ("Ask AI" chat) ---
+    # Provider-agnostic; ASSISTANT_PROVIDER picks the backend:
+    #   openai    - any OpenAI-compatible /chat/completions endpoint. The
+    #               default base URL is Groq (free tier, no card) — just set
+    #               ASSISTANT_OPENAI_API_KEY. Repoint the base URL for
+    #               OpenRouter / OpenAI / a local server.
+    #   gemini    - Google Gemini free tier (GEMINI_API_KEY).
+    #   ollama    - a local Ollama server; no key, offline, must be running.
+    #   anthropic - Claude (paid; ANTHROPIC_API_KEY).
+    # Missing config -> the endpoint reports "not configured", never a 500.
+    assistant_provider: str = "openai"
+    assistant_max_tokens: int = 1800
+
+    assistant_openai_api_key: str = ""
+    assistant_openai_base_url: str = "https://api.groq.com/openai/v1"
+    assistant_openai_model: str = "llama-3.3-70b-versatile"
+
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.0-flash"
+    gemini_base_url: str = "https://generativelanguage.googleapis.com"
+
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3.1"
+
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-5"
     anthropic_base_url: str = "https://api.anthropic.com"
-    assistant_max_tokens: int = 1800
 
     # --- Risk limits (internal ceiling, intentionally tighter than Kite's own) ---
     risk_max_orders_per_second: int = 5
