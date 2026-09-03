@@ -157,6 +157,13 @@ def run_cycle(db: Session, settings: Settings) -> None:
     except Exception:  # noqa: BLE001 - the auto-trade bridge must not break the loop
         logger.exception("paper_algo_cycle_error")
         db.rollback()
+    try:
+        from app.baskets import paper as basket_paper
+
+        basket_paper.tick_all(db, settings)
+    except Exception:  # noqa: BLE001 - basket rebalancing must not break the loop
+        logger.exception("basket_tick_all_error")
+        db.rollback()
     if phase == "squareoff":
         _squareoff_mis(db, settings)
     # keep tokens flowing on the tick feed

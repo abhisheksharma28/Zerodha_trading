@@ -7,6 +7,12 @@
   PUT    /baskets/{id}            edit name / weights / spec
   DELETE /baskets/{id}            delete (draft) or archive (deployed)
   POST   /baskets/{id}/backtest   walk-forward backtest, cached on the row
+  POST   /baskets/{id}/deploy     deploy to the paper account + initial buy
+  POST   /baskets/{id}/undeploy   stop (optionally liquidate)
+  POST   /baskets/{id}/rebalance  rebalance now (cadence-gated unless force)
+  GET    /baskets/{id}/preview    the rebalance diff, without placing anything
+  GET    /baskets/{id}/status     live holdings, weights, drift, P&L
+  GET    /baskets/{id}/events     rebalance history
 """
 
 from __future__ import annotations
@@ -16,7 +22,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.baskets import service
+from app.baskets import paper, service
 from app.config import Settings, get_settings
 from app.core.deps import get_db
 
@@ -71,3 +77,59 @@ def backtest_basket(
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     return service.run_backtest(db, settings, basket_id, years=years)
+
+
+@router.post("/{basket_id}/deploy")
+def deploy_basket(
+    basket_id: str,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    return paper.deploy(db, settings, basket_id)
+
+
+@router.post("/{basket_id}/undeploy")
+def undeploy_basket(
+    basket_id: str,
+    payload: dict[str, Any] = Body(default={}),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    return paper.undeploy(db, settings, basket_id, liquidate=bool(payload.get("liquidate")))
+
+
+@router.post("/{basket_id}/rebalance")
+def rebalance_basket(
+    basket_id: str,
+    force: bool = Query(False),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    return paper.rebalance(db, settings, basket_id, force=force)
+
+
+@router.get("/{basket_id}/preview")
+def preview_basket(
+    basket_id: str,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    return paper.preview(db, settings, basket_id)
+
+
+@router.get("/{basket_id}/status")
+def basket_status(
+    basket_id: str,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    return paper.status(db, settings, basket_id)
+
+
+@router.get("/{basket_id}/events")
+def basket_events(
+    basket_id: str,
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+) -> list[dict[str, Any]]:
+    return paper.events(db, basket_id, limit=limit)
