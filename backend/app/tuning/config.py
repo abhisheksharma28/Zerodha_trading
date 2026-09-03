@@ -64,6 +64,18 @@ TUNING_GRID: dict[str, dict[str, list]] = {
         "lookback": [126, 189, 252],
         "top_n": [2, 3, 5],
     },
+    "low-volatility-anomaly": {
+        "vol_lookback": [90, 120, 180],
+        "hold_n": [10, 15, 20],
+    },
+    "sector-momentum-rotation": {
+        "mom_lookback": [63, 126, 252],
+        "hold_n": [2, 3, 4],
+    },
+    "pairs-trading": {
+        "entry_zscore": [1.5, 2.0, 2.5],
+        "lookback": [40, 60, 90],
+    },
     # intraday templates excluded — 5-minute grid runs are too slow.
 }
 

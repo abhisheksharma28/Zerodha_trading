@@ -14,8 +14,14 @@ from sqlalchemy.orm import Session
 from app.backtesting.adhoc import run_adhoc
 from app.config import Settings
 from app.core.logging import get_logger
-from app.leaderboard import narrative, store
-from app.leaderboard.config import CANONICAL, UNSUITED, canonical_for
+from app.leaderboard import market_pool, narrative, store, universe
+from app.leaderboard.config import (
+    CANONICAL,
+    TEST_PLANS,
+    UNSUITED,
+    canonical_for,
+    save_frozen_universe,
+)
 from app.models.backtest import Backtest
 from app.models.deployment import Deployment
 from app.models.enums import DeploymentStatus, TradingMode
@@ -48,6 +54,27 @@ def _downsample(curve: list[list[Any]], n: int = 300) -> list[list[Any]]:
     return [curve[min(len(curve) - 1, int(i * step))] for i in range(n)] + [curve[-1]]
 
 
+_POOL_CACHE: dict[float, tuple[dict[str, Any], dict[str, str]]] = {}
+
+
+def _screen_pool(db: Session, settings: Settings, years: float) -> dict[str, Any]:
+    """Daily bar pool for the universe screens, memoised per window length
+    within one process so ``refresh_all`` builds it once."""
+    if years not in _POOL_CACHE:
+        _POOL_CACHE[years] = market_pool.load_pool(
+            db, settings, as_of=datetime.now().date().isoformat(), years=years, timeframe="1d",
+        )
+    return _POOL_CACHE[years][0]
+
+
+def _resolve_universe(
+    db: Session, settings: Settings, slug: str, as_of: datetime,
+) -> universe.ScreenResult:
+    plan = TEST_PLANS[slug]
+    pool = _screen_pool(db, settings, plan.years)
+    return universe.run_screen(plan.screen, pool, as_of.date(), plan.screen_params)
+
+
 def run_canonical(db: Session, settings: Settings, slug: str) -> dict[str, Any]:
     cfg = canonical_for(slug)
     if cfg is None:
@@ -55,8 +82,31 @@ def run_canonical(db: Session, settings: Settings, slug: str) -> dict[str, Any]:
 
     to_dt = datetime.now()
     from_dt = to_dt - timedelta(days=int(cfg.years * 365.25))
-    symbols = [f"NSE:{s}" for s in cfg.universe]
     tuned = tuned_overrides(slug)
+
+    # dynamic universe: screen the market for names that fit this strategy,
+    # freeze the choice + rationale so robustness / tuning reuse it. If the
+    # screen can't run (no broker session, no pool) fall back to the default
+    # basket rather than failing the whole refresh.
+    try:
+        screen = _resolve_universe(db, settings, slug, to_dt)
+        picked = screen.symbols or list(cfg.universe)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("leaderboard_screen_unavailable", slug=slug, error=str(exc))
+        picked = list(cfg.universe)
+        screen = universe.ScreenResult(
+            picked,
+            f"Universe screen '{cfg.screen}' could not run ({exc}); using the default "
+            f"{cfg.universe_name} basket. Re-run once the broker session is connected.",
+            {}, ["Universe not screened — default basket."],
+        )
+    save_frozen_universe(slug, {
+        "config_hash": cfg.config_hash, "screen": cfg.screen,
+        "as_of": to_dt.date().isoformat(), "symbols": picked,
+        "rationale": screen.rationale, "metrics": screen.metrics, "caveats": screen.caveats,
+    })
+    cfg = canonical_for(slug) or cfg
+    symbols = [f"NSE:{s}" for s in picked]
 
     report = run_adhoc(
         db, settings, slug=slug, symbols=symbols, timeframe=cfg.timeframe,
@@ -81,7 +131,10 @@ def run_canonical(db: Session, settings: Settings, slug: str) -> dict[str, Any]:
         "equity_curve": _downsample(report.equity_curve),
         "top_symbols": [s.as_dict() for s in per_symbol[:8]],
         "bottom_symbols": [s.as_dict() for s in per_symbol[-5:]][::-1],
-        "caveats": report.caveats,
+        "caveats": [*report.caveats, *screen.caveats],
+        "universe_rationale": screen.rationale,
+        "screen": {"name": cfg.screen, "params": cfg.screen_params,
+                   "metrics": screen.metrics, "design_note": cfg.design_note},
     }
     payload["summary"] = narrative.summarize(payload)
     store.save(slug, cfg.config_hash, payload)
@@ -129,11 +182,14 @@ def catalog(db: Session) -> dict[str, Any]:
             "universe": cfg.universe_name,
             "timeframe": cfg.timeframe,
             "years": cfg.years,
+            "screen": cfg.screen,
+            "design_note": cfg.design_note,
             "stale": bool(blob and blob.get("config", {}).get("config_hash") != cfg.config_hash),
         }
         if blob is None:
             row.update(status="not_run", metrics=None, summary=None,
-                       equity_curve=[], cached_at=None)
+                       equity_curve=[], cached_at=None, universe_rationale=None,
+                       screen_metrics=None)
         else:
             row.update(
                 status="ruined" if blob.get("ruined") else "ok",
@@ -144,6 +200,8 @@ def catalog(db: Session) -> dict[str, Any]:
                 cached_at=blob.get("cached_at"),
                 used_symbols=len(blob.get("used_symbols") or []),
                 skipped=len(blob.get("skipped") or {}),
+                universe_rationale=blob.get("universe_rationale"),
+                screen_metrics=(blob.get("screen") or {}).get("metrics"),
             )
             newest = max(newest, float(blob.get("cached_at") or 0))
         entries.append(row)
@@ -161,7 +219,7 @@ def catalog(db: Session) -> dict[str, Any]:
             "user_backtests": int(total_user),
             "total_backtests": ran + int(total_user),
             "last_refresh": newest or None,
-            "universe": next((c.universe_name for c in CANONICAL.values() if c.timeframe == "1d"), None),
+            "universe": "per-strategy dynamic screens",
         },
         "strategies": entries,
     }

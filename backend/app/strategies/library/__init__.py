@@ -24,6 +24,7 @@ from app.strategies.library.force_index import ForceIndexStrategy
 from app.strategies.library.golden_cross import GoldenCrossStrategy
 from app.strategies.library.index_futures_arbitrage import IndexFuturesArbitrageStrategy
 from app.strategies.library.latency_arbitrage import LatencyArbitrageStrategy
+from app.strategies.library.low_volatility_anomaly import LowVolatilityAnomalyStrategy
 from app.strategies.library.macd_grid import MacdGridStrategy
 from app.strategies.library.mean_reversion import MeanReversionStrategy
 from app.strategies.library.momentum import CrossSectionalMomentumStrategy
@@ -33,6 +34,7 @@ from app.strategies.library.opening_range_breakout import OpeningRangeBreakoutSt
 from app.strategies.library.pairs_trading import PairsTradingStrategy
 from app.strategies.library.regime_adaptive import RegimeAdaptiveStrategy
 from app.strategies.library.rsi2_reversion import Rsi2ReversionStrategy
+from app.strategies.library.sector_momentum_rotation import SectorMomentumRotationStrategy
 from app.strategies.library.supertrend import SupertrendStrategy
 from app.strategies.library.trend_following import TrendFollowingStrategy
 from app.strategies.library.triple_screen import TripleScreenStrategy
@@ -58,6 +60,8 @@ TEMPLATES: list[type[TemplateStrategy]] = [
     BollingerReversionStrategy,
     FiftyTwoWeekHighStrategy,
     DualMomentumStrategy,
+    LowVolatilityAnomalyStrategy,
+    SectorMomentumRotationStrategy,
     VolatilityRegimeStrategy,
     RegimeAdaptiveStrategy,
     OpeningRangeBreakoutStrategy,
@@ -98,6 +102,8 @@ __all__ = [
     "BollingerReversionStrategy",
     "FiftyTwoWeekHighStrategy",
     "DualMomentumStrategy",
+    "LowVolatilityAnomalyStrategy",
+    "SectorMomentumRotationStrategy",
     "VolatilityRegimeStrategy",
     "RegimeAdaptiveStrategy",
     "OpeningRangeBreakoutStrategy",

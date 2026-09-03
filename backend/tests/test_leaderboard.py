@@ -16,6 +16,7 @@ from app.leaderboard.service import _fifo_realized, leaderboard, refresh_all, ru
 @pytest.fixture()
 def cache_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(lb_store, "_DIR", tmp_path / "lb")
+    monkeypatch.setattr(lb_config, "_SIDECAR_DIR", tmp_path / "uni")
     yield tmp_path / "lb"
 
 

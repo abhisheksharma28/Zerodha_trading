@@ -23,6 +23,7 @@ from app.strategies.library import (
     GoldenCrossStrategy,
     IndexFuturesArbitrageStrategy,
     LatencyArbitrageStrategy,
+    LowVolatilityAnomalyStrategy,
     MacdGridStrategy,
     MeanReversionStrategy,
     MultiFactorStrategy,
@@ -31,6 +32,7 @@ from app.strategies.library import (
     PairsTradingStrategy,
     RegimeAdaptiveStrategy,
     Rsi2ReversionStrategy,
+    SectorMomentumRotationStrategy,
     SupertrendStrategy,
     TrendFollowingStrategy,
     TripleScreenStrategy,
@@ -1176,3 +1178,44 @@ def test_dual_momentum_rotates_into_the_stronger_name():
     })
     _emitted, positions = run(DualMomentumStrategy, p, steps)
     assert positions.get("AAA", 0) > 0 and positions.get("BBB", 0) == 0
+
+
+def test_low_volatility_anomaly_holds_the_calmest_names():
+    # CALM_x rise smoothly; WILD_x rise the same on average but with big
+    # oscillations -> the screen should hold the CALM names, not the WILD ones.
+    import math
+
+    steps = []
+    for day in range(320):
+        for k in range(3):
+            calm = 100.0 * (1.0 + 0.0004 * day)
+            steps.append(_bar(f"CALM{k}", round(calm, 2), daily_ts(day)))
+        for k in range(3):
+            wild = 100.0 * (1.0 + 0.0004 * day) + 12.0 * math.sin(day / 3.0 + k)
+            steps.append(_bar(f"WILD{k}", round(max(wild, 1.0), 2), daily_ts(day)))
+    p = LowVolatilityAnomalyStrategy.resolve_params({
+        **LowVolatilityAnomalyStrategy.presets()["balanced"],
+        "vol_lookback": 60, "hold_n": 3, "trend_ma_period": 0, "max_names_ratio": 1.0,
+        "sizing_method": "fixed_capital", "capital_allocation": 1_000_000.0,
+        "regime_filter_enabled": False,
+    })
+    _emitted, positions = run(LowVolatilityAnomalyStrategy, p, steps)
+    assert sum(positions.get(f"CALM{k}", 0) for k in range(3)) > 0
+    assert all(positions.get(f"WILD{k}", 0) == 0 for k in range(3))
+
+
+def test_sector_momentum_rotation_rotates_into_the_leading_sector():
+    steps = []
+    for day in range(320):
+        steps.append(_bar("NIFTY IT", round(100.0 * (1.006 ** day), 2), daily_ts(day)))
+        steps.append(_bar("NIFTY PHARMA", round(100.0 * (0.999 ** day), 2), daily_ts(day)))
+        steps.append(_bar("NIFTY METAL", round(100.0 * (0.997 ** day), 2), daily_ts(day)))
+    p = SectorMomentumRotationStrategy.resolve_params({
+        **SectorMomentumRotationStrategy.presets()["balanced"],
+        "mom_lookback": 120, "skip_recent": 0, "hold_n": 1, "abs_min_return": 0.0,
+        "trend_ma_period": 0, "sizing_method": "fixed_capital",
+        "capital_allocation": 1_000_000.0, "regime_filter_enabled": False,
+    })
+    _emitted, positions = run(SectorMomentumRotationStrategy, p, steps)
+    assert positions.get("NIFTY IT", 0) > 0
+    assert positions.get("NIFTY PHARMA", 0) == 0 and positions.get("NIFTY METAL", 0) == 0

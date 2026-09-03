@@ -24,6 +24,12 @@ def _cache_key(instrument_token: str, interval: str, from_dt: datetime, to_dt: d
     return _CACHE_DIR / fname
 
 
+def is_cached(instrument_token: str, interval: str, from_dt: datetime, to_dt: datetime) -> bool:
+    """True when ``get_candles`` for this key would be served from disk (no
+    broker call). Lets batch callers pace only the uncached pulls."""
+    return _cache_key(instrument_token, interval, from_dt, to_dt).exists()
+
+
 def get_candles(
     broker_client: BrokerClient,
     instrument_token: str,

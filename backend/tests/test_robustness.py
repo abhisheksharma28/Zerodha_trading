@@ -124,10 +124,12 @@ def test_run_robustness_builds_payload_and_scores(rob_cache, monkeypatch, db):
 
 
 def test_leaderboard_folds_in_robustness_score(rob_cache, monkeypatch, db):
+    from app.leaderboard import config as lb_config
     from app.leaderboard import service as lb_service
     from app.leaderboard import store as lb_store
 
     monkeypatch.setattr(lb_store, "_DIR", (rob_store._DIR.parent / "lb"))
+    monkeypatch.setattr(lb_config, "_SIDECAR_DIR", (rob_store._DIR.parent / "uni"))
 
     # one cached canonical backtest
     from tests.test_leaderboard import _fake_report  # reuse

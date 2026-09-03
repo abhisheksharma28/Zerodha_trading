@@ -208,6 +208,40 @@ now shows that benchmark next to every result).
 > (`regime_ma`, `trend_ma`, `slow`, …) silently gets the 250-bar default buffer and the
 > entry never fires. Name long-lookback params accordingly, or cap their `max` at ~250.
 
+### 9b. Per-strategy dynamic test plans — `app/leaderboard/config.py::TEST_PLANS`
+
+The leaderboard no longer tests every strategy on one fixed basket. Each strategy
+has a `TestPlan` naming a **market screen** (`app/leaderboard/universe.py`) that
+picks the names that actually fit that strategy, plus timeframe / window / preset.
+The screen runs at refresh time over a shared daily candle pool
+(`app/leaderboard/market_pool.py` — the liquid NSE cash list + sector/broad
+indices), records a plain-English rationale, and freezes its choice to
+`data/leaderboard_universe/<slug>.json` so robustness and tuning reuse the exact
+same names. The `config_hash` covers the plan, not the day's list.
+
+| Screen | Picks | Used by |
+|---|---|---|
+| `mean_reverting` | most negative 1-day return autocorrelation + Hurst < 0.5 | RSI-2, Bollinger fade, z-score MR, mean-reversion |
+| `trend_persistent` | highest blend of median ADX(14) and Hurst > 0.5 | Supertrend, Donchian, golden cross, 52-week-high, MACD-grid, Elder family |
+| `broad_cross_section` | the liquid cross-section itself (nothing pre-sorted) | cross-sectional momentum, multi-factor, dual momentum, Chinese Transformer, regime switchers |
+| `low_volatility` / `high_volatility` | realised-vol deciles | low-vol anomaly / intraday breakout |
+| `sector_index_basket` | the NSE sector indices | sector momentum rotation |
+| `cointegrated_pair` | the pair with the most stationary log-spread (hand-rolled Engle-Granger ADF, half-life gate, `t < −3`) among the 30 most liquid | pairs trading |
+
+Windows widened to **5 years** for daily strategies (the old 3y was one bull run —
+equal-weight NIFTY 200 did +62% over it, so every strategy "lost"). Screens are
+causal in signal but select on full-window *character*; that plus the
+already-disclosed survivorship bias (NSE has no point-in-time membership) is
+surfaced on every result.
+
+**New strategies (2026-09):**
+
+| Template | Source | Screen |
+|---|---|---|
+| `low-volatility-anomaly` — hold the lowest-realised-vol names equal-weight, monthly, optional trend filter | Haugen & Baker; Baker–Bradley–Wurgler; Blitz–van Vliet | `low_volatility` |
+| `sector-momentum-rotation` — hold the top-N NSE sector indices by 6-month return, monthly, absolute-momentum gate | Faber, *Relative Strength Strategies for Investing* | `sector_index_basket` |
+| `pairs-trading` (promoted out of `UNSUITED`) — spread z-score reversion; the tool now screens for the pair | Gatev–Goetzmann–Rouwenhorst | `cointegrated_pair` |
+
 ---
 
 ## 10. Risk & money management — 📖 (rules baked into the paper algo + scorer)

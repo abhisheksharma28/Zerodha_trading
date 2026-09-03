@@ -26,6 +26,9 @@ SWEEP: dict[str, tuple[str, list[float]] | None] = {
     "bollinger-reversion": ("bb_stdev", [1.5, 2.0, 2.5, 3.0]),
     "fiftytwo-week-high": ("band_pct", [1.0, 2.0, 3.0, 5.0, 8.0]),
     "dual-momentum": ("lookback", [63, 126, 189, 252]),
+    "low-volatility-anomaly": ("vol_lookback", [60, 90, 120, 180, 240]),
+    "sector-momentum-rotation": ("mom_lookback", [42, 63, 126, 189, 252]),
+    "pairs-trading": ("entry_zscore", [1.5, 2.0, 2.5, 3.0]),
     # intraday templates: MC + walk-forward only (5m sweeps are too slow)
     "opening-range-breakout": None,
     "opening-breakout-us": None,
