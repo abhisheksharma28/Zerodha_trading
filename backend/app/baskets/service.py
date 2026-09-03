@@ -231,4 +231,18 @@ def run_backtest(
 
 
 def starter_templates() -> dict[str, Any]:
-    return {"categories": _template_categories(), "templates": _starter_templates()}
+    from app.baskets.template_backtests import load as _load_template_backtests
+
+    stored = _load_template_backtests()
+    tpls = _starter_templates()
+    for t in tpls:
+        bt_summary = stored.get(t["key"])
+        if bt_summary and "error" not in bt_summary:
+            t["backtest"] = bt_summary
+    return {
+        "categories": _template_categories(),
+        "templates": tpls,
+        "backtests_generated_at": (
+            next(iter(stored.values()), {}).get("generated_at") if stored else None
+        ),
+    }

@@ -2,11 +2,12 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layers, Loader2, Plus } from "lucide-react";
 
-import type { BasketSpec, Frequency, Sleeve } from "@/api/baskets";
+import type { BasketSpec, BasketTemplate, Frequency, Sleeve } from "@/api/baskets";
 import { basketsApi } from "@/api/baskets";
 import { SleeveEditor, emptySleeve } from "@/components/baskets/SleeveEditor";
 import { PageHeader } from "@/components/PageHeader";
 import { SectionCard } from "@/components/SectionCard";
+import { Sparkline } from "@/components/Sparkline";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useBasketTemplates, useBaskets, useCreateBasket } from "@/hooks/useBaskets";
@@ -210,7 +211,15 @@ export default function BasketsPage() {
 
       {catalog && catalog.templates.length > 0 && (
         <section className="flex flex-col gap-4">
-          <h2 className="text-sm font-semibold text-fg">Start from a template</h2>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-sm font-semibold text-fg">Start from a template</h2>
+            {catalog.backtests_generated_at && (
+              <span className="text-[10px] text-fg-faint">
+                Backtested {new Date(catalog.backtests_generated_at).toLocaleDateString("en-IN")} ·
+                costs &amp; slippage included · past results don&apos;t predict the future
+              </span>
+            )}
+          </div>
           {catalog.categories.map((cat) => {
             const items = catalog.templates.filter((t) => t.category === cat);
             if (items.length === 0) return null;
@@ -221,35 +230,7 @@ export default function BasketsPage() {
                 </p>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                   {items.map((t) => (
-                    <div
-                      key={t.key}
-                      className="flex flex-col rounded-lg border border-line bg-surface p-3"
-                    >
-                      <p className="text-sm font-semibold text-fg">{t.name}</p>
-                      <p className="mt-1 flex-1 text-[11px] leading-snug text-fg-muted">
-                        {t.description}
-                      </p>
-                      {t.tags?.length > 0 && (
-                        <div className="mt-1.5 flex flex-wrap gap-1">
-                          {t.tags.slice(0, 4).map((tag) => (
-                            <span
-                              key={tag}
-                              className="rounded bg-elevated px-1.5 py-0.5 text-[9px] text-fg-faint"
-                            >
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      <div className="mt-2 flex items-center justify-between">
-                        <span className="text-[10px] text-fg-faint">
-                          {t.spec.sleeves.length} sleeves · {t.rebalance_frequency}
-                        </span>
-                        <Button size="sm" variant="outline" onClick={() => applyTemplate(t.key)}>
-                          Use
-                        </Button>
-                      </div>
-                    </div>
+                    <TemplateCard key={t.key} t={t} onUse={() => applyTemplate(t.key)} />
                   ))}
                 </div>
               </div>
@@ -318,6 +299,89 @@ export default function BasketsPage() {
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+function TemplateCard({ t, onUse }: { t: BasketTemplate; onUse: () => void }) {
+  const bt = t.backtest;
+  const m = bt?.metrics ?? {};
+  const oos = bt?.oos?.out_of_sample ?? {};
+  const sgn = (v: number | null | undefined, d = 1) =>
+    v == null ? "–" : `${v >= 0 ? "+" : ""}${num(v, d)}`;
+
+  return (
+    <div className="flex flex-col rounded-lg border border-line bg-surface p-3">
+      <p className="text-sm font-semibold text-fg">{t.name}</p>
+      <p className="mt-1 flex-1 text-[11px] leading-snug text-fg-muted">{t.description}</p>
+
+      {t.tags?.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {t.tags.slice(0, 4).map((tag) => (
+            <span key={tag} className="rounded bg-elevated px-1.5 py-0.5 text-[9px] text-fg-faint">
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {bt && (
+        <div className="mt-2 rounded-md border border-line/70 bg-bg/40 p-2">
+          <div className="flex items-center justify-between text-[9px] uppercase tracking-wide text-fg-faint">
+            <span>Backtest · {bt.years ?? "?"}y to {bt.end?.slice(0, 7) ?? ""}</span>
+            <span>vs {bt.benchmark}</span>
+          </div>
+          <div className="mt-1 grid grid-cols-4 gap-1.5 text-center">
+            <TMetric label="CAGR" value={`${sgn(m.cagr_pct)}%`} tone={(m.cagr_pct ?? 0) >= 0} />
+            <TMetric
+              label="vs bench"
+              value={`${sgn(m.excess_return_pct)}`}
+              tone={(m.excess_return_pct ?? 0) >= 0}
+            />
+            <TMetric label="Sharpe" value={num(m.sharpe_ratio, 2)} />
+            <TMetric label="Max DD" value={`${num(Math.abs(m.max_drawdown_pct ?? 0), 0)}%`} tone={false} />
+          </div>
+          {bt.spark.length > 3 && (
+            <div className="mt-1.5 h-6 w-full">
+              <Sparkline data={bt.spark} tone={(m.cagr_pct ?? 0) < 0 ? "neg" : "accent"} />
+            </div>
+          )}
+          {oos.return_pct != null && (
+            <p className="mt-1 text-[9px] text-fg-faint">
+              Out-of-sample (last {oos.start ? `from ${String(oos.start).slice(0, 7)}` : "third"}):{" "}
+              <span className={cn("tabular-nums", Number(oos.return_pct) < 0 ? "text-neg" : "text-pos")}>
+                {sgn(Number(oos.return_pct))}%
+              </span>{" "}
+              vs bench {sgn(Number(oos.benchmark_return_pct))}%
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="mt-2 flex items-center justify-between">
+        <span className="text-[10px] text-fg-faint">
+          {t.spec.sleeves.length} sleeves · {t.rebalance_frequency}
+        </span>
+        <Button size="sm" variant="outline" onClick={onUse}>
+          Use
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function TMetric({ label, value, tone }: { label: string; value: string; tone?: boolean }) {
+  return (
+    <div className="flex flex-col">
+      <span className="text-[8px] uppercase tracking-wide text-fg-faint">{label}</span>
+      <span
+        className={cn(
+          "tabular-nums text-[11px] font-semibold",
+          tone == null ? "text-fg" : tone ? "text-pos" : "text-neg",
+        )}
+      >
+        {value}
+      </span>
     </div>
   );
 }

@@ -86,6 +86,22 @@ export interface BasketBacktest {
   generated_at?: string;
 }
 
+export interface TemplateBacktest {
+  key: string;
+  generated_at: string;
+  start: string | null;
+  end: string | null;
+  years: number | null;
+  benchmark: string | null;
+  metrics: Record<string, number | null>;
+  oos: {
+    in_sample: Record<string, number | string | null>;
+    out_of_sample: Record<string, number | string | null>;
+  };
+  regime_breakdown: Record<string, { days: number; return_pct: number | null; ann_vol_pct: number | null }>;
+  spark: number[];
+}
+
 export interface BasketTemplate {
   key: string;
   name: string;
@@ -96,11 +112,13 @@ export interface BasketTemplate {
   rebalance_frequency: Frequency;
   drift_band_pct: number;
   spec: BasketSpec;
+  backtest?: TemplateBacktest;
 }
 
 export interface BasketTemplateCatalog {
   categories: string[];
   templates: BasketTemplate[];
+  backtests_generated_at: string | null;
 }
 
 export interface OrderIntent {

@@ -86,12 +86,43 @@ TEMPLATE_CATEGORIES = [
 
 _NONE = {"type": "none"}
 
+# a light default regime gate: de-risk to 50% equity when the Nifty closes
+# below its 200-day average
+_REGIME = {"benchmark": "NIFTY 50", "ma": 200, "risk_off_scale": 0.5}
 
-def _mom(lookback: int = 126, top_k: int = 8, trend_ma: int = 200, min_roc_pct: float = 0.0):
+
+def _mom(lookback: int = 126, top_k: int = 8, trend_ma: int = 200, min_roc_pct: float = 0.0,
+         hold_k: int = 0):
     return {
         "type": "momentum_top_k", "lookback": lookback, "top_k": top_k,
-        "trend_ma": trend_ma, "min_roc_pct": min_roc_pct,
+        "trend_ma": trend_ma, "min_roc_pct": min_roc_pct, "hold_k": hold_k,
     }
+
+
+def _composite(lookback: int, top_k: int, factor_weights: dict, *, hold_k: int = 0,
+               trend_ma: int = 200, min_roc_pct: float = 0.0):
+    return {
+        "type": "composite_score", "lookback": lookback, "top_k": top_k, "hold_k": hold_k,
+        "trend_ma": trend_ma, "min_roc_pct": min_roc_pct, "factor_weights": factor_weights,
+    }
+
+
+# blended factor weights. In a historical backtest only momentum/trend/low_vol
+# apply (the fundamental factors are renormalised away); live / paper signals
+# add quality / value / growth from present-day fundamentals.
+_FW_CORE = {"momentum": 0.30, "trend": 0.20, "low_vol": 0.15,
+            "quality": 0.20, "growth": 0.10, "value": 0.05}
+_FW_MOM_QUALITY = {"momentum": 0.40, "trend": 0.10, "quality": 0.35, "growth": 0.15}
+_FW_ALPHA = {"momentum": 0.40, "trend": 0.20, "low_vol": 0.10,
+             "quality": 0.20, "value": 0.10}
+_FW_DEFENSIVE = {"low_vol": 0.45, "trend": 0.15, "quality": 0.30, "value": 0.10}
+
+_MIDCAPS = [
+    "PERSISTENT", "COFORGE", "DIXON", "POLYCAB", "CUMMINSIND", "ASHOKLEY", "BALKRISIND",
+    "MPHASIS", "AUROPHARMA", "LUPIN", "ALKEM", "TORNTPHARM", "OBEROIRLTY", "PRESTIGE",
+    "PHOENIXLTD", "APLAPOLLO", "SUPREMEIND", "PIIND", "BHARATFORG", "SRF", "TATACHEM",
+    "GODREJPROP", "MUTHOOTFIN", "ABCAPITAL", "FEDERALBNK",
+]
 
 
 TEMPLATES: list[dict[str, Any]] = [
@@ -203,19 +234,22 @@ TEMPLATES: list[dict[str, Any]] = [
         "category": "Multi-asset",
         "tags": ["risk parity", "inverse-vol", "ETF"],
         "description": (
-            "Equity, gold, a G-Sec ETF and liquid, but weighted by inverse "
-            "volatility inside one sleeve so each contributes roughly equal risk "
-            "instead of equal rupees — a retail approximation of risk parity."
+            "Equity, gold and a G-Sec ETF, weighted by inverse volatility so each "
+            "contributes roughly equal risk instead of equal rupees — a retail "
+            "approximation of risk parity. A 50% single-name cap stops the "
+            "lowest-vol sleeve from swallowing the book, plus a small cash buffer."
         ),
         "benchmark": "NIFTY 50",
         "rebalance_frequency": "monthly",
         "drift_band_pct": 3.0,
         "spec": {
             "sleeves": [
-                {"id": "rp", "name": "Risk-parity blend", "weight_pct": 100.0,
-                 "weighting": "inverse_vol",
-                 "members": ["NIFTYBEES", "GOLDBEES", "GSEC10IETF", "LIQUIDBEES"],
+                {"id": "rp", "name": "Risk-parity blend", "weight_pct": 90.0,
+                 "weighting": "inverse_vol", "max_weight_pct": 50.0,
+                 "members": ["NIFTYBEES", "GOLDBEES", "GSEC10IETF"],
                  "rule": _NONE},
+                {"id": "cash", "name": "Cash buffer", "weight_pct": 10.0, "weighting": "equal",
+                 "members": ["LIQUIDBEES"], "rule": _NONE, "risk_asset": False},
             ]
         },
     },
@@ -235,7 +269,7 @@ TEMPLATES: list[dict[str, Any]] = [
         "spec": {
             "sleeves": [
                 {"id": "equity-core", "name": "Momentum core", "weight_pct": 65.0,
-                 "weighting": "inverse_vol", "members": _LARGE_CAPS, "rule": _mom(126, 8, 200)},
+                 "weighting": "inverse_vol", "members": _LARGE_CAPS, "rule": _mom(126, 8, 200, hold_k=12)},
                 {"id": "gold", "name": "Gold", "weight_pct": 25.0,
                  "weighting": "equal", "members": ["GOLDBEES"], "rule": _NONE},
                 {"id": "silver", "name": "Silver", "weight_pct": 10.0,
@@ -329,7 +363,7 @@ TEMPLATES: list[dict[str, Any]] = [
         "spec": {
             "sleeves": [
                 {"id": "mom", "name": "Momentum", "weight_pct": 100.0, "weighting": "equal",
-                 "members": _MOMENTUM_POOL, "rule": _mom(126, 10, 200)},
+                 "members": _MOMENTUM_POOL, "rule": _mom(126, 10, 200, hold_k=15)},
             ]
         },
     },
@@ -390,7 +424,7 @@ TEMPLATES: list[dict[str, Any]] = [
         "spec": {
             "sleeves": [
                 {"id": "sector-leaders", "name": "Sector leaders", "weight_pct": 80.0,
-                 "weighting": "equal", "members": _SECTOR_BELLWETHERS, "rule": _mom(126, 5, 200)},
+                 "weighting": "equal", "members": _SECTOR_BELLWETHERS, "rule": _mom(126, 5, 200, hold_k=8)},
                 {"id": "gold", "name": "Gold", "weight_pct": 20.0,
                  "weighting": "equal", "members": ["GOLDBEES"], "rule": _NONE},
             ]
@@ -412,7 +446,7 @@ TEMPLATES: list[dict[str, Any]] = [
         "spec": {
             "sleeves": [
                 {"id": "sectors", "name": "Sector rotation", "weight_pct": 100.0,
-                 "weighting": "equal", "members": _SECTOR_BELLWETHERS, "rule": _mom(126, 4, 200)},
+                 "weighting": "equal", "members": _SECTOR_BELLWETHERS, "rule": _mom(126, 4, 200, hold_k=6)},
             ]
         },
     },
@@ -423,8 +457,10 @@ TEMPLATES: list[dict[str, Any]] = [
         "tags": ["banks", "NBFC", "insurance", "momentum"],
         "description": (
             "A single-sector rotation across the financials stack — private and PSU "
-            "banks, NBFCs and insurers. Holds the 5 strongest by 3-month momentum, "
-            "rebalanced monthly."
+            "banks, NBFCs and insurers. Holds the 6 strongest by 6-month momentum "
+            "(trend filter on, an 18% single-name cap and a hold buffer); a regime "
+            "gate cuts exposure to 40% when the Nifty is below its 200-day average, "
+            "since a concentrated bank book falls hard in a sell-off."
         ),
         "benchmark": "NIFTY BANK",
         "rebalance_frequency": "monthly",
@@ -432,8 +468,10 @@ TEMPLATES: list[dict[str, Any]] = [
         "spec": {
             "sleeves": [
                 {"id": "fin", "name": "Financials", "weight_pct": 100.0, "weighting": "equal",
-                 "members": _FINANCIALS, "rule": _mom(63, 5, 200)},
-            ]
+                 "members": _FINANCIALS, "max_weight_pct": 18.0,
+                 "rule": _mom(126, 6, 200, hold_k=9)},
+            ],
+            "risk": {"regime": {"benchmark": "NIFTY 50", "ma": 200, "risk_off_scale": 0.4}},
         },
     },
     {
@@ -452,7 +490,7 @@ TEMPLATES: list[dict[str, Any]] = [
         "spec": {
             "sleeves": [
                 {"id": "consum", "name": "Consumption", "weight_pct": 100.0, "weighting": "equal",
-                 "members": _CONSUMPTION, "rule": _mom(126, 6, 200)},
+                 "members": _CONSUMPTION, "rule": _mom(126, 6, 200, hold_k=9)},
             ]
         },
     },
@@ -505,6 +543,209 @@ TEMPLATES: list[dict[str, Any]] = [
                 {"id": "sat2", "name": "Sector satellite B", "weight_pct": 20.0,
                  "weighting": "equal", "members": _SECTOR_BELLWETHERS, "rule": _mom(63, 1, 200)},
             ]
+        },
+    },
+    # ------------------------------------------------------------- Factor (multi)
+    {
+        "key": "ai-dynamic-core",
+        "name": "AI Dynamic Core",
+        "category": "Factor",
+        "tags": ["multi-factor", "composite score", "regime gate", "flagship"],
+        "description": (
+            "The flagship: an 80% multi-factor core that each month holds the top "
+            "15 of a 30-name large-cap pool by a blended score (momentum + trend + "
+            "low-vol in the backtest; quality / growth / value added on the live "
+            "signal), score-weighted with a 10% single-name cap and a 15-name hold "
+            "buffer to curb churn. A Nifty regime gate cuts equity to half when the "
+            "index is below its 200-day average; 20% gold ballast."
+        ),
+        "benchmark": "NIFTY 50",
+        "rebalance_frequency": "monthly",
+        "drift_band_pct": 3.0,
+        "spec": {
+            "sleeves": [
+                {"id": "core", "name": "Multi-factor core", "weight_pct": 80.0,
+                 "weighting": "score_weighted", "members": _LARGE_CAPS, "max_weight_pct": 10.0,
+                 "rule": _composite(126, 15, _FW_CORE, hold_k=20, trend_ma=200)},
+                {"id": "gold", "name": "Gold ballast", "weight_pct": 20.0, "weighting": "equal",
+                 "members": ["GOLDBEES"], "rule": _NONE, "risk_asset": False},
+            ],
+            "risk": {"max_position_pct": 12.0, "regime": _REGIME},
+        },
+    },
+    {
+        "key": "momentum-quality",
+        "name": "Momentum + Quality",
+        "category": "Factor",
+        "tags": ["momentum", "quality", "composite score", "trend filter"],
+        "description": (
+            "Owns companies where the business and the tape are both strong — a "
+            "blended momentum + quality score over a large-cap pool, top 12, "
+            "score-weighted, with a hold buffer and the 200-day trend filter on. "
+            "Avoids weak-quality momentum names and strong companies stuck in a "
+            "downtrend."
+        ),
+        "benchmark": "NIFTY 50",
+        "rebalance_frequency": "monthly",
+        "drift_band_pct": 4.0,
+        "spec": {
+            "sleeves": [
+                {"id": "mq", "name": "Momentum + Quality", "weight_pct": 100.0,
+                 "weighting": "score_weighted", "members": _LARGE_CAPS, "max_weight_pct": 12.0,
+                 "rule": _composite(126, 12, _FW_MOM_QUALITY, hold_k=18, trend_ma=200)},
+            ],
+        },
+    },
+    {
+        "key": "ai-alpha-opportunities",
+        "name": "AI Alpha Opportunities",
+        "category": "Factor",
+        "tags": ["high conviction", "multi-factor", "aggressive"],
+        "description": (
+            "The highest-conviction multi-factor sleeve — top 12 of a broad "
+            "large/mid pool by a momentum-tilted composite, score-weighted, fully "
+            "invested, no ballast. Higher turnover and higher risk; a regime gate "
+            "still halves exposure in a downtrend."
+        ),
+        "benchmark": "NIFTY 50",
+        "rebalance_frequency": "monthly",
+        "drift_band_pct": 4.0,
+        "spec": {
+            "sleeves": [
+                {"id": "alpha", "name": "Alpha", "weight_pct": 100.0, "weighting": "score_weighted",
+                 "members": _MOMENTUM_POOL, "max_weight_pct": 12.0,
+                 "rule": _composite(126, 12, _FW_ALPHA, hold_k=16, trend_ma=200)},
+            ],
+            "risk": {"regime": _REGIME},
+        },
+    },
+    {
+        "key": "growth-accelerators",
+        "name": "Growth Accelerators",
+        "category": "Factor",
+        "tags": ["growth", "momentum proxy", "trend filter"],
+        "description": (
+            "Targets accelerating businesses. Without point-in-time estimate data "
+            "the backtest proxies acceleration with 3- and 6-month price momentum "
+            "on a growth-tilted pool (top 10, trend filter on); the live signal "
+            "adds fundamental growth + earnings direction."
+        ),
+        "benchmark": "NIFTY 50",
+        "rebalance_frequency": "monthly",
+        "drift_band_pct": 4.0,
+        "spec": {
+            "sleeves": [
+                {"id": "growth", "name": "Growth", "weight_pct": 100.0, "weighting": "score_weighted",
+                 "members": _MOMENTUM_POOL, "max_weight_pct": 14.0,
+                 "rule": _composite(63, 10, {"momentum": 0.55, "trend": 0.25, "growth": 0.20},
+                                    hold_k=15, trend_ma=200)},
+            ],
+        },
+    },
+    {
+        "key": "smallmid-smart-alpha",
+        "name": "Small & Midcap Smart Alpha",
+        "category": "Factor",
+        "tags": ["midcap", "multi-factor", "strict risk limits"],
+        "description": (
+            "Higher-growth mid-cap opportunities with tight risk controls — top 15 "
+            "of a 25-name liquid mid-cap pool by a momentum + quality composite, "
+            "score-weighted, a strict 8% single-name cap, an 18-name hold buffer, "
+            "and a regime gate. Mid-caps fall harder, so the de-risk matters."
+        ),
+        "benchmark": "NIFTY MIDCAP 100",
+        "rebalance_frequency": "monthly",
+        "drift_band_pct": 4.0,
+        "spec": {
+            "sleeves": [
+                {"id": "mid", "name": "Midcap alpha", "weight_pct": 100.0,
+                 "weighting": "score_weighted", "members": _MIDCAPS, "max_weight_pct": 8.0,
+                 "rule": _composite(126, 15, _FW_MOM_QUALITY, hold_k=18, trend_ma=200)},
+            ],
+            "risk": {"max_position_pct": 9.0,
+                     "regime": {"benchmark": "NIFTY 50", "ma": 200, "risk_off_scale": 0.4}},
+        },
+    },
+    {
+        "key": "defensive-leaders",
+        "name": "Defensive Leaders",
+        "category": "Factor",
+        "tags": ["defensive", "low vol", "quality", "capital protection"],
+        "description": (
+            "Capital-protection sleeve — a low-volatility + quality composite over "
+            "a pool of stable, low-debt franchises (top 12, inverse-vol style "
+            "score), a hold buffer, a 20% gold ballast and a regime gate. Aims to "
+            "lose less when the market turns."
+        ),
+        "benchmark": "NIFTY 50",
+        "rebalance_frequency": "quarterly",
+        "drift_band_pct": 4.0,
+        "spec": {
+            "sleeves": [
+                {"id": "def", "name": "Defensive leaders", "weight_pct": 80.0,
+                 "weighting": "score_weighted", "members": _LOW_VOL + _QUALITY,
+                 "max_weight_pct": 12.0,
+                 "rule": _composite(126, 12, _FW_DEFENSIVE, hold_k=18, trend_ma=0)},
+                {"id": "gold", "name": "Gold ballast", "weight_pct": 20.0, "weighting": "equal",
+                 "members": ["GOLDBEES"], "rule": _NONE, "risk_asset": False},
+            ],
+            "risk": {"regime": _REGIME},
+        },
+    },
+    # ----------------------------------------------------------------- Multi-asset
+    {
+        "key": "all-weather-factor",
+        "name": "All-Weather (Factor)",
+        "category": "Multi-asset",
+        "tags": ["all-weather", "factor sleeves", "regime gate"],
+        "description": (
+            "A factor take on all-weather: a 45% momentum-core sleeve and a 30% "
+            "low-volatility sleeve of stocks, 15% gold and 10% liquid, with a "
+            "regime gate that halves the two equity sleeves when the Nifty is "
+            "below its 200-day average. Prioritises smooth risk-adjusted returns."
+        ),
+        "benchmark": "NIFTY 50",
+        "rebalance_frequency": "monthly",
+        "drift_band_pct": 3.0,
+        "spec": {
+            "sleeves": [
+                {"id": "mom", "name": "Momentum core", "weight_pct": 45.0,
+                 "weighting": "score_weighted", "members": _LARGE_CAPS, "max_weight_pct": 8.0,
+                 "rule": _composite(126, 12, {"momentum": 0.6, "trend": 0.4}, hold_k=16)},
+                {"id": "lowvol", "name": "Low-vol core", "weight_pct": 30.0,
+                 "weighting": "inverse_vol", "members": _LOW_VOL, "rule": _NONE},
+                {"id": "gold", "name": "Gold", "weight_pct": 15.0, "weighting": "equal",
+                 "members": ["GOLDBEES"], "rule": _NONE, "risk_asset": False},
+                {"id": "cash", "name": "Liquid", "weight_pct": 10.0, "weighting": "equal",
+                 "members": ["LIQUIDBEES"], "rule": _NONE, "risk_asset": False},
+            ],
+            "risk": {"regime": _REGIME},
+        },
+    },
+    {
+        "key": "tactical-regime",
+        "name": "Tactical Market Regime",
+        "category": "Multi-asset",
+        "tags": ["regime rotation", "risk-managed", "gold"],
+        "description": (
+            "Rotates aggressively with the market regime: a momentum-tilted "
+            "composite core plus gold, but the regime gate cuts the equity core to "
+            "just 30% when the Nifty is below its 200-day average, parking the rest "
+            "in cash. Quarterly, so it commits to a stance."
+        ),
+        "benchmark": "NIFTY 50",
+        "rebalance_frequency": "quarterly",
+        "drift_band_pct": 5.0,
+        "spec": {
+            "sleeves": [
+                {"id": "core", "name": "Regime core", "weight_pct": 75.0,
+                 "weighting": "score_weighted", "members": _LARGE_CAPS, "max_weight_pct": 10.0,
+                 "rule": _composite(126, 12, {"momentum": 0.5, "trend": 0.3, "low_vol": 0.2},
+                                    hold_k=16, trend_ma=200)},
+                {"id": "gold", "name": "Gold", "weight_pct": 25.0, "weighting": "equal",
+                 "members": ["GOLDBEES"], "rule": _NONE, "risk_asset": False},
+            ],
+            "risk": {"regime": {"benchmark": "NIFTY 50", "ma": 200, "risk_off_scale": 0.3}},
         },
     },
 ]
