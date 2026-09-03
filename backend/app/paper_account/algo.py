@@ -336,6 +336,22 @@ def _take_equity(
     }
 
 
+def _unwind_option_legs(
+    db: Session, settings: Settings, rec: ScanRecommendation,
+    placed: list[dict[str, Any]], qty: int,
+) -> None:
+    """Reverse the legs that already filled when a spread can't be completed."""
+    for leg in placed:
+        try:
+            engine.place_order(db, settings, OrderRequest(
+                exchange="NFO", tradingsymbol=leg["symbol"],
+                side="SELL" if leg["side"] == "BUY" else "BUY", quantity=qty,
+                order_type="MARKET", product="NRML", tag=f"algo:{rec.id}:exit",
+            ))
+        except Exception as exc:  # noqa: BLE001
+            logger.info("paper_algo_unwind_failed", rec=str(rec.id), sym=leg["symbol"], error=str(exc))
+
+
 def _take_option(
     db: Session, settings: Settings, rec: ScanRecommendation, alloc: float,
 ) -> dict[str, Any]:
@@ -351,18 +367,22 @@ def _take_option(
     lots = max(1, min(lots, _MAX_OPTION_LOTS))
     qty = lots * lot
 
-    placed = []
-    for leg in legs:
+    # buy the long leg before selling the short one, so a mid-spread failure
+    # can never leave a naked short; if a leg fails, unwind what filled.
+    ordered = sorted(legs, key=lambda x: 0 if str(x.get("side")).upper() == "BUY" else 1)
+    placed: list[dict[str, Any]] = []
+    for leg in ordered:
         sym = leg.get("tradingsymbol")
         side = str(leg.get("side") or "BUY").upper()
         if not sym:
+            _unwind_option_legs(db, settings, rec, placed, qty)
             return {"ok": False, "reason": "option leg missing a tradingsymbol"}
         order = engine.place_order(db, settings, OrderRequest(
             exchange="NFO", tradingsymbol=sym, side=side, quantity=qty,
             order_type="MARKET", product="NRML", tag=f"algo:{rec.id}",
         ))
         if order.status != "COMPLETE":
-            db.rollback()
+            _unwind_option_legs(db, settings, rec, placed, qty)
             return {"ok": False, "reason": f"{side} {sym}: {order.status_message or order.status}"}
         placed.append({"side": side, "symbol": sym, "fill": float(order.avg_fill_price or 0.0)})
 
