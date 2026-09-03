@@ -30,11 +30,12 @@ import { StockDrawer } from "@/components/StockDrawer";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { cn } from "@/lib/utils";
 import { useBrokerStatus } from "@/hooks/useBroker";
+import { useMarketOverview } from "@/hooks/useMarket";
 
 type Item = { to: string; label: string; icon: typeof Gauge; desc?: string };
 
 const PRIMARY: Item[] = [
-  { to: "/", label: "Scanner", icon: Radar },
+  { to: "/", label: "Trade Ideas", icon: Radar },
   { to: "/dashboard", label: "Dashboard", icon: Gauge },
   { to: "/charting", label: "Charting", icon: CandlestickChart },
 ];
@@ -110,6 +111,111 @@ const linkCls = ({ isActive }: { isActive: boolean }) =>
     isActive ? "bg-accent-soft text-accent" : "text-fg-muted hover:bg-elevated hover:text-fg",
   );
 
+function NavBreadthMenu({
+  open,
+  onOpen,
+  onClose,
+}: {
+  open: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+}) {
+  const { data } = useMarketOverview("nifty50");
+  const b = data?.available ? data.breadth : null;
+  const top = (data?.available ? [...data.gainers] : []).sort((x, y) => (y.change_pct ?? 0) - (x.change_pct ?? 0)).slice(0, 5);
+  const bot = (data?.available ? [...data.losers] : []).sort((x, y) => (x.change_pct ?? 0) - (y.change_pct ?? 0)).slice(0, 5);
+  const sectors = data?.available ? [...data.sectors].sort((x, y) => (y.avg_change_pct ?? 0) - (x.avg_change_pct ?? 0)) : [];
+  const pc = (p?: number | null) => (p == null ? "text-fg-muted" : p > 0 ? "text-pos" : p < 0 ? "text-neg" : "text-fg-muted");
+  const s = (p?: number | null) => (p == null ? "–" : `${p >= 0 ? "+" : ""}${p.toFixed(2)}%`);
+
+  return (
+    <div className="relative" onMouseEnter={onOpen} onMouseLeave={onClose}>
+      <button
+        type="button"
+        onClick={() => (open ? onClose() : onOpen())}
+        className={cn(
+          "flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors",
+          open ? "bg-elevated text-fg" : "text-fg-muted hover:bg-elevated hover:text-fg",
+        )}
+      >
+        Breadth
+        <ChevronDown className="h-3.5 w-3.5" />
+      </button>
+      {open && (
+        <div
+          className="animate-menu absolute left-0 top-full z-50 w-[30rem] rounded-lg border border-line-strong bg-surface p-3 shadow-xl"
+          onMouseEnter={onOpen}
+        >
+          {!b ? (
+            <p className="py-4 text-center text-xs text-fg-faint">Live market data unavailable.</p>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 text-xs">
+                <span className="font-medium text-fg-muted">Breadth</span>
+                <span className="tabular-nums text-pos">{b.advances}▲</span>
+                <span className="tabular-nums text-neg">{b.declines}▼</span>
+                <div className="flex h-1.5 flex-1 overflow-hidden rounded-full bg-elevated">
+                  <div className="bg-pos" style={{ width: `${(b.advances / Math.max(b.total, 1)) * 100}%` }} />
+                  <div className="bg-neg" style={{ width: `${(b.declines / Math.max(b.total, 1)) * 100}%` }} />
+                </div>
+                <span className="text-fg-muted">A/D {b.ad_ratio ?? "–"}</span>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-fg-faint">Top gainers</p>
+                  {top.map((g) => (
+                    <NavLink
+                      key={g.symbol}
+                      to={`/stocks/NSE/${g.symbol}`}
+                      onClick={onClose}
+                      className="flex justify-between rounded px-1 py-0.5 hover:bg-elevated"
+                    >
+                      <span className="text-fg">{g.symbol}</span>
+                      <span className={cn("tabular-nums", pc(g.change_pct))}>{s(g.change_pct)}</span>
+                    </NavLink>
+                  ))}
+                </div>
+                <div>
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-fg-faint">Top losers</p>
+                  {bot.map((g) => (
+                    <NavLink
+                      key={g.symbol}
+                      to={`/stocks/NSE/${g.symbol}`}
+                      onClick={onClose}
+                      className="flex justify-between rounded px-1 py-0.5 hover:bg-elevated"
+                    >
+                      <span className="text-fg">{g.symbol}</span>
+                      <span className={cn("tabular-nums", pc(g.change_pct))}>{s(g.change_pct)}</span>
+                    </NavLink>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-2">
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-fg-faint">Sectors</p>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
+                  {sectors.slice(0, 8).map((sec) => (
+                    <div key={sec.sector} className="flex justify-between">
+                      <span className="truncate text-fg-muted">{sec.sector}</span>
+                      <span className={cn("shrink-0 tabular-nums", pc(sec.avg_change_pct))}>{s(sec.avg_change_pct)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <NavLink
+                to="/breadth"
+                onClick={onClose}
+                className="mt-2 block rounded-md bg-elevated px-2 py-1.5 text-center text-xs font-medium text-accent hover:bg-accent-soft"
+              >
+                Full breadth — movers · sectors · heat-map · signals →
+              </NavLink>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AppLayout() {
   const { data: broker } = useBrokerStatus();
   const [openMenu, setOpenMenu] = useState<string | null>(null);
@@ -146,6 +252,11 @@ export function AppLayout() {
                 {label}
               </NavLink>
             ))}
+            <NavBreadthMenu
+              open={openMenu === "__breadth"}
+              onOpen={() => openNow("__breadth")}
+              onClose={closeSoon}
+            />
             {MENUS.map((menu) => (
               <div
                 key={menu.label}

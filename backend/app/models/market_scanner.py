@@ -84,13 +84,20 @@ class ScanRecommendation(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     rr: Mapped[float] = mapped_column(Numeric(8, 3), nullable=False)  # reward:risk to target_1
     atr: Mapped[float | None] = mapped_column(Numeric(18, 4))
 
-    confidence: Mapped[float] = mapped_column(Numeric(6, 2), nullable=False)  # 0-100 transparent factor score
-    bias_score: Mapped[float] = mapped_column(Numeric(7, 2), nullable=False)  # -100..100 directional
+    confidence: Mapped[float] = mapped_column(Numeric(6, 2), nullable=False)  # 0-100 strict quality score
+    bias_score: Mapped[float] = mapped_column(Numeric(7, 2), nullable=False)  # -100..100 directional lean
     pop: Mapped[float | None] = mapped_column(Numeric(6, 4))  # option-overlay probability of profit only
     factors: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)  # [{name, detail, weight, side}]
+    # the weighted sub-scores + penalties + caps behind ``confidence``
+    score_detail: Mapped[dict | None] = mapped_column(JSONB)
 
     # optional attached defined-risk option structure
     option_overlay: Mapped[dict | None] = mapped_column(JSONB)
+    # optional protective-option leg to run *alongside* an equity delivery
+    # position (buy both together): {leg, strike, est_premium, cost_pct, floor}
+    hedge: Mapped[dict | None] = mapped_column(JSONB)
+    # links the equity card and the OPTION card that came from the same view
+    pair_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True)
     fundamentals: Mapped[dict | None] = mapped_column(JSONB)
 
     # --- lifecycle ----------------------------------------------------

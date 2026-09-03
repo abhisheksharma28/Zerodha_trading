@@ -33,6 +33,30 @@ export interface OptionOverlay {
   note: string;
 }
 
+export interface HedgeLeg {
+  leg: string;
+  strike: number;
+  option_type: string;
+  expiry: string;
+  dte: number;
+  lot_size: number;
+  est_premium: number;
+  est_premium_per_lot: number;
+  cost_pct: number;
+  floor_price: number;
+  note: string;
+}
+
+export interface ScoreDetail {
+  score: number;
+  grade: "A" | "B" | "C";
+  sub_scores: Record<string, number>;
+  weights: Record<string, number>;
+  penalties: number;
+  caps: string[];
+  raw: number;
+}
+
 export interface ScanRecommendation {
   id: string;
   created_at: string | null;
@@ -59,10 +83,14 @@ export interface ScanRecommendation {
   risk_pct: number | null;
   atr: number | null;
   confidence: number | null;
+  grade: "A" | "B" | "C" | null;
+  score_detail: ScoreDetail | null;
   bias_score: number | null;
   pop: number | null;
   factors: ScanFactor[];
   option_overlay: OptionOverlay | null;
+  hedge: HedgeLeg | null;
+  pair_id: string | null;
   fundamentals: Record<string, unknown> | null;
   status: "LIVE" | "EXPIRED";
   outcome: "TARGET" | "SL" | "NEUTRAL" | "INVALIDATED" | null;

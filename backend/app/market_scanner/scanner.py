@@ -7,7 +7,9 @@ up the cheap screen get a (daily-only) full evaluation.
 
 from __future__ import annotations
 
+import math
 import time
+import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -95,9 +97,61 @@ _STYLE_LABEL = {
 }
 
 
+def _protective_hedge(
+    db: Session, si: ScanInstrument, setup: signals.Setup,
+) -> dict[str, Any] | None:
+    """A protective option leg to hold *alongside* a LONG delivery position:
+    buy an OTM put near the stop so the combined loss is floored. Premium is
+    a Black-Scholes estimate from ATR-implied vol - no extra quote call."""
+    if setup.direction != "LONG" or not si.underlying or not setup.atr:
+        return None
+    from app.options.greeks import bs_price
+    from app.services import instrument_service
+
+    exp = options_overlay._nearest_expiry(db, si.underlying)  # noqa: SLF001
+    if not exp:
+        return None
+    expiry, dte = exp
+    strikes = [
+        s for s in instrument_service.option_strikes(db, si.underlying, expiry)
+        if s["option_type"] == "PE" and s.get("strike")
+    ]
+    if not strikes:
+        return None
+    target = float(setup.stop_loss)
+    row = min(strikes, key=lambda s: abs(s["strike"] - target))
+    strike = float(row["strike"])
+    spot = float(setup.entry)
+    iv = max(0.08, min(1.2, (setup.atr / spot) * math.sqrt(252.0)))
+    prem = bs_price(spot, strike, dte / 365.0, iv, is_call=False)
+    lot = row.get("lot_size") or 0
+    if prem <= 0 or not lot:
+        return None
+    cost_pct = 100.0 * prem / spot
+    return {
+        "leg": f"BUY {row['tradingsymbol']}",
+        "strike": strike,
+        "option_type": "PE",
+        "expiry": expiry,
+        "dte": dte,
+        "lot_size": lot,
+        "est_premium": round(prem, 2),
+        "est_premium_per_lot": round(prem * lot, 0),
+        "cost_pct": round(cost_pct, 2),
+        "floor_price": strike,
+        "note": (
+            f"Optional hedge: buy 1 lot ({lot}) of the {expiry} {strike:.0f} PE "
+            f"(~Rs {prem * lot:,.0f}, ~{cost_pct:.1f}% of the position) together with the "
+            f"shares to cap the downside near {strike:.0f}. Estimated premium - confirm the "
+            f"live quote before placing."
+        ),
+    }
+
+
 def _persist(
     db: Session, run: ScanRun, si: ScanInstrument, setup: signals.Setup, *,
     trade_style: str, fv: Any, day: str, overlay: dict[str, Any] | None = None,
+    hedge: dict[str, Any] | None = None, pair_id: uuid.UUID | None = None,
 ) -> ScanRecommendation:
     """One recommendation. For ``trade_style="OPTION"`` the entry/stop/target
     stay on the *underlying* (that is the thesis to manage against) and the
@@ -113,9 +167,12 @@ def _persist(
         stop_loss=setup.stop_loss, target_1=setup.target_1, target_2=setup.target_2,
         rr=setup.rr, atr=setup.atr,
         confidence=setup.confidence, bias_score=setup.bias_score,
+        score_detail=setup.score_detail or None,
         pop=(overlay or {}).get("pop") if is_option else None,
         factors=setup.factor_dicts(),
         option_overlay=overlay if is_option else None,
+        hedge=hedge if not is_option else None,
+        pair_id=pair_id,
         fundamentals=fv.as_dict() if fv and getattr(fv, "available", False) else None,
         status="LIVE", trading_day=day,
         entered_price=setup.entry if setup.entry_type == "MARKET" else None,
@@ -239,14 +296,24 @@ def _run_scan_locked(
             except Exception as exc:  # noqa: BLE001 - overlay is optional
                 logger.info("scanner_overlay_error", ref=si.ref, error=str(exc))
 
+        pair_id = uuid.uuid4() if overlay is not None else None
+
         if si.asset_class != "INDEX" or overlay is None:
-            rec = _persist(db, run, si, setup, trade_style=style, fv=fv, day=day)
+            hedge = None
+            if style == "EQUITY_DELIVERY" and si.has_options:
+                try:
+                    hedge = _protective_hedge(db, si, setup)
+                except Exception as exc:  # noqa: BLE001 - hedge suggestion is optional
+                    logger.info("scanner_hedge_error", ref=si.ref, error=str(exc))
+            rec = _persist(db, run, si, setup, trade_style=style, fv=fv, day=day,
+                           hedge=hedge, pair_id=pair_id)
             produced_ids.append(str(rec.id))
 
         # 2. a separate OPTION card when a defined-risk spread expresses the
         #    same view (its own KPIs; entry/stop/target stay on the underlying)
         if overlay is not None and live_now + len(produced_ids) < settings.market_scanner_max_live:
-            orec = _persist(db, run, si, setup, trade_style="OPTION", fv=fv, day=day, overlay=overlay)
+            orec = _persist(db, run, si, setup, trade_style="OPTION", fv=fv, day=day,
+                            overlay=overlay, pair_id=pair_id)
             produced_ids.append(str(orec.id))
 
     run.finished_at = datetime.now(UTC)

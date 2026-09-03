@@ -139,7 +139,7 @@ def test_features_read_a_daily_uptrend():
 
 
 def test_signal_emits_a_long_setup_in_an_uptrend():
-    bars = _trend_daily_bars(up=True)
+    bars = _trend_daily_bars(up=True, step=0.5, noise=3.5)
     d = feat_mod.daily_features(bars)
     from app.market_scanner import structure as st
     s = st.analyse(bars, min_bars=30)
@@ -151,8 +151,9 @@ def test_signal_emits_a_long_setup_in_an_uptrend():
     assert setup is not None
     assert setup.direction == "LONG"
     assert setup.stop_loss < setup.entry < setup.target_1
-    assert setup.rr >= 1.5
-    assert setup.confidence <= 95
+    assert setup.rr >= 1.6
+    assert setup.confidence <= 90
+    assert setup.grade in ("A", "B", "C")
     assert setup.factors and any(f.group == "trend" for f in setup.factors)
     # every factor is explainable
     for fd in setup.factor_dicts():
@@ -283,7 +284,7 @@ def test_persist_keeps_pop_and_overlay_on_option_cards_only(db):
         horizon="SWING", direction="LONG", setup_type="Golden-cross trend",
         setup_tags=["golden_cross"], entry=1300.0, entry_type="MARKET",
         stop_loss=1270.0, target_1=1360.0, target_2=1400.0, rr=2.0,
-        atr=20.0, confidence=80.0, bias_score=50.0,
+        atr=20.0, confidence=80.0, bias_score=50.0, score_detail={"grade": "A"},
         factor_dicts=lambda: [{"name": "golden_cross", "detail": "x", "weight": 15,
                                "side": "LONG", "group": "trend"}],
     )
@@ -299,3 +300,55 @@ def test_persist_keeps_pop_and_overlay_on_option_cards_only(db):
     assert op.option_overlay["structure"] == "bull_call_spread"
     # both keep the underlying levels as the thesis to manage against
     assert float(op.entry) == 1300.0 and float(op.stop_loss) == 1270.0
+
+
+# --------------------------------------------------------------------------
+# strict scoring
+# --------------------------------------------------------------------------
+
+def test_strict_score_is_bounded_and_transparent():
+    from app.market_scanner import structure as st
+
+    up = _trend_daily_bars(up=True, step=0.5, noise=3.5)
+    d = feat_mod.daily_features(up)
+    setup = sig_mod.evaluate(sig_mod.SignalInput(
+        ltp=up[-1]["close"], asset_class="EQUITY", has_options=True,
+        daily=d, daily_structure=st.analyse(up, min_bars=30),
+    ))
+    assert setup is not None
+    # the old engine pinned nearly everything at 95 - strict scoring must not
+    assert 45.0 <= setup.confidence <= 90.0
+    assert setup.grade in ("A", "B", "C")
+    sd = setup.score_detail
+    assert set(sd["sub_scores"]) == set(sd["weights"])
+    assert "penalties" in sd and "raw" in sd
+
+
+def test_strict_score_gates_out_a_marginal_setup():
+    from app.market_scanner import structure as st
+
+    # constant-drift trend, no pullback, RSI pinned -> extended entry, gated
+    up = _trend_daily_bars(up=True, step=0.6, noise=0.8)
+    d = feat_mod.daily_features(up)
+    setup = sig_mod.evaluate(sig_mod.SignalInput(
+        ltp=up[-1]["close"], asset_class="EQUITY", has_options=True,
+        daily=d, daily_structure=st.analyse(up, min_bars=30),
+    ))
+    assert setup is None  # below min_confidence
+
+
+def test_protective_hedge_only_for_long_fno_and_fails_soft(db):
+    from types import SimpleNamespace
+
+    from app.market_scanner import scanner as sc
+
+    long_si = SimpleNamespace(underlying="RELIANCE", tradingsymbol="RELIANCE", has_options=True)
+    short_setup = SimpleNamespace(direction="SHORT", stop_loss=2800.0, entry=2700.0, atr=45.0)
+    assert sc._protective_hedge(db, long_si, short_setup) is None  # shorts get no protective put
+
+    no_root = SimpleNamespace(underlying=None, tradingsymbol="XYZ", has_options=False)
+    long_setup = SimpleNamespace(direction="LONG", stop_loss=90.0, entry=100.0, atr=3.0)
+    assert sc._protective_hedge(db, no_root, long_setup) is None
+
+    # a LONG F&O name with no option rows in the test DB -> graceful None, no raise
+    assert sc._protective_hedge(db, long_si, long_setup) is None

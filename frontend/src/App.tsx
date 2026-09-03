@@ -41,6 +41,7 @@ const TradeLogsPage = lazy(() => import("@/pages/TradeLogsPage"));
 const AuditLogsPage = lazy(() => import("@/pages/AuditLogsPage"));
 const BrokerPage = lazy(() => import("@/pages/BrokerPage"));
 const MarketScannerPage = lazy(() => import("@/pages/MarketScannerPage"));
+const BreadthPage = lazy(() => import("@/pages/BreadthPage"));
 const StockDetailPage = lazy(() => import("@/pages/StockDetailPage"));
 const OptionChainPage = lazy(() => import("@/pages/OptionChainPage"));
 const OptionStrategyPage = lazy(() => import("@/pages/OptionStrategyPage"));
@@ -90,6 +91,7 @@ export default function App() {
         <Route path="deployments/:deploymentId" element={<DeploymentDetailPage />} />
         <Route path="monitoring" element={<MonitoringPage />} />
         <Route path="market-scanner" element={<MarketScannerPage />} />
+        <Route path="breadth" element={<BreadthPage />} />
         <Route path="stocks/:exchange/:symbol" element={<StockDetailPage />} />
         <Route path="option-chain" element={<OptionChainPage />} />
         <Route path="option-strategy" element={<OptionStrategyPage />} />

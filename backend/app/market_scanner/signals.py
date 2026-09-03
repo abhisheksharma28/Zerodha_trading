@@ -24,7 +24,8 @@ from app.market_scanner.structure import StructureReport, Zone
 @dataclass
 class SignalConfig:
     min_bias: float = 30.0
-    min_rr: float = 1.5
+    min_rr: float = 1.6
+    min_confidence: float = 45.0       # strict gate - below this a setup is not emitted
     max_risk_pct_swing: float = 5.0
     max_risk_pct_intraday: float = 1.8
     sl_atr_mult: float = 1.5
@@ -62,6 +63,8 @@ class Setup:
     target_2: float | None
     rr: float
     atr: float | None
+    grade: str = "C"          # A / B / C from the strict score
+    score_detail: dict[str, Any] = field(default_factory=dict)
     factors: list[Factor] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
@@ -333,6 +336,127 @@ _SETUP_LABEL = {
 # most-specific first - the setup is named after the first of these that fired
 _SETUP_PRIORITY = list(_SETUP_LABEL.keys())
 
+_REVERSAL_SETUPS = {
+    "Change-of-character reversal", "Liquidity sweep reversal",
+    "Oversold bounce", "Overbought fade",
+}
+# strict quality weights (sum ~= 1.0)
+_QW = {
+    "alignment": 0.24, "trend": 0.16, "structure": 0.16, "location": 0.14,
+    "momentum": 0.12, "rr": 0.08, "volume": 0.06, "risk_fit": 0.04,
+}
+
+
+def _lin(x: float, x0: float, x1: float) -> float:
+    if x1 == x0:
+        return 0.0
+    return max(0.0, min(1.0, (x - x0) / (x1 - x0)))
+
+
+def _quality_score(
+    *, direction: str, horizon: str, setup_type: str,
+    aligned: float, against: float, aligned_groups: int,
+    d: Features, i: Features | None,
+    s_d: StructureReport, s_i: StructureReport | None,
+    entry_type: str, rr: float, risk_pct: float, max_risk: float,
+    fundamentals: FundamentalView | None,
+) -> tuple[float, str, dict[str, Any]]:
+    """A strict 0-100 quality read. Most real setups land 40-70; only clean,
+    multi-confirmed, well-located, trending setups clear 80."""
+    long = direction == "LONG"
+    total = aligned + abs(against)
+
+    # 1. alignment: how one-sided the evidence is
+    s_align = aligned / total if total else 0.0
+
+    # 2. trend strength (ADX)
+    adx = d.adx14 or 0.0
+    s_trend = 0.15 + 0.85 * _lin(adx, 16.0, 34.0)
+
+    # 3. structure agreement (daily + intraday), reversal setups judged on the flip
+    want = "UP" if long else "DOWN"
+    if setup_type in _REVERSAL_SETUPS:
+        flip = (s_i or s_d).last_break or ""
+        s_struct = 0.9 if (long and flip.endswith("UP")) or (not long and flip.endswith("DOWN")) else 0.35
+    else:
+        hits = (1 if s_d.trend == want else 0) + (1 if s_i and s_i.trend == want else 0)
+        both_possible = s_i is not None
+        s_struct = {0: 0.2, 1: 0.55 if both_possible else 0.7, 2: 1.0}[hits]
+
+    # 4. location: entered at a real level vs chased
+    s_loc = {"LIMIT": 0.9, "STOP": 0.7}.get(entry_type, 0.35)
+
+    # 5. momentum agreement (RSI zone + MACD), extended = bad
+    rsi = d.rsi14
+    rsi_ok = rsi is not None and ((long and 45 <= rsi <= 68) or (not long and 32 <= rsi <= 55))
+    rsi_extended = rsi is not None and ((long and rsi >= 74) or (not long and rsi <= 26))
+    macd_ok = (long and d.macd_state.startswith("RISING")) or (not long and d.macd_state.startswith("FALLING"))
+    s_mom = 0.15 if rsi_extended else (1.0 if (rsi_ok and macd_ok) else 0.55 if (rsi_ok or macd_ok) else 0.25)
+
+    # 6. reward:risk asymmetry
+    s_rr = _lin(rr, 1.4, 3.2)
+
+    # 7. volume confirmation
+    rv = (i.rel_volume if i and i.rel_volume else d.rel_volume) or 0.0
+    s_vol = 1.0 if rv >= 2 else 0.75 if rv >= 1.5 else 0.45 if rv >= 1.0 else 0.15 if rv and rv < 0.7 else 0.35
+
+    # 8. stop sits in a sane band of the risk budget
+    frac = risk_pct / max_risk if max_risk else 1.0
+    s_risk = 1.0 if 0.35 <= frac <= 0.8 else 0.5 if frac < 0.35 else 0.4
+
+    subs = {
+        "alignment": s_align, "trend": s_trend, "structure": s_struct, "location": s_loc,
+        "momentum": s_mom, "rr": s_rr, "volume": s_vol, "risk_fit": s_risk,
+    }
+    raw = 100.0 * sum(subs[k] * _QW[k] for k in _QW)
+
+    # penalties
+    pen = 0.0
+    counter_trend = (d.ema_stack == "BULL" and not long) or (d.ema_stack == "BEAR" and long)
+    if counter_trend and setup_type not in _REVERSAL_SETUPS:
+        pen += 12
+    if adx < 15 and setup_type not in _REVERSAL_SETUPS:
+        pen += 10
+    if abs(against) > 0.35 * aligned:
+        pen += 8
+    if rsi_extended:
+        pen += 8
+    if horizon == "INTRADAY" and i is None:
+        pen += 6
+    if fundamentals and fundamentals.available and horizon == "SWING" and (
+        (long and fundamentals.bias == "SUPPORTIVE_SHORT")
+        or (not long and fundamentals.bias == "SUPPORTIVE_LONG")
+    ):
+        pen += 6
+
+    score = raw - pen
+
+    # hard caps
+    caps: list[tuple[str, float]] = []
+    if adx < 16 and setup_type not in _REVERSAL_SETUPS:
+        caps.append(("chop / no trend", 52.0))
+    if s_struct <= 0.2:
+        caps.append(("no structural support", 55.0))
+    if aligned_groups < 2:
+        caps.append(("single-factor setup", 50.0))
+    if counter_trend and s_i is None:
+        caps.append(("counter-trend, single timeframe", 58.0))
+    for _why, cap in caps:
+        score = min(score, cap)
+    score = max(0.0, min(90.0, score))
+
+    grade = "A" if score >= 74 else "B" if score >= 58 else "C"
+    detail = {
+        "score": round(score, 1),
+        "grade": grade,
+        "sub_scores": {k: round(v, 2) for k, v in subs.items()},
+        "weights": _QW,
+        "penalties": round(pen, 1),
+        "caps": [w for w, _ in caps],
+        "raw": round(raw, 1),
+    }
+    return score, grade, detail
+
 
 def evaluate(inp: SignalInput, cfg: SignalConfig | None = None) -> Setup | None:
     cfg = cfg or SignalConfig()
@@ -385,33 +509,31 @@ def evaluate(inp: SignalInput, cfg: SignalConfig | None = None) -> Setup | None:
     if rr < cfg.min_rr or risk_pct > max_risk:
         return None
 
-    # confidence: transparent readout of how much aligned
-    conf = 50.0 + 0.45 * abs(bias_score)
-    if d.adx14 and d.adx14 >= 25 and (trend_w > 0) == (bias_score > 0):
-        conf += 6
-    rv = (inp.intraday.rel_volume if inp.intraday and inp.intraday.rel_volume else d.rel_volume)
-    if rv and rv >= 1.5:
-        conf += 6
-    if inp.fundamentals and inp.fundamentals.available and horizon == "SWING" and any(
-        f.group == "fundamental" and (f.weight > 0) == (bias_score > 0) for f in factors
-    ):
-        conf += 5
-    conf -= min(18.0, abs(against) * 0.6)
-    confidence = max(20.0, min(95.0, conf))
-
     # name the setup after the most *specific* aligned trigger, not just the
     # heaviest weight (ema_stack would always win otherwise)
-    aligned_names = {f.name for f in factors if (f.weight > 0) == (bias_score > 0)}
+    pos = bias_score > 0
+    aligned_names = {f.name for f in factors if (f.weight > 0) == pos}
     setup_type = next(
         (_SETUP_LABEL[n] for n in _SETUP_PRIORITY if n in aligned_names),
         "Multi-factor confluence",
     )
-    tags = sorted({f.name for f in factors if abs(f.weight) >= 5
-                   and (f.weight > 0) == (bias_score > 0)})
+    tags = sorted({f.name for f in factors if abs(f.weight) >= 5 and (f.weight > 0) == pos})
+
+    aligned_groups = len({f.group for f in factors if (f.weight > 0) == pos})
+    score, grade, detail = _quality_score(
+        direction=direction, horizon=horizon, setup_type=setup_type,
+        aligned=abs(aligned), against=abs(against), aligned_groups=aligned_groups,
+        d=d, i=inp.intraday, s_d=s_d, s_i=inp.intraday_structure,
+        entry_type=entry_type, rr=rr, risk_pct=risk_pct, max_risk=max_risk,
+        fundamentals=inp.fundamentals,
+    )
+    if score < cfg.min_confidence:
+        return None
 
     return Setup(
         direction=direction, horizon=horizon, setup_type=setup_type, setup_tags=tags,
-        bias_score=round(bias_score, 1), confidence=round(confidence, 1),
+        bias_score=round(bias_score, 1), confidence=round(score, 1),
+        grade=grade, score_detail=detail,
         entry=entry, entry_type=entry_type, stop_loss=sl, target_1=t1, target_2=t2,
         rr=rr, atr=round(d.atr14, 4), factors=factors,
     )

@@ -50,17 +50,60 @@ function SymbolLabel({ rec, className }: { rec: ScanRecommendation; className?: 
   return <span className={className}>{rec.tradingsymbol}</span>;
 }
 
-function ConfMeter({ value }: { value: number | null }) {
-  const v = value ?? 0;
+const GRADE_TONE: Record<string, string> = {
+  A: "bg-pos/15 text-pos border-pos/40",
+  B: "bg-amber-400/15 text-amber-500 border-amber-400/40",
+  C: "bg-fg-faint/10 text-fg-muted border-line",
+};
+
+function ScoreBadge({ rec }: { rec: ScanRecommendation }) {
+  const [open, setOpen] = useState(false);
+  const v = rec.confidence ?? 0;
+  const g = rec.grade ?? "C";
+  const sd = rec.score_detail;
   return (
-    <div className="flex items-center gap-1.5" title={`confidence ${num(v, 0)} / 100`}>
-      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-elevated">
-        <div
-          className={cn("h-full rounded-full", v >= 70 ? "bg-pos" : v >= 55 ? "bg-amber-400" : "bg-fg-faint")}
-          style={{ width: `${Math.max(4, Math.min(100, v))}%` }}
-        />
-      </div>
-      <span className="tabular-nums text-[11px] font-semibold text-fg-muted">{num(v, 0)}</span>
+    <div className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          "flex items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-[11px] font-semibold",
+          GRADE_TONE[g],
+        )}
+        title="score breakdown"
+      >
+        <span className="text-xs">{g}</span>
+        <span className="tabular-nums opacity-80">{num(v, 0)}</span>
+      </button>
+      {open && sd && (
+        <div className="absolute right-0 top-full z-20 mt-1 w-60 rounded-lg border border-line-strong bg-surface p-2.5 text-[11px] shadow-xl">
+          <p className="mb-1.5 font-semibold text-fg">
+            Score {num(sd.score, 0)}/100 · grade {sd.grade}
+            <span className="ml-1 font-normal text-fg-faint">(raw {num(sd.raw, 0)} − pen {num(sd.penalties, 0)})</span>
+          </p>
+          <ul className="space-y-1">
+            {Object.entries(sd.sub_scores).map(([k, val]) => (
+              <li key={k} className="flex items-center gap-2">
+                <span className="w-16 shrink-0 capitalize text-fg-muted">{k.replace("_", " ")}</span>
+                <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-elevated">
+                  <span
+                    className={cn("block h-full rounded-full", val >= 0.7 ? "bg-pos" : val >= 0.4 ? "bg-amber-400" : "bg-fg-faint")}
+                    style={{ width: `${Math.round(val * 100)}%` }}
+                  />
+                </span>
+                <span className="w-7 shrink-0 text-right tabular-nums text-fg-faint">{Math.round(val * 100)}</span>
+                <span className="w-6 shrink-0 text-right tabular-nums text-fg-faint">
+                  {Math.round((sd.weights[k] ?? 0) * 100)}%
+                </span>
+              </li>
+            ))}
+          </ul>
+          {sd.caps.length > 0 && (
+            <p className="mt-1.5 text-neg">capped: {sd.caps.join(", ")}</p>
+          )}
+          <p className="mt-1.5 text-fg-faint">Columns: sub-score / weight. Strict — most ideas sit 45–70.</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -144,7 +187,36 @@ function Factors({ rec }: { rec: ScanRecommendation }) {
   );
 }
 
-function EquityCard({ rec }: { rec: ScanRecommendation }) {
+function PairNote({ rec, siblingStyle }: { rec: ScanRecommendation; siblingStyle: string | null }) {
+  if (!siblingStyle) return null;
+  const other = STYLE_LABEL[siblingStyle as ScanRecommendation["trade_style"]] ?? siblingStyle;
+  return (
+    <p className="mt-2 rounded bg-elevated/60 px-2 py-1 text-[11px] text-fg-muted">
+      ⭑ Same view as the <span className="font-medium text-fg">{other}</span> idea for {rec.tradingsymbol} —
+      trade one, not both. To hold them together as a hedge, see the note below.
+    </p>
+  );
+}
+
+function HedgeNote({ rec }: { rec: ScanRecommendation }) {
+  const h = rec.hedge;
+  if (!h) return null;
+  return (
+    <div className="mt-2 rounded-md border border-amber-400/30 bg-amber-400/5 p-2 text-[11px]">
+      <p className="font-semibold text-amber-600 light:text-amber-700">Hedge (buy in combination)</p>
+      <p className="mt-0.5 text-fg-muted">
+        Buy the shares <span className="font-medium">and</span> 1 lot ({h.lot_size}) of{" "}
+        <span className="tabular-nums">
+          {h.expiry} {num(h.strike, 0)} PE
+        </span>{" "}
+        together — est. ~{inr(h.est_premium_per_lot)} ({num(h.cost_pct, 1)}% of the position). Caps the
+        loss near {num(h.floor_price, 0)}. Confirm the live option quote before placing.
+      </p>
+    </div>
+  );
+}
+
+function EquityCard({ rec, siblingStyle }: { rec: ScanRecommendation; siblingStyle: string | null }) {
   const fund = rec.fundamentals as { bias?: string } | null;
   const days = rec.trade_style === "EQUITY_DELIVERY" ? estDays(rec) : null;
   return (
@@ -167,7 +239,7 @@ function EquityCard({ rec }: { rec: ScanRecommendation }) {
           </div>
           <p className="mt-0.5 truncate text-xs text-fg-muted">{rec.setup_type}</p>
         </div>
-        <ConfMeter value={rec.confidence} />
+        <ScoreBadge rec={rec} />
       </div>
 
       <div className="mt-2 grid grid-cols-4 gap-2">
@@ -202,13 +274,15 @@ function EquityCard({ rec }: { rec: ScanRecommendation }) {
         </div>
       )}
 
+      <HedgeNote rec={rec} />
+      <PairNote rec={rec} siblingStyle={siblingStyle} />
       <Factors rec={rec} />
       <p className="mt-2 text-[10px] italic text-fg-faint">{rec.disclaimer}</p>
     </div>
   );
 }
 
-function OptionCard({ rec }: { rec: ScanRecommendation }) {
+function OptionCard({ rec, siblingStyle }: { rec: ScanRecommendation; siblingStyle: string | null }) {
   const o = rec.option_overlay;
   return (
     <div className="rounded-lg border border-accent/30 bg-accent-soft/30 p-3">
@@ -227,7 +301,7 @@ function OptionCard({ rec }: { rec: ScanRecommendation }) {
             {o ? ` · ${o.expiry} (${o.dte}d)` : ""}
           </p>
         </div>
-        <ConfMeter value={rec.confidence} />
+        <ScoreBadge rec={rec} />
       </div>
 
       {o && (
@@ -269,14 +343,19 @@ function OptionCard({ rec }: { rec: ScanRecommendation }) {
         <span className="tabular-nums text-pos">{num(rec.target_1, 1)}</span>.
       </p>
 
+      <PairNote rec={rec} siblingStyle={siblingStyle} />
       <Factors rec={rec} />
       <p className="mt-2 text-[10px] italic text-fg-faint">{rec.disclaimer}</p>
     </div>
   );
 }
 
-function Card({ rec }: { rec: ScanRecommendation }) {
-  return rec.trade_style === "OPTION" ? <OptionCard rec={rec} /> : <EquityCard rec={rec} />;
+function Card({ rec, siblingStyle }: { rec: ScanRecommendation; siblingStyle: string | null }) {
+  return rec.trade_style === "OPTION" ? (
+    <OptionCard rec={rec} siblingStyle={siblingStyle} />
+  ) : (
+    <EquityCard rec={rec} siblingStyle={siblingStyle} />
+  );
 }
 
 function ExpiredRow({ rec }: { rec: ScanRecommendation }) {
@@ -307,12 +386,23 @@ function ExpiredRow({ rec }: { rec: ScanRecommendation }) {
   );
 }
 
+type SortKey = "BEST" | "SCORE" | "RR" | "RISK" | "NEWEST";
+const SORTS: { key: SortKey; label: string }[] = [
+  { key: "BEST", label: "Best (grade + score)" },
+  { key: "SCORE", label: "Score" },
+  { key: "RR", label: "Reward : risk" },
+  { key: "RISK", label: "Risk % (low first)" },
+  { key: "NEWEST", label: "Newest" },
+];
+const GRADE_RANK: Record<string, number> = { A: 0, B: 1, C: 2 };
+
 export function RecommendationsPanel() {
   const { data, isLoading } = useScanRecommendations();
   const { data: status } = useScannerStatus();
   const scan = useTriggerScan();
   const [showExpired, setShowExpired] = useState(true);
   const [filter, setFilter] = useState<FilterKey>("ALL");
+  const [sort, setSort] = useState<SortKey>("BEST");
 
   const phase = data?.market_phase ?? "closed";
   const feedStale = status?.tick_feed?.stale;
@@ -326,12 +416,34 @@ export function RecommendationsPanel() {
     return c;
   }, [data?.live]);
 
+  const siblingStyleFor = useMemo(() => {
+    const byPair: Record<string, ScanRecommendation[]> = {};
+    for (const r of data?.live ?? []) {
+      if (r.pair_id) (byPair[r.pair_id] ??= []).push(r);
+    }
+    return (r: ScanRecommendation): string | null => {
+      if (!r.pair_id) return null;
+      const other = (byPair[r.pair_id] ?? []).find((x) => x.id !== r.id);
+      return other?.trade_style ?? null;
+    };
+  }, [data?.live]);
+
   const shown = useMemo(() => {
-    const live = data?.live ?? [];
-    if (filter === "ALL") return live;
-    if (filter === "LONG" || filter === "SHORT") return live.filter((r) => r.direction === filter);
-    return live.filter((r) => r.trade_style === filter);
-  }, [data?.live, filter]);
+    let live = data?.live ?? [];
+    if (filter === "LONG" || filter === "SHORT") live = live.filter((r) => r.direction === filter);
+    else if (filter !== "ALL") live = live.filter((r) => r.trade_style === filter);
+    const cmp: Record<SortKey, (a: ScanRecommendation, b: ScanRecommendation) => number> = {
+      BEST: (a, b) =>
+        (GRADE_RANK[a.grade ?? "C"] - GRADE_RANK[b.grade ?? "C"]) ||
+        (b.confidence ?? 0) - (a.confidence ?? 0) ||
+        (b.rr ?? 0) - (a.rr ?? 0),
+      SCORE: (a, b) => (b.confidence ?? 0) - (a.confidence ?? 0),
+      RR: (a, b) => (b.rr ?? 0) - (a.rr ?? 0),
+      RISK: (a, b) => (a.risk_pct ?? 99) - (b.risk_pct ?? 99),
+      NEWEST: (a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""),
+    };
+    return [...live].sort(cmp[sort]);
+  }, [data?.live, filter, sort]);
 
   const header = (
     <div className="flex flex-wrap items-center gap-2">
@@ -371,14 +483,9 @@ export function RecommendationsPanel() {
   return (
     <SectionCard title={header} actions={actions} bodyClassName="p-3">
       {data && data.available && (data.live.length > 0 || filter !== "ALL") && (
-        <div className="mb-3 flex flex-wrap gap-1.5">
+        <div className="mb-3 flex flex-wrap items-center gap-1.5">
           {FILTERS.map((f) => {
-            const n =
-              f.key === "ALL"
-                ? data.live.length
-                : f.key === "LONG" || f.key === "SHORT"
-                  ? counts[f.key] ?? 0
-                  : counts[f.key] ?? 0;
+            const n = f.key === "ALL" ? data.live.length : counts[f.key] ?? 0;
             return (
               <button
                 key={f.key}
@@ -395,6 +502,20 @@ export function RecommendationsPanel() {
               </button>
             );
           })}
+          <label className="ml-auto flex items-center gap-1 text-[11px] text-fg-faint">
+            sort
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortKey)}
+              className="rounded-md border border-line bg-surface px-1.5 py-1 text-[11px] text-fg-muted"
+            >
+              {SORTS.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
       )}
 
@@ -414,7 +535,7 @@ export function RecommendationsPanel() {
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {shown.map((r) => (
-            <Card key={r.id} rec={r} />
+            <Card key={r.id} rec={r} siblingStyle={siblingStyleFor(r)} />
           ))}
         </div>
       )}
