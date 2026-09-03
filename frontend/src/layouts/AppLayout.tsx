@@ -4,6 +4,7 @@ import {
   Activity,
   Bell,
   BookOpen,
+  Boxes,
   CalendarRange,
   CandlestickChart,
   ChevronDown,
@@ -59,6 +60,7 @@ const MENUS: { label: string; items: Item[] }[] = [
     label: "Backtest",
     items: [
       { to: "/backtests", label: "Backtest", icon: FlaskConical, desc: "Run & analyse strategies + the catalog" },
+      { to: "/baskets", label: "Baskets", icon: Boxes, desc: "Smallcase-style sleeve portfolios, rebalanced on a schedule" },
       { to: "/leaderboard", label: "Strategy Leaderboard", icon: Trophy, desc: "Every strategy ranked: canonical backtest + live paper" },
       { to: "/seasonality", label: "Sector Seasonality", icon: CalendarRange, desc: "Which sector runs in which month — 10-year table" },
       { to: "/strategy-editor", label: "Python Editor", icon: Code2, desc: "Code a strategy, compile & backtest it" },
