@@ -150,6 +150,34 @@ def post_backtest(
     )
 
 
+@router.post("/baseline-comparison")
+def post_baseline_comparison(
+    underlying: str = Body("NIFTY", embed=True),
+    start: str = Body(..., embed=True),
+    end: str = Body(..., embed=True),
+    data_source: str = Body("auto", embed=True),
+    expiry_kind: str = Body("weekly", embed=True),
+    risk_preset: str = Body("balanced", embed=True),
+    add_ons: list[str] | None = Body(None, embed=True),
+    oos_frac: float = Body(0.4, embed=True),
+    min_trades: int = Body(15, embed=True),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """OI + Levels + PCR baseline vs enhanced. Establishes the clean baseline,
+    then re-adds one signal family at a time (and the full engine), backtests
+    each in-sample and out-of-sample, and returns an adopt / reject / inconclusive
+    verdict per addition. Runs many backtests — slow on real (bhavcopy) data;
+    prefer running it as a job. ``data_source='synthetic'`` tests mechanics only."""
+    from app.adaptive_options.baseline_comparison import run_comparison
+
+    return run_comparison(
+        db, settings, underlying=underlying, start=start, end=end,
+        data_source=data_source, expiry_kind=expiry_kind, risk_preset=risk_preset,
+        add_ons=add_ons, oos_frac=oos_frac, min_trades=min_trades,
+    )
+
+
 @router.post("/position/evaluate")
 def post_position_evaluate(
     underlying: str = Body(..., embed=True),

@@ -16,6 +16,7 @@ from typing import Any
 class AdaptiveConfig:
     # --- identity -----------------------------------------------------
     risk_profile: str = "balanced"           # conservative | balanced | aggressive
+    analysis_profile: str = "full"           # full | oi_levels_pcr  (baseline: OI + levels + PCR only)
     allow_naked: bool = False                # unlimited-risk selling stays off unless set
     naked_risk_acknowledged: bool = False
 
@@ -57,6 +58,8 @@ class AdaptiveConfig:
     regime_confidence_min: float = 50.0          # below this the engine leans NO_TRADE
     regime_high_vol_iv_rank: float = 70.0
     regime_low_vol_iv_rank: float = 25.0
+    regime_price_group_weight: float = 1.0       # scales the trend/EMA/VWAP price group in the
+    #                                             directional score; the OI+PCR baseline drops it low
 
     # --- confidence weights (need not sum to 1; normalised internally)
     w_trend: float = 0.20
@@ -118,13 +121,22 @@ class AdaptiveConfig:
         return {f.name for f in fields(cls)}
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any] | None, *, preset: str | None = None) -> AdaptiveConfig:
+    def from_dict(
+        cls, data: dict[str, Any] | None, *,
+        preset: str | None = None, profile: str | None = None,
+    ) -> AdaptiveConfig:
         base: dict[str, Any] = {}
         if preset:
             if preset not in PRESETS:
                 raise ValueError(f"Unknown preset '{preset}' — {sorted(PRESETS)}")
             base.update(PRESETS[preset])
             base["risk_profile"] = preset
+        eff_profile = profile or (data or {}).get("analysis_profile")
+        if eff_profile and eff_profile != "full":
+            if eff_profile not in ANALYSIS_PROFILES:
+                raise ValueError(f"Unknown analysis_profile '{eff_profile}' — {sorted(ANALYSIS_PROFILES)}")
+            base.update(ANALYSIS_PROFILES[eff_profile])
+            base["analysis_profile"] = eff_profile
         known = cls.field_names()
         for k, v in (data or {}).items():
             if k not in known:
@@ -145,6 +157,11 @@ class AdaptiveConfig:
                   "w_volatility", "w_volume", "w_futures", "w_liquidity"):
             if getattr(self, f) < 0:
                 raise ValueError(f"{f} must be >= 0.")
+        if self.regime_price_group_weight < 0:
+            raise ValueError("regime_price_group_weight must be >= 0.")
+        if (sum((self.w_positioning, self.w_pcr, self.w_price_action, self.w_trend,
+                 self.w_volatility, self.w_volume, self.w_futures, self.w_liquidity)) <= 0):
+            raise ValueError("at least one confidence weight must be > 0.")
 
     def confidence_weights(self) -> dict[str, float]:
         raw = {
@@ -157,6 +174,28 @@ class AdaptiveConfig:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+# Analysis profiles change *which signals* drive the decision (orthogonal to the
+# risk presets, which change thresholds). ``oi_levels_pcr`` is the clean
+# baseline demanded by the OI+Levels+PCR research brief: only Open Interest
+# positioning, OI-derived / price levels, and PCR feed confidence, the regime
+# and strategy suitability. Trend/EMA/VWAP/RSI, IV/volatility and raw volume
+# are switched off (weight 0) so they can be re-added one at a time and
+# measured against this baseline.
+ANALYSIS_PROFILES: dict[str, dict[str, Any]] = {
+    "oi_levels_pcr": {
+        # confidence: positioning (OI) + PCR + a little liquidity only
+        "w_trend": 0.0, "w_positioning": 0.55, "w_pcr": 0.35, "w_price_action": 0.0,
+        "w_volatility": 0.0, "w_volume": 0.0, "w_futures": 0.0, "w_liquidity": 0.10,
+        # regime: let OI + PCR carry it; keep only a light touch of price structure
+        "regime_price_group_weight": 0.30,
+        # strategy suitability: regime + OI positioning + PCR + R:R + liquidity
+        "w_regime_match": 0.28, "w_positioning_match": 0.34, "w_volatility_match": 0.0,
+        "w_pcr_confirm": 0.22, "w_price_action_confirm": 0.0, "w_risk_reward": 0.11,
+        "w_liquidity_match": 0.05, "w_dte_match": 0.0,
+    },
+}
 
 
 PRESETS: dict[str, dict[str, Any]] = {

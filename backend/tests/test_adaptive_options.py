@@ -4,6 +4,7 @@ analysis engine, plus the snapshot store and a full-pipeline pass."""
 from __future__ import annotations
 
 import math
+import os
 import random
 from datetime import UTC, datetime, timedelta
 
@@ -826,3 +827,94 @@ def test_local_history_absent_is_graceful(tmp_path, monkeypatch):
     assert lh.has_data("NIFTY") is False
     assert lh.chain_rows("NIFTY", _d2(2024, 1, 1), _d2(2024, 1, 4)) is None
     lh._load.cache_clear()
+
+
+# ==========================================================================
+# OI + Levels + PCR baseline profile + baseline-vs-enhanced comparison
+# ==========================================================================
+
+from app.adaptive_options import baseline_comparison as bcmp  # noqa: E402
+from app.adaptive_options import regime as _regime_mod  # noqa: E402
+
+
+def test_baseline_profile_zeros_indicator_weights():
+    full = AdaptiveConfig.from_dict(None, preset="balanced")
+    base = AdaptiveConfig.from_dict(None, preset="balanced", profile="oi_levels_pcr")
+    assert full.analysis_profile == "full" and full.w_trend > 0
+    assert base.analysis_profile == "oi_levels_pcr"
+    w = base.confidence_weights()
+    assert w["trend"] == 0.0 and w["volatility"] == 0.0 and w["volume"] == 0.0
+    assert w["positioning"] > w["pcr"] > 0.0
+    assert base.regime_price_group_weight < 0.5
+    assert base.w_volatility_match == 0.0 and base.w_price_action_confirm == 0.0
+    base.validate()
+    base2 = AdaptiveConfig.from_dict({"analysis_profile": "oi_levels_pcr"})
+    assert base2.w_trend == 0.0
+
+
+def test_regime_price_group_weight_shrinks_the_trend_side():
+    _cfg, ctx = _ctx(bars_up=True, chain_bullish=True)
+    _t, full_price, _o, _w = _regime_mod._directional_score(
+        ctx["intel"], ctx["pcr"], ctx["positioning"], price_weight=1.0)
+    _t, low_price, _o, _w = _regime_mod._directional_score(
+        ctx["intel"], ctx["pcr"], ctx["positioning"], price_weight=0.3)
+    assert abs(full_price) > 1.0
+    assert abs(low_price) < abs(full_price)
+
+
+def _fake_result(*, win_rate, expectancy, pf, dd, trades, ret, sharpe=0.4):
+    return {
+        "available": True, "synthetic_data": True,
+        "metrics": {
+            "win_rate_pct": win_rate, "expectancy": expectancy, "profit_factor": pf,
+            "max_drawdown_pct": dd, "total_trades": trades, "total_return_pct": ret,
+            "max_consecutive_losses": 3, "sharpe_ratio": sharpe,
+        },
+        "trades": [{"net_pnl": 1.0}] * trades, "attribution": {"by_strategy": {}},
+    }
+
+
+def test_baseline_comparison_adopts_and_rejects(monkeypatch):
+    def fake_bt(db, settings, *, underlying, start, end, config, preset, data_source, expiry_kind):
+        cfg = config or {}
+        if cfg.get("w_trend", 0) > 0:
+            return _fake_result(win_rate=70, expectancy=900, pf=1.8, dd=-8.0, trades=40, ret=14.0)
+        if cfg.get("w_volume", 0) > 0:
+            is_oos = start > "2025-02-15"
+            return _fake_result(win_rate=55 if is_oos else 68,
+                                expectancy=-50 if is_oos else 700,
+                                pf=0.9 if is_oos else 1.6, dd=-12.0, trades=35,
+                                ret=-3.0 if is_oos else 11.0)
+        if config is None:
+            return _fake_result(win_rate=66, expectancy=650, pf=1.5, dd=-10.0, trades=45, ret=10.0)
+        return _fake_result(win_rate=64, expectancy=500, pf=1.4, dd=-9.0, trades=40, ret=9.0)
+
+    monkeypatch.setattr(bcmp, "run_adaptive_backtest", fake_bt)
+    out = bcmp.run_comparison(
+        None, None, underlying="NIFTY", start="2025-01-01", end="2025-04-01",
+        data_source="synthetic", add_ons=["trend", "volume"], min_trades=10)
+    verdicts = {v["add_on"]: v["verdict"] for v in out["variants"]}
+    assert verdicts["trend"] == "adopt"
+    assert verdicts["volume"] == "reject"
+    assert "ALL" in verdicts
+    assert out["baseline"]["kpis_full"]["win_rate_pct"] == 64
+    assert "supports_80_85_pct_claim" in out["baseline_otm_claim"]
+    assert any("SYNTHETIC" in n for n in out["notes"])
+    tr = next(v for v in out["variants"] if v["add_on"] == "trend")
+    assert tr["delta_vs_baseline_full"]["expectancy"] == 400.0
+
+
+@pytest.mark.skipif(not os.environ.get("RUN_SLOW_TESTS"),
+                    reason="runs ~9 synthetic backtests; set RUN_SLOW_TESTS=1")
+def test_baseline_comparison_end_to_end_synthetic(monkeypatch):
+    bars = _fake_daily(420)
+    monkeypatch.setattr(bt, "fetch_candles", lambda *a, **k: ({"NIFTY 50": bars}, []))
+    out = bcmp.run_comparison(
+        None, None, underlying="NIFTY", start="2025-10-01", end="2025-12-12",
+        data_source="synthetic", add_ons=["trend"], min_trades=1)
+    assert "baseline" in out and "variants" in out
+    assert {v["add_on"] for v in out["variants"]} == {"trend", "ALL"}
+    for v in out["variants"]:
+        assert v["verdict"] in ("adopt", "reject", "inconclusive")
+    assert out["synthetic"] is True
+    assert any("SYNTHETIC" in n for n in out["notes"])

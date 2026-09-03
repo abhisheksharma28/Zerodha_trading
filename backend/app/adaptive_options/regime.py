@@ -34,11 +34,12 @@ _GROUP_CAP = 45.0   # neither price nor options positioning may dominate alone
 
 
 def _directional_score(
-    intel: IntelReport, pcr: PCRState, pos: PositioningReport
+    intel: IntelReport, pcr: PCRState, pos: PositioningReport, price_weight: float = 1.0,
 ) -> tuple[float, float, float, dict[str, str]]:
     """Returns (total, price_score, options_score, why). Each of the two
     groups is capped at +/- _GROUP_CAP so no single side can force a
-    strong-trend label on its own."""
+    strong-trend label on its own. ``price_weight`` scales the trend/EMA/VWAP
+    group down — the OI+PCR baseline profile sets it near zero."""
     why: dict[str, str] = {}
 
     # --- price / trend group -------------------------------------
@@ -59,7 +60,7 @@ def _directional_score(
     why["momentum"] = intel.momentum
     p += {"HH_HL": 10, "LH_LL": -10, "REVERSAL_UP": 5, "REVERSAL_DOWN": -5}.get(intel.market_structure, 0)
     why["structure"] = intel.market_structure
-    price_score = _clamp(p, -_GROUP_CAP, _GROUP_CAP)
+    price_score = _clamp(p * price_weight, -_GROUP_CAP, _GROUP_CAP)
 
     # --- options positioning group ------------------------------
     o = 0.0
@@ -110,7 +111,8 @@ def classify(
     confidence: ConfidenceScore,
     data_ok: bool = True,
 ) -> RegimeState:
-    dscore, price_score, options_score, contributing = _directional_score(intel, pcr, positioning)
+    dscore, price_score, options_score, contributing = _directional_score(
+        intel, pcr, positioning, price_weight=cfg.regime_price_group_weight)
     vc = _vol_class(vol, intel, cfg)
     drivers: list[str] = []
 
