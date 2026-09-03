@@ -66,15 +66,13 @@ def _evaluate_instrument(
             i_feat = intraday_features(intr)
             i_struct = st.analyse(intr[-160:], min_bars=20)
 
-    fv = None
-    if si.asset_class == "EQUITY":
-        fv = fund_mod.view(settings, si.tradingsymbol, asset_class=si.asset_class)
-
+    # fundamentals (yfinance) are slow - fetch them only for the handful of
+    # names that get persisted, in the caller, not for every scanned symbol
     ltp = d_feat.close
     inp = SignalInput(
         ltp=ltp, asset_class=si.asset_class, has_options=si.has_options,
         daily=d_feat, daily_structure=d_struct,
-        intraday=i_feat, intraday_structure=i_struct, fundamentals=fv,
+        intraday=i_feat, intraday_structure=i_struct, fundamentals=None,
         tick_size=0.05,
     )
     return signals.evaluate(inp, cfg), None
