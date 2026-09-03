@@ -98,6 +98,19 @@ function CatalogCard({ e }: { e: CatalogEntry }) {
               <Sparkline data={curve} tone={(ret ?? 0) < 0 ? "neg" : "accent"} />
             </div>
           )}
+          {e.universe_rationale && (
+            <div className="mt-2 rounded-md border border-line/70 bg-bg/40 p-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-fg-faint">
+                Why these names
+              </p>
+              <p className="mt-0.5 text-[11px] leading-snug text-fg-muted">
+                {e.universe_rationale}
+              </p>
+              {e.design_note && (
+                <p className="mt-1 text-[10px] italic text-fg-faint">{e.design_note}</p>
+              )}
+            </div>
+          )}
           {e.summary && (
             <>
               <p className="mt-2 text-xs text-fg-muted">{e.summary.headline}</p>
@@ -160,8 +173,8 @@ export function BacktestCatalog() {
         <div>
           <h2 className="text-sm font-semibold text-fg">Strategy backtest catalog</h2>
           <p className="text-[11px] text-fg-faint">
-            Every library strategy, pre-run over {data?.meta.universe ?? "NIFTY 200"} with its tuned
-            preset.{" "}
+            Every library strategy, pre-run on the universe it is designed for — each one
+            screened from the market with a stated rationale.{" "}
             {data?.meta.last_refresh
               ? `Last run ${new Date(data.meta.last_refresh * 1000).toLocaleString("en-IN")}.`
               : "Not run yet."}{" "}

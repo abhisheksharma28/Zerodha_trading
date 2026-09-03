@@ -236,6 +236,8 @@ export interface CatalogEntry {
   universe: string;
   timeframe: string;
   years: number;
+  screen?: string;
+  design_note?: string;
   stale: boolean;
   status: "ok" | "ruined" | "not_run";
   metrics: Record<string, number | null> | null;
@@ -245,6 +247,8 @@ export interface CatalogEntry {
   cached_at: number | null;
   used_symbols?: number;
   skipped?: number;
+  universe_rationale?: string | null;
+  screen_metrics?: Record<string, number | string> | null;
 }
 
 export interface BacktestCatalog {
