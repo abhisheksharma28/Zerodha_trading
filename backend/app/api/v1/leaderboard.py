@@ -18,6 +18,7 @@ from app.core.deps import get_db
 from app.core.exceptions import NotFoundError
 from app.leaderboard import (
     CANONICAL,
+    catalog,
     ensure_paper_deployments,
     leaderboard,
     refresh_all,
@@ -44,6 +45,14 @@ def get_leaderboard(
     db: Session = Depends(get_db), settings: Settings = Depends(get_settings)
 ) -> dict[str, Any]:
     return leaderboard(db, settings)
+
+
+@router.get("/catalog")
+def get_catalog(db: Session = Depends(get_db)) -> dict[str, Any]:
+    """The pre-computed backtest showcase: one entry per canonical template
+    with metrics + a plain-English summary, read from the on-disk cache.
+    Use POST /leaderboard/refresh to (slowly) recompute it."""
+    return catalog(db)
 
 
 @router.post("/refresh")

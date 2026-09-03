@@ -10,6 +10,7 @@ import { TimeframeSelect } from "@/components/TimeframeSelect";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { backtestsApi } from "@/api/backtests";
+import { BacktestCatalog } from "@/components/backtest/BacktestCatalog";
 import {
   backtestKeys,
   useBacktests,
@@ -43,6 +44,12 @@ export default function BacktestsPage() {
           </p>
         </div>
         <Button onClick={() => setShowForm((s) => !s)}>{showForm ? "Cancel" : "New backtest"}</Button>
+      </div>
+
+      <BacktestCatalog />
+
+      <div className="border-t border-line pt-4">
+        <h2 className="text-sm font-semibold text-fg">Your backtests</h2>
       </div>
 
       {showForm && <CreateBacktestForm onDone={() => setShowForm(false)} />}

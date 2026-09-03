@@ -12,7 +12,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from app.market_data.nse_universe import NIFTY_50, NIFTY_100
+from app.market_data.nse_universe import NIFTY_50, NIFTY_200
 
 _CAPITAL = 1_000_000.0
 _NIFTY_50_SYMS = sorted(s for s, _n, _s in NIFTY_50)
@@ -58,7 +58,7 @@ class CanonicalConfig:
 
 def _daily(slug: str) -> CanonicalConfig:
     return CanonicalConfig(
-        slug=slug, universe=NIFTY_100, universe_name="NIFTY 100",
+        slug=slug, universe=NIFTY_200, universe_name="NIFTY 200",
         timeframe="1d", preset="balanced", years=3.0, max_gross_exposure=1.0,
     )
 

@@ -221,8 +221,48 @@ export interface LeaderboardDetail {
   param_sim: ParamSimBlock | null;
 }
 
+export interface CatalogSummary {
+  verdict: "strong" | "tradeable" | "marginal" | "avoid" | "ruined" | "insufficient";
+  headline: string;
+  what_we_did: string[];
+  what_we_saw: string[];
+  what_to_look_at: string[];
+}
+
+export interface CatalogEntry {
+  slug: string;
+  name: string;
+  category: string;
+  universe: string;
+  timeframe: string;
+  years: number;
+  stale: boolean;
+  status: "ok" | "ruined" | "not_run";
+  metrics: Record<string, number | null> | null;
+  summary: CatalogSummary | null;
+  equity_curve: [string, number][];
+  top_symbols?: { symbol: string; net_pnl: number }[];
+  cached_at: number | null;
+  used_symbols?: number;
+  skipped?: number;
+}
+
+export interface BacktestCatalog {
+  meta: {
+    catalog_size: number;
+    catalog_ran: number;
+    user_backtests: number;
+    total_backtests: number;
+    last_refresh: number | null;
+    universe: string | null;
+  };
+  strategies: CatalogEntry[];
+}
+
 export const leaderboardApi = {
   get: () => apiClient.get<Leaderboard>("/leaderboard").then((r) => r.data),
+
+  catalog: () => apiClient.get<BacktestCatalog>("/leaderboard/catalog").then((r) => r.data),
 
   detail: (slug: string) =>
     apiClient.get<LeaderboardDetail>(`/leaderboard/${slug}`).then((r) => r.data),

@@ -12,6 +12,14 @@ export function useLeaderboard() {
   });
 }
 
+export function useBacktestCatalog() {
+  return useQuery({
+    queryKey: [...KEY, "catalog"],
+    queryFn: leaderboardApi.catalog,
+    staleTime: 60_000,
+  });
+}
+
 export function useLeaderboardDetail(slug: string | undefined) {
   return useQuery({
     queryKey: [...KEY, slug],

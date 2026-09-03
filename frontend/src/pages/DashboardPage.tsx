@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { useBacktests } from "@/hooks/useBacktests";
 import { useDeployments } from "@/hooks/useDeployments";
+import { useBacktestCatalog } from "@/hooks/useLeaderboard";
 import { useScanRecommendations, useScannerStatus } from "@/hooks/useMarketScanner";
 import {
   useAddIdeaToPaper,
@@ -130,6 +131,8 @@ export default function DashboardPage() {
   const strategies = useStrategies();
   const deployments = useDeployments();
   const backtests = useBacktests();
+  const { data: catalog } = useBacktestCatalog();
+  const totalBacktests = catalog?.meta.total_backtests ?? backtests.data?.length ?? 0;
 
   const { data: sm } = usePaperSummary(15_000);
   const { data: positions = [] } = usePaperPositions(15_000);
@@ -536,7 +539,15 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <SectionCard
-          title="Recent Backtests"
+          title={
+            <span className="flex items-baseline gap-2">
+              Backtests
+              <span className="text-[11px] font-normal text-fg-faint">
+                {totalBacktests} on record
+                {catalog ? ` · ${catalog.meta.catalog_ran}/${catalog.meta.catalog_size} strategy catalog` : ""}
+              </span>
+            </span>
+          }
           className="lg:col-span-2"
           actions={
             <Link to="/backtests" className="text-xs text-accent hover:underline">
@@ -616,7 +627,7 @@ export default function DashboardPage() {
       </div>
 
       <p className="text-[11px] text-fg-faint">
-        {strategies.data?.length ?? 0} strategies · {backtests.data?.length ?? 0} backtests ·{" "}
+        {strategies.data?.length ?? 0} strategies · {totalBacktests} backtests ·{" "}
         {live.length} live. Paper figures are a demo account marked to live prices; not investment
         advice.
       </p>

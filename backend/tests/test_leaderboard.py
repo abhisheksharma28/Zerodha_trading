@@ -132,3 +132,26 @@ def test_leaderboard_api_lists_every_template(cache_dir):
         assert {"pairs-trading"} & {row["slug"] for row in body["rows"]}
         d = client.get("/api/v1/leaderboard/donchian-breakout")
         assert d.status_code == 404  # nothing cached in a fresh dir
+
+
+def test_catalog_summarises_cached_runs(cache_dir, monkeypatch, db):
+    monkeypatch.setattr(
+        lb_service, "run_adhoc",
+        lambda *a, **k: _fake_report(k["slug"], ret=42.0, sharpe=1.4, dd=12.0, trades=180),
+    )
+    run_canonical(None, None, "donchian-breakout")
+
+    cat = lb_service.catalog(db)
+    assert cat["meta"]["catalog_size"] >= 10
+    assert cat["meta"]["catalog_ran"] >= 1
+    assert cat["meta"]["total_backtests"] == cat["meta"]["catalog_ran"] + cat["meta"]["user_backtests"]
+
+    done = next(e for e in cat["strategies"] if e["slug"] == "donchian-breakout")
+    assert done["status"] == "ok"
+    s = done["summary"]
+    assert s["verdict"] in ("strong", "tradeable", "marginal", "avoid", "ruined", "insufficient")
+    assert s["what_we_did"] and s["what_we_saw"] and s["what_to_look_at"]
+    assert any("42.0%" in line for line in s["what_we_saw"])
+
+    pending = next(e for e in cat["strategies"] if e["status"] == "not_run")
+    assert pending["summary"] is None

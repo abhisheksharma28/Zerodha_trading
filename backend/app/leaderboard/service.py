@@ -8,14 +8,15 @@ from collections import defaultdict, deque
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.backtesting.adhoc import run_adhoc
 from app.config import Settings
 from app.core.logging import get_logger
-from app.leaderboard import store
+from app.leaderboard import narrative, store
 from app.leaderboard.config import CANONICAL, UNSUITED, canonical_for
+from app.models.backtest import Backtest
 from app.models.deployment import Deployment
 from app.models.enums import DeploymentStatus, TradingMode
 from app.models.order import Order, Trade
@@ -81,6 +82,7 @@ def run_canonical(db: Session, settings: Settings, slug: str) -> dict[str, Any]:
         "bottom_symbols": [s.as_dict() for s in per_symbol[-5:]][::-1],
         "caveats": report.caveats,
     }
+    payload["summary"] = narrative.summarize(payload)
     store.save(slug, cfg.config_hash, payload)
     return payload
 
@@ -106,6 +108,62 @@ def refresh_all(
             logger.warning("leaderboard_refresh_failed", slug=slug, error=str(exc))
             out[slug] = f"error: {exc}"
     return out
+
+
+# --------------------------------------------------------------------------
+# backtest catalog - the pre-computed showcase (read-only; refresh is
+# separate). One entry per canonical template, newest cached result.
+# --------------------------------------------------------------------------
+
+def catalog(db: Session) -> dict[str, Any]:
+    entries: list[dict[str, Any]] = []
+    newest = 0.0
+    for slug, cfg in CANONICAL.items():
+        blob = store.load(slug, cfg.config_hash) or store.load_any(slug)
+        tmpl = get_template(slug)
+        row: dict[str, Any] = {
+            "slug": slug,
+            "name": tmpl.NAME,
+            "category": tmpl.CATEGORY,
+            "universe": cfg.universe_name,
+            "timeframe": cfg.timeframe,
+            "years": cfg.years,
+            "stale": bool(blob and blob.get("config", {}).get("config_hash") != cfg.config_hash),
+        }
+        if blob is None:
+            row.update(status="not_run", metrics=None, summary=None,
+                       equity_curve=[], cached_at=None)
+        else:
+            row.update(
+                status="ruined" if blob.get("ruined") else "ok",
+                metrics=blob.get("metrics"),
+                summary=blob.get("summary") or narrative.summarize(blob),
+                equity_curve=blob.get("equity_curve") or [],
+                top_symbols=blob.get("top_symbols") or [],
+                cached_at=blob.get("cached_at"),
+                used_symbols=len(blob.get("used_symbols") or []),
+                skipped=len(blob.get("skipped") or {}),
+            )
+            newest = max(newest, float(blob.get("cached_at") or 0))
+        entries.append(row)
+
+    total_user = db.execute(select(func.count()).select_from(Backtest)).scalar_one()
+    ran = sum(1 for e in entries if e["status"] != "not_run")
+    entries.sort(key=lambda e: (
+        e["status"] == "not_run",
+        -((e.get("metrics") or {}).get("sharpe_ratio") or -99),
+    ))
+    return {
+        "meta": {
+            "catalog_size": len(entries),
+            "catalog_ran": ran,
+            "user_backtests": int(total_user),
+            "total_backtests": ran + int(total_user),
+            "last_refresh": newest or None,
+            "universe": next((c.universe_name for c in CANONICAL.values() if c.timeframe == "1d"), None),
+        },
+        "strategies": entries,
+    }
 
 
 # --------------------------------------------------------------------------

@@ -16,6 +16,7 @@ caveats (survivorship bias, out-of-sample not yet done).
 
 from app.leaderboard.config import CANONICAL, CanonicalConfig, canonical_for
 from app.leaderboard.service import (
+    catalog,
     ensure_paper_deployments,
     leaderboard,
     refresh_all,
@@ -26,6 +27,7 @@ __all__ = [
     "CANONICAL",
     "CanonicalConfig",
     "canonical_for",
+    "catalog",
     "ensure_paper_deployments",
     "leaderboard",
     "refresh_all",
