@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings
 from app.core.logging import get_logger
+from app.market_scanner import knowledge as kb
 from app.providers.fundamentals import get_fundamentals_provider
 from app.services import market_data_service
 
@@ -81,10 +82,13 @@ def _sector_map(db: Session, settings: Settings) -> dict[str, float]:
 
 
 def _nudge_from_pct(pct: float, sector: str) -> tuple[float, str]:
-    if pct >= 0.75:
-        return 0.6, f"{sector} sector is leading the market today"
-    if pct <= 0.25:
-        return -0.6, f"{sector} sector is lagging the market today"
+    lead = float(kb.get("sector", "lead_percentile", default=0.75))
+    lag = float(kb.get("sector", "lag_percentile", default=0.25))
+    mag = float(kb.get("sector", "nudge", default=0.6))
+    if pct >= lead:
+        return mag, f"{sector} sector is leading the market today"
+    if pct <= lag:
+        return -mag, f"{sector} sector is lagging the market today"
     return 0.0, f"{sector} sector is mid-pack"
 
 
@@ -135,12 +139,13 @@ def calendar_bias(now: datetime | None = None) -> tuple[float, str]:
     and in the first half, mildly negative deep in the second half."""
     now = now or datetime.now(IST)
     idx, left = _trading_day_of_month(now)
+    c = kb.get("calendar", default={})
     if left <= 2 or idx <= 2:
-        return 0.7, "turn-of-month window (historically higher mean returns)"
+        return float(c.get("turn_of_month", 0.7)), "turn-of-month window (historically higher mean returns)"
     if idx <= 8:
-        return 0.35, "first half of the month (historically firmer)"
+        return float(c.get("first_half", 0.35)), "first half of the month (historically firmer)"
     if idx >= 14:
-        return -0.3, "deep second half of the month (historically softer)"
+        return float(c.get("deep_second_half", -0.3)), "deep second half of the month (historically softer)"
     return 0.0, ""
 
 

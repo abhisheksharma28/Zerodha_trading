@@ -15,6 +15,7 @@ from typing import Any
 
 from app.config import Settings
 from app.core.logging import get_logger
+from app.market_scanner import knowledge as kb
 from app.providers.fundamentals import get_fundamentals_provider
 
 logger = get_logger(__name__)
@@ -107,15 +108,18 @@ def _score(m: Any) -> FundamentalView:
         flags.append("earnings contracting")
     if roe is not None and roe > 18 and (valuation or 0) > 40:
         flags.append("quality at a fair price")
-    # Graham's "defensive investor" screen (The Intelligent Investor, ch. 14):
-    # P/E <= 15, P/B <= 1.5, blended P/E*P/B <= 22.5, current ratio >= 2.
-    if pe is not None and pb is not None and pe > 0 and pb > 0:
+    # Graham's "defensive investor" screen (thresholds in knowledge.yaml).
+    if kb.enabled("graham") and pe is not None and pb is not None and pe > 0 and pb > 0:
+        g = kb.get("graham", default={})
         blend = pe * pb
-        if blend <= 22.5 and (pe <= 15 or pb <= 1.5):
+        if blend <= float(g.get("blend_value_max", 22.5)) and (pe <= 15 or pb <= 1.5):
             flags.append("graham value (P/E x P/B <= 22.5)")
-        elif blend >= 45:
+        elif blend >= float(g.get("blend_expensive_min", 45.0)):
             flags.append("graham-expensive (P/E x P/B high)")
-    if current_ratio is not None and current_ratio >= 2.0 and (de is None or de <= 1.0):
+    _cr_min = float(kb.get("graham", "current_ratio_min", default=2.0))
+    _de_max = float(kb.get("graham", "de_max", default=1.0))
+    if (kb.enabled("graham") and current_ratio is not None and current_ratio >= _cr_min
+            and (de is None or de <= _de_max)):
         flags.append("graham-strong balance sheet")
 
     strong = [s for s in (quality, growth) if s is not None]

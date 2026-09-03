@@ -1,0 +1,28 @@
+# Trading Ideas engine — runtime knowledge overrides.
+#
+# Only put the values you want to CHANGE here; they are deep-merged over the
+# defaults in knowledge.py. See docs/TRADING_KNOWLEDGE_BASE.md for what each
+# knob means. Edit this file and the engine re-reads it (knowledge.reload()),
+# or set MARKET_SCANNER_KNOWLEDGE_FILE to point somewhere else.
+#
+# Examples (commented out — uncomment / adjust to tune the engine):
+#
+# enabled:
+#   news: false            # ignore the headline heuristic entirely
+#   graham: true
+#
+# score:
+#   min_confidence: 50.0   # only emit stronger ideas
+#   grade_a: 76.0
+#   quality_weights:
+#     structure: 0.20      # lean harder on price structure
+#     momentum: 0.08
+#
+# candle_weights:
+#   bull_marubozu: 12
+#
+# force_index:
+#   weight_gaining: 7.0
+#
+# graham:
+#   blend_value_max: 20.0

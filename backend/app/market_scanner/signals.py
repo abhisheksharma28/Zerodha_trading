@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.market_scanner import knowledge as kb
 from app.market_scanner.candles import CandleReport
 from app.market_scanner.chart_patterns import ChartPatternReport
 from app.market_scanner.context import NewsSignal
@@ -24,11 +25,16 @@ from app.market_scanner.fundamentals import FundamentalView
 from app.market_scanner.structure import StructureReport, Zone
 
 
+def _kb_min_confidence() -> float:
+    return float(kb.get("score", "min_confidence", default=45.0))
+
+
 @dataclass
 class SignalConfig:
     min_bias: float = 30.0
     min_rr: float = 1.6
-    min_confidence: float = 45.0       # strict gate - below this a setup is not emitted
+    # strict gate - below this a setup is not emitted (runtime: knowledge.yaml)
+    min_confidence: float = field(default_factory=_kb_min_confidence)
     max_risk_pct_swing: float = 5.0
     max_risk_pct_intraday: float = 1.8
     sl_atr_mult: float = 1.5
@@ -216,16 +222,19 @@ def _volume_factors(intra: Features | None, daily: Features, side_sign: float) -
         out.append(Factor("thin_volume", f"volume only {rv:.1f}x average - weak participation", -side_sign * 4, "volume"))
     # Elder Force Index: 13-EMA sign = who controls, slope = who is gaining
     fi, fi_prev = daily.force_index_13, daily.force_index_13_prev
-    if fi is not None and fi_prev is not None and daily.close:
-        eps = 2e-4  # near-zero band -> trendless, no signal
+    if kb.enabled("force_index") and fi is not None and fi_prev is not None and daily.close:
+        fx = kb.get("force_index", default={})
+        eps = float(fx.get("eps", 2e-4))  # near-zero band -> trendless, no signal
+        w_gain = float(fx.get("weight_gaining", 6.0))
+        w_flat = float(fx.get("weight_flat", 4.0))
         if fi > eps:
-            w = 6.0 if fi > fi_prev else 4.0
             out.append(Factor("force_index", "Elder Force Index positive"
-                              + (" and rising" if fi > fi_prev else ""), w, "volume"))
+                              + (" and rising" if fi > fi_prev else ""),
+                              w_gain if fi > fi_prev else w_flat, "volume"))
         elif fi < -eps:
-            w = -6.0 if fi < fi_prev else -4.0
             out.append(Factor("force_index", "Elder Force Index negative"
-                              + (" and falling" if fi < fi_prev else ""), w, "volume"))
+                              + (" and falling" if fi < fi_prev else ""),
+                              -(w_gain if fi < fi_prev else w_flat), "volume"))
     return out
 
 
@@ -255,25 +264,20 @@ def _fundamental_factors(fv: FundamentalView | None, horizon: str) -> list[Facto
     return out
 
 
-_CANDLE_WEIGHT = {
-    "morning_star": 11, "evening_star": 11, "bullish_engulfing": 10, "bearish_engulfing": 10,
-    "bull_marubozu": 10, "bear_marubozu": 10,
-    "hammer": 9, "hanging_man": 9, "shooting_star": 9, "bullish_piercing": 8, "bearish_piercing": 8,
-    "bullish_harami": 6, "bearish_harami": 6, "bullish_doji": 6, "bearish_doji": 6,
-    "spinning_top": 4,
-}
-
-
 def _candle_factors(daily: CandleReport | None, intraday: CandleReport | None,
                     tf_pref: str) -> list[Factor]:
     """A confirmed reversal candlestick pattern, weighted by shape confidence
     and which timeframe it printed on."""
+    if not kb.enabled("candlesticks"):
+        return []
+    weights = kb.get("candle_weights", default={})
+    dflt = weights.get("_default", 5)
     out: list[Factor] = []
     for rep, tf, scale in ((intraday, "15m", 0.8), (daily, "daily", 1.0)):
         if rep is None:
             continue
         for p in rep.patterns[:2]:
-            base = _CANDLE_WEIGHT.get(p.name, 5)
+            base = weights.get(p.name, dflt)
             w = base * p.strength * scale * (1.15 if tf == tf_pref else 1.0)
             sign = 1.0 if p.direction == "BULLISH" else -1.0
             out.append(Factor("candlestick", f"{tf} {p.label} at the swing", round(sign * w, 1),
@@ -281,26 +285,19 @@ def _candle_factors(daily: CandleReport | None, intraday: CandleReport | None,
     return out
 
 
-_CHART_WEIGHT = {
-    "head_shoulders_top": 13, "head_shoulders_bottom": 13,
-    "triple_top": 12, "triple_bottom": 12,
-    "double_top": 11, "double_bottom": 11,
-    "ascending_triangle": 10, "descending_triangle": 10, "symmetrical_triangle": 9,
-    "rectangle": 8,
-}
-
-
 def _chart_pattern_factors(rep: ChartPatternReport | None) -> list[Factor]:
     """A *confirmed* multi-swing chart pattern (breakout has happened). A
     forming pattern is deliberately ignored - per the reference, a pattern
     is not active until the breakout."""
-    if rep is None:
+    if rep is None or not kb.enabled("chart_patterns"):
         return []
+    weights = kb.get("chart_weights", default={})
+    dflt = weights.get("_default", 7)
     out: list[Factor] = []
     for p in rep.patterns[:2]:
         if p.status != "confirmed":
             continue
-        base = _CHART_WEIGHT.get(p.name, 7)
+        base = weights.get(p.name, dflt)
         sign = 1.0 if p.direction == "BULLISH" else -1.0
         out.append(Factor(
             "chart_pattern",
@@ -315,38 +312,45 @@ def _reflexivity_factor(d: Features, inp: SignalInput, direction: str) -> Factor
     price action and its supposed drivers (fundamentals, news) point the same
     way, but grows fragile once price runs far from equilibrium (the
     "moment of truth"). Small weight - it nudges, it does not decide."""
-    if not d.ema200 or not d.close or d.ema_stack not in ("BULL", "BEAR"):
+    if not kb.enabled("reflexivity") or not d.ema200 or not d.close or d.ema_stack not in ("BULL", "BEAR"):
         return None
     long = direction == "LONG"
     trend_up = d.ema_stack == "BULL"
     if long != trend_up:
         return None  # only speaks to trend-following ideas
+    rx = kb.get("reflexivity", default={})
+    ext_lim = float(rx.get("extended_pct", 0.30))
+    aligned_lim = float(rx.get("aligned_max_ext", 0.18))
     ext = abs(d.close - d.ema200) / d.ema200
     fnd_ok = inp.fundamentals is not None and inp.fundamentals.available and (
         inp.fundamentals.bias == ("SUPPORTIVE_LONG" if long else "SUPPORTIVE_SHORT")
     )
     news_ok = inp.news is not None and (inp.news.score > 0.3 if long else inp.news.score < -0.3)
     sign = 1.0 if long else -1.0
-    if ext >= 0.30:
+    if ext >= ext_lim:
         return Factor("reflexivity", f"price {ext * 100:.0f}% from the 200-EMA — trend far from "
-                      "equilibrium, reversal risk rising", -sign * 5, "context")
-    if (fnd_ok or news_ok) and ext <= 0.18:
+                      "equilibrium, reversal risk rising",
+                      -sign * float(rx.get("late_stage_penalty", 5.0)), "context")
+    if (fnd_ok or news_ok) and ext <= aligned_lim:
         return Factor("reflexivity", "price, fundamentals and headlines reinforcing each other — "
-                      "self-sustaining trend", sign * 4, "context")
+                      "self-sustaining trend", sign * float(rx.get("boost", 4.0)), "context")
     return None
 
 
 def _context_factors(inp: SignalInput, side_sign: float) -> list[Factor]:
     out: list[Factor] = []
-    if inp.sector_nudge and abs(inp.sector_nudge[0]) > 0.1:
-        out.append(Factor("sector", inp.sector_nudge[1], round(inp.sector_nudge[0] * 6, 1), "context"))
-    if inp.calendar_nudge and abs(inp.calendar_nudge[0]) > 0.1 and inp.calendar_nudge[1]:
+    sec_w = float(kb.get("sector", "weight", default=6.0))
+    cal_w = float(kb.get("calendar", "weight", default=4.0))
+    news_min = float(kb.get("news", "min_abs_score", default=0.3))
+    news_w = float(kb.get("news", "weight", default=7.0))
+    if kb.enabled("sector") and inp.sector_nudge and abs(inp.sector_nudge[0]) > 0.1:
+        out.append(Factor("sector", inp.sector_nudge[1], round(inp.sector_nudge[0] * sec_w, 1), "context"))
+    if kb.enabled("calendar") and inp.calendar_nudge and abs(inp.calendar_nudge[0]) > 0.1 and inp.calendar_nudge[1]:
         # calendar bias is long-favouring only
-        w = inp.calendar_nudge[0] * 4
-        out.append(Factor("calendar", inp.calendar_nudge[1], round(w, 1), "context"))
-    if inp.news and abs(inp.news.score) >= 0.3:
+        out.append(Factor("calendar", inp.calendar_nudge[1], round(inp.calendar_nudge[0] * cal_w, 1), "context"))
+    if kb.enabled("news") and inp.news and abs(inp.news.score) >= news_min:
         out.append(Factor("news", f"recent headlines lean {'positive' if inp.news.score > 0 else 'negative'}"
-                          f" — {inp.news.note}", round(inp.news.score * 7, 1), "news"))
+                          f" — {inp.news.note}", round(inp.news.score * news_w, 1), "news"))
     return out
 
 
@@ -466,11 +470,18 @@ _REVERSAL_SETUPS = {
     "Oversold bounce", "Overbought fade", "Candlestick reversal",
     "Chart-pattern breakout",
 }
-# strict quality weights (sum ~= 1.0)
-_QW = {
+# strict quality sub-score weights (sum ~= 1.0); runtime: knowledge.yaml
+_QW_DEFAULT = {
     "alignment": 0.24, "trend": 0.16, "structure": 0.16, "location": 0.14,
     "momentum": 0.12, "rr": 0.08, "volume": 0.06, "risk_fit": 0.04,
 }
+
+
+def _qw() -> dict[str, float]:
+    over = kb.get("score", "quality_weights", default=None)
+    if not isinstance(over, dict):
+        return _QW_DEFAULT
+    return {k: float(over.get(k, _QW_DEFAULT[k])) for k in _QW_DEFAULT}
 
 
 def _lin(x: float, x0: float, x1: float) -> float:
@@ -534,7 +545,8 @@ def _quality_score(
         "alignment": s_align, "trend": s_trend, "structure": s_struct, "location": s_loc,
         "momentum": s_mom, "rr": s_rr, "volume": s_vol, "risk_fit": s_risk,
     }
-    raw = 100.0 * sum(subs[k] * _QW[k] for k in _QW)
+    qw = _qw()
+    raw = 100.0 * sum(subs[k] * qw[k] for k in qw)
 
     # penalties
     pen = 0.0
@@ -569,14 +581,17 @@ def _quality_score(
         caps.append(("counter-trend, single timeframe", 58.0))
     for _why, cap in caps:
         score = min(score, cap)
-    score = max(0.0, min(90.0, score))
+    ga = float(kb.get("score", "grade_a", default=74.0))
+    gb = float(kb.get("score", "grade_b", default=58.0))
+    ceiling = float(kb.get("score", "ceiling", default=90.0))
+    score = max(0.0, min(ceiling, score))
 
-    grade = "A" if score >= 74 else "B" if score >= 58 else "C"
+    grade = "A" if score >= ga else "B" if score >= gb else "C"
     detail = {
         "score": round(score, 1),
         "grade": grade,
         "sub_scores": {k: round(v, 2) for k, v in subs.items()},
-        "weights": _QW,
+        "weights": qw,
         "penalties": round(pen, 1),
         "caps": [w for w, _ in caps],
         "raw": round(raw, 1),

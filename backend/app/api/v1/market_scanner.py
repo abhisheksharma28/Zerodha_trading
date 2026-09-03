@@ -7,6 +7,8 @@
   GET  /market-scanner/alerts              recent fired alerts
   POST /market-scanner/alerts/read         mark alerts read
   POST /market-scanner/scan                trigger a sweep now (manual)
+  GET  /market-scanner/knowledge           the runtime knowledge config the engine scores with
+  POST /market-scanner/knowledge/reload    re-read knowledge.yaml without a restart
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.core.deps import get_db
-from app.market_scanner import service
+from app.market_scanner import knowledge, service
 
 router = APIRouter(prefix="/market-scanner", tags=["market-scanner"])
 
@@ -85,3 +87,17 @@ async def post_scan(
     db: Session = Depends(get_db), settings: Settings = Depends(get_settings)
 ) -> dict[str, Any]:
     return await service.trigger_scan(db, settings)
+
+
+@router.get("/knowledge")
+def get_knowledge() -> dict[str, Any]:
+    """The machine-readable knowledge config the scorer reads at runtime.
+    Edit backend/app/market_scanner/knowledge.yaml and call the reload
+    endpoint (or restart) to retune the engine without a code change."""
+    return {"config": knowledge.KB, "source": str(knowledge._YAML_PATH),  # noqa: SLF001
+            "yaml_present": knowledge._YAML_PATH.exists()}  # noqa: SLF001
+
+
+@router.post("/knowledge/reload")
+def post_knowledge_reload() -> dict[str, Any]:
+    return {"reloaded": True, "config": knowledge.reload()}
