@@ -25,6 +25,7 @@ def _summary_of_backtest(bt_dict: dict[str, Any] | None) -> dict[str, Any] | Non
     if not bt_dict:
         return None
     m = bt_dict.get("metrics", {})
+    oos = bt_dict.get("oos") or {}
     return {
         "generated_at": bt_dict.get("generated_at"),
         "years": bt_dict.get("years"),
@@ -33,8 +34,15 @@ def _summary_of_backtest(bt_dict: dict[str, Any] | None) -> dict[str, Any] | Non
         "benchmark_return_pct": m.get("benchmark_return_pct"),
         "excess_return_pct": m.get("excess_return_pct"),
         "sharpe_ratio": m.get("sharpe_ratio"),
+        "sortino_ratio": m.get("sortino_ratio"),
+        "calmar_ratio": m.get("calmar_ratio"),
+        "beta": m.get("beta"),
+        "alpha_pct": m.get("alpha_pct"),
         "max_drawdown_pct": m.get("max_drawdown_pct"),
         "annual_turnover_pct": m.get("annual_turnover_pct"),
+        "monthly_win_rate_pct": m.get("monthly_win_rate_pct"),
+        "oos_return_pct": (oos.get("out_of_sample") or {}).get("return_pct"),
+        "oos_sharpe_ratio": (oos.get("out_of_sample") or {}).get("sharpe_ratio"),
     }
 
 

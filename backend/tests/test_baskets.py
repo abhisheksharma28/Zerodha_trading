@@ -163,6 +163,77 @@ def test_plan_orders_respects_the_drift_band():
     assert a.side == "BUY" and a.qty == 20
 
 
+def test_hysteresis_keeps_a_held_name_in_the_buffer_zone():
+    spec = parse_spec({"sleeves": [
+        {"id": "eq", "name": "Eq", "weight_pct": 100, "weighting": "equal",
+         "members": ["A", "B", "C", "D"],
+         "rule": {"type": "momentum_top_k", "lookback": 40, "top_k": 2, "hold_k": 3, "trend_ma": 0}},
+    ]})
+    # ranking by ROC: A > B > C > D
+    bars = {
+        "A": _series("A", 100, 0.004, 120),
+        "B": _series("B", 100, 0.003, 120),
+        "C": _series("C", 100, 0.002, 120),
+        "D": _series("D", 100, 0.0, 120),
+    }
+    fresh = resolve_targets(spec, bars, datetime(2020, 4, 1))
+    assert set(fresh.weights) == {"A", "B"}  # top_k = 2
+    # C is rank 3 — held, so it stays (hold_k = 3); D (rank 4) does not
+    withheld = resolve_targets(spec, bars, datetime(2020, 4, 1), current_holdings={"C": 10, "D": 10})
+    assert set(withheld.weights) == {"A", "B", "C"}
+
+
+def test_global_position_cap_waterfills_excess():
+    spec = parse_spec({"sleeves": [
+        {"id": "eq", "name": "Eq", "weight_pct": 100, "weighting": "momentum_weighted",
+         "members": ["BIG", "M1", "M2", "M3"],
+         "rule": {"type": "momentum_top_k", "lookback": 30, "top_k": 4, "trend_ma": 0}},
+    ], "risk": {"max_position_pct": 30}})
+    bars = {
+        "BIG": _series("BIG", 100, 0.02, 120),   # dominates momentum weighting
+        "M1": _series("M1", 100, 0.001, 120),
+        "M2": _series("M2", 100, 0.001, 120),
+        "M3": _series("M3", 100, 0.001, 120),
+    }
+    res = resolve_targets(spec, bars, datetime(2020, 4, 1))
+    assert res.weights["BIG"] <= 0.30 + 1e-6
+    assert sum(res.weights.values()) == pytest.approx(1.0, abs=1e-6)
+
+
+def test_regime_gate_scales_risk_assets_when_benchmark_is_below_its_ma():
+    spec = parse_spec({"sleeves": [
+        {"id": "eq", "name": "Equity", "weight_pct": 70, "weighting": "equal",
+         "members": ["E"], "rule": {"type": "none"}, "risk_asset": True},
+        {"id": "gold", "name": "Gold", "weight_pct": 30, "weighting": "equal",
+         "members": ["G"], "rule": {"type": "none"}, "risk_asset": False},
+    ], "risk": {"regime": {"benchmark": "NIFTY 50", "ma": 50, "risk_off_scale": 0.5}}})
+    down = _series("NIFTY 50", 200, -0.004, 160)  # ends well below its 50-DMA
+    bars = {"E": _series("E", 100, 0.0, 160), "G": _series("G", 100, 0.0, 160),
+            "NIFTY 50": down}
+    res = resolve_targets(spec, bars, datetime(2020, 5, 1))
+    assert res.regime == "risk_off"
+    assert res.weights["E"] == pytest.approx(0.35, abs=1e-6)   # 0.70 * 0.5
+    assert res.weights["G"] == pytest.approx(0.30, abs=1e-6)   # gold untouched
+    assert res.cash_weight == pytest.approx(0.35, abs=1e-6)
+
+
+def test_composite_score_rule_ranks_and_exposes_scores():
+    spec = parse_spec({"sleeves": [
+        {"id": "eq", "name": "Eq", "weight_pct": 100, "weighting": "score_weighted",
+         "members": ["WIN", "MID", "LOSE"],
+         "rule": {"type": "composite_score", "lookback": 40, "top_k": 2, "trend_ma": 0,
+                  "factor_weights": {"momentum": 0.7, "low_vol": 0.3}}},
+    ]})
+    bars = {
+        "WIN": _series("WIN", 100, 0.004, 120),
+        "MID": _series("MID", 100, 0.002, 120),
+        "LOSE": _series("LOSE", 100, 0.0, 120),
+    }
+    res = resolve_targets(spec, bars, datetime(2020, 4, 1))
+    assert set(res.weights) == {"WIN", "MID"}
+    assert res.score_of("WIN") is not None and res.score_of("WIN") >= res.score_of("MID")
+
+
 def test_plan_orders_always_exits_a_dropped_name():
     prices = {"A": 100.0, "B": 50.0}
     pv = 100_000.0
@@ -206,6 +277,12 @@ def test_run_backtest_synthetic(monkeypatch):
     assert d["metrics"]["n_rebalances"] >= 10
     assert set(res.final_holdings) <= {"UP1", "UP2", "GOLDBEES"}
     assert d["metrics"]["sharpe_ratio"] is not None
+    # extended credibility metrics are populated
+    for k in ("sortino_ratio", "calmar_ratio", "beta", "alpha_pct", "tracking_error_pct",
+              "information_ratio", "monthly_win_rate_pct", "avg_holding_days"):
+        assert k in d["metrics"]
+    assert d["oos"]["out_of_sample"]["return_pct"] is not None
+    assert "bull_tape" in d["regime_breakdown"]
 
 
 def test_run_backtest_rejects_when_no_history(monkeypatch):

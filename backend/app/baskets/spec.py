@@ -32,9 +32,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-WEIGHTINGS = ("equal", "inverse_vol", "momentum_weighted")
-RULE_TYPES = ("none", "momentum_top_k")
+WEIGHTINGS = ("equal", "inverse_vol", "momentum_weighted", "score_weighted")
+RULE_TYPES = ("none", "momentum_top_k", "composite_score")
 FREQUENCIES = ("weekly", "monthly", "quarterly")
+
+# factors the composite_score rule can blend. The first three are computed
+# causally from price bars in a backtest; the last three come from
+# present-day fundamentals (yfinance) so they carry look-ahead bias in a
+# historical backtest and are only applied when explicitly weighted.
+COMPOSITE_FACTORS = ("momentum", "low_vol", "trend", "value", "quality", "growth")
+_PRICE_FACTORS = frozenset({"momentum", "low_vol", "trend"})
 
 
 class SpecError(ValueError):
@@ -48,10 +55,30 @@ class RuleSpec:
     top_k: int = 5
     trend_ma: int = 200
     min_roc_pct: float = 0.0
+    # anti-churn hysteresis: a currently-held name stays until its rank
+    # slips past hold_k (>= top_k). 0 => hold_k == top_k (no buffer).
+    hold_k: int = 0
+    # a held name is also dropped if its lookback ROC falls below this
+    # (entry uses min_roc_pct; this is the wider exit gate). None => off.
+    exit_roc_pct: float | None = None
+    # composite_score only: {factor: weight}, normalised. Empty => equal
+    # weight across momentum/low_vol/trend.
+    factor_weights: dict[str, float] = field(default_factory=dict)
 
     @property
     def active(self) -> bool:
         return self.type != "none"
+
+    @property
+    def effective_hold_k(self) -> int:
+        return max(self.hold_k, self.top_k)
+
+    @property
+    def uses_fundamentals(self) -> bool:
+        return any(
+            self.factor_weights.get(f, 0.0) > 0 for f in COMPOSITE_FACTORS
+            if f not in _PRICE_FACTORS
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -60,6 +87,9 @@ class RuleSpec:
             "top_k": self.top_k,
             "trend_ma": self.trend_ma,
             "min_roc_pct": self.min_roc_pct,
+            "hold_k": self.hold_k,
+            "exit_roc_pct": self.exit_roc_pct,
+            "factor_weights": dict(self.factor_weights),
         }
 
 
@@ -71,6 +101,13 @@ class SleeveSpec:
     members: tuple[str, ...]
     weighting: str = "equal"
     rule: RuleSpec = field(default_factory=RuleSpec)
+    # cap on any single member's weight as a fraction of the WHOLE basket
+    # (0 => no cap). Applied after the weighting scheme; excess is
+    # redistributed to the other selected names in the sleeve.
+    max_weight_pct: float = 0.0
+    # treat this sleeve as growth/equity risk for the regime gate. Cash /
+    # gold / bond sleeves set this False so they are not de-risked.
+    risk_asset: bool = True
 
     @property
     def weight(self) -> float:
@@ -84,12 +121,43 @@ class SleeveSpec:
             "weighting": self.weighting,
             "members": list(self.members),
             "rule": self.rule.to_dict(),
+            "max_weight_pct": self.max_weight_pct,
+            "risk_asset": self.risk_asset,
+        }
+
+
+@dataclass(frozen=True)
+class RegimeGate:
+    benchmark: str = "NIFTY 50"
+    ma: int = 200
+    risk_off_scale: float = 0.5  # scale risk-asset sleeves by this when benchmark < SMA(ma)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"benchmark": self.benchmark, "ma": self.ma, "risk_off_scale": self.risk_off_scale}
+
+
+@dataclass(frozen=True)
+class RiskLimits:
+    max_position_pct: float = 0.0   # global single-name cap, fraction of basket (0 => off)
+    max_sector_pct: float = 0.0     # cap per sector bucket (0 => off)
+    regime: RegimeGate | None = None
+
+    @property
+    def active(self) -> bool:
+        return self.max_position_pct > 0 or self.max_sector_pct > 0 or self.regime is not None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "max_position_pct": self.max_position_pct,
+            "max_sector_pct": self.max_sector_pct,
+            "regime": self.regime.to_dict() if self.regime else None,
         }
 
 
 @dataclass(frozen=True)
 class BasketSpec:
     sleeves: tuple[SleeveSpec, ...]
+    risk: RiskLimits = field(default_factory=RiskLimits)
 
     @property
     def symbols(self) -> list[str]:
@@ -97,10 +165,15 @@ class BasketSpec:
         for s in self.sleeves:
             for m in s.members:
                 seen.setdefault(m, None)
+        if self.risk.regime:
+            seen.setdefault(self.risk.regime.benchmark, None)
         return list(seen)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"sleeves": [s.to_dict() for s in self.sleeves]}
+        return {
+            "sleeves": [s.to_dict() for s in self.sleeves],
+            "risk": self.risk.to_dict(),
+        }
 
 
 def _clean_symbol(raw: Any) -> str:
@@ -137,12 +210,42 @@ def _parse_rule(raw: Any, *, sleeve_id: str, n_members: int) -> RuleSpec:
     lookback = _int("lookback", 126, 5, 750)
     top_k = _int("top_k", min(5, n_members), 1, max(1, n_members))
     trend_ma = _int("trend_ma", 200, 0, 400)
+    hold_k = _int("hold_k", 0, 0, max(1, n_members))
+    if hold_k and hold_k < top_k:
+        raise SpecError(f"sleeve '{sleeve_id}': rule.hold_k ({hold_k}) must be >= top_k ({top_k})")
     try:
         min_roc = float(raw.get("min_roc_pct", 0.0))
     except (TypeError, ValueError) as exc:
         raise SpecError(f"sleeve '{sleeve_id}': rule.min_roc_pct must be a number") from exc
+    exit_roc_raw = raw.get("exit_roc_pct")
+    try:
+        exit_roc = None if exit_roc_raw is None else float(exit_roc_raw)
+    except (TypeError, ValueError) as exc:
+        raise SpecError(f"sleeve '{sleeve_id}': rule.exit_roc_pct must be a number") from exc
+
+    fw_raw = raw.get("factor_weights") or {}
+    if not isinstance(fw_raw, dict):
+        raise SpecError(f"sleeve '{sleeve_id}': rule.factor_weights must be an object")
+    factor_weights: dict[str, float] = {}
+    for k, v in fw_raw.items():
+        if k not in COMPOSITE_FACTORS:
+            raise SpecError(
+                f"sleeve '{sleeve_id}': unknown factor '{k}' (use {COMPOSITE_FACTORS})"
+            )
+        try:
+            fv = float(v)
+        except (TypeError, ValueError) as exc:
+            raise SpecError(f"sleeve '{sleeve_id}': factor_weights.{k} must be a number") from exc
+        if fv < 0:
+            raise SpecError(f"sleeve '{sleeve_id}': factor_weights.{k} must be >= 0")
+        if fv > 0:
+            factor_weights[k] = fv
+    if rtype == "composite_score" and not factor_weights:
+        factor_weights = {"momentum": 0.6, "trend": 0.2, "low_vol": 0.2}
+
     return RuleSpec(
-        type=rtype, lookback=lookback, top_k=top_k, trend_ma=trend_ma, min_roc_pct=min_roc
+        type=rtype, lookback=lookback, top_k=top_k, trend_ma=trend_ma, min_roc_pct=min_roc,
+        hold_k=hold_k, exit_roc_pct=exit_roc, factor_weights=factor_weights,
     )
 
 
@@ -165,6 +268,14 @@ def _parse_sleeve(raw: Any, *, idx: int) -> SleeveSpec:
             f"sleeve '{sid}': weighting must be one of {WEIGHTINGS}, got {weighting!r}"
         )
 
+    try:
+        max_weight_pct = float(raw.get("max_weight_pct", 0.0) or 0.0)
+    except (TypeError, ValueError) as exc:
+        raise SpecError(f"sleeve '{sid}': max_weight_pct must be a number") from exc
+    if not 0.0 <= max_weight_pct <= 100.0:
+        raise SpecError(f"sleeve '{sid}': max_weight_pct must be in [0, 100]")
+    risk_asset = bool(raw.get("risk_asset", True))
+
     members_raw = raw.get("members") or []
     if not isinstance(members_raw, (list, tuple)) or not members_raw:
         raise SpecError(f"sleeve '{sid}': needs a non-empty members list")
@@ -181,7 +292,46 @@ def _parse_sleeve(raw: Any, *, idx: int) -> SleeveSpec:
         )
     return SleeveSpec(
         id=sid, name=name, weight_pct=weight_pct, members=tuple(members),
-        weighting=weighting, rule=rule,
+        weighting=weighting, rule=rule, max_weight_pct=max_weight_pct, risk_asset=risk_asset,
+    )
+
+
+def _parse_risk(raw: Any) -> RiskLimits:
+    if raw is None:
+        return RiskLimits()
+    if not isinstance(raw, dict):
+        raise SpecError("spec.risk must be an object")
+
+    def _pct(key: str) -> float:
+        try:
+            v = float(raw.get(key, 0.0) or 0.0)
+        except (TypeError, ValueError) as exc:
+            raise SpecError(f"spec.risk.{key} must be a number") from exc
+        if not 0.0 <= v <= 100.0:
+            raise SpecError(f"spec.risk.{key} must be in [0, 100]")
+        return v
+
+    regime = None
+    rg = raw.get("regime")
+    if rg is not None:
+        if not isinstance(rg, dict):
+            raise SpecError("spec.risk.regime must be an object")
+        try:
+            ma = int(rg.get("ma", 200))
+            scale = float(rg.get("risk_off_scale", 0.5))
+        except (TypeError, ValueError) as exc:
+            raise SpecError("spec.risk.regime ma / risk_off_scale must be numbers") from exc
+        if not 20 <= ma <= 400:
+            raise SpecError("spec.risk.regime.ma must be in [20, 400]")
+        if not 0.0 <= scale <= 1.0:
+            raise SpecError("spec.risk.regime.risk_off_scale must be in [0, 1]")
+        regime = RegimeGate(
+            benchmark=str(rg.get("benchmark") or "NIFTY 50"), ma=ma, risk_off_scale=scale
+        )
+    return RiskLimits(
+        max_position_pct=_pct("max_position_pct"),
+        max_sector_pct=_pct("max_sector_pct"),
+        regime=regime,
     )
 
 
@@ -206,4 +356,5 @@ def parse_spec(raw: Any) -> BasketSpec:
     if abs(total - 100.0) > 0.5:
         raise SpecError(f"sleeve weights must sum to 100, got {total:.2f}")
 
-    return BasketSpec(sleeves=tuple(sleeves))
+    risk = _parse_risk(raw.get("risk"))
+    return BasketSpec(sleeves=tuple(sleeves), risk=risk)

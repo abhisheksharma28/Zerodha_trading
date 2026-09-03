@@ -128,6 +128,37 @@ def _prices(db: Session, settings: Settings, refs: list[str], hist: dict[str, li
     return out
 
 
+def _fundamentals_fn(settings: Settings):
+    """symbol -> {value, quality, growth} in 0..100, from the scanner's
+    present-day fundamentals view. Cached per call so a rebalance hits each
+    name once. Live / paper only — never used in a historical backtest."""
+    from app.market_scanner import fundamentals as fmod
+
+    cache: dict[str, dict[str, float] | None] = {}
+
+    def _fn(symbol: str) -> dict[str, float] | None:
+        if symbol in cache:
+            return cache[symbol]
+        try:
+            v = fmod.view(settings, symbol)
+        except Exception:  # noqa: BLE001 - a missing name must not break the rebalance
+            cache[symbol] = None
+            return None
+        out = None
+        if v and v.available:
+            out = {}
+            if v.valuation is not None:
+                out["value"] = float(v.valuation)
+            if v.quality is not None:
+                out["quality"] = float(v.quality)
+            if v.growth is not None:
+                out["growth"] = float(v.growth)
+        cache[symbol] = out
+        return out
+
+    return _fn
+
+
 def _period_tag(dt: datetime, freq: str) -> tuple:
     if freq == "weekly":
         iso = dt.isocalendar()
@@ -157,7 +188,12 @@ def _do_rebalance(
         raise ValidationError("no price history for the basket members right now")
 
     now = datetime.now(UTC)
-    targets = resolve_targets(spec, hist, _as_dt(now.replace(tzinfo=None)))
+    needs_fundamentals = any(s.rule.uses_fundamentals for s in spec.sleeves)
+    fn = _fundamentals_fn(settings) if needs_fundamentals else None
+    targets = resolve_targets(
+        spec, hist, _as_dt(now.replace(tzinfo=None)),
+        current_holdings=net, fundamentals_fn=fn,
+    )
     refs = list(dict.fromkeys([*spec.symbols, *net.keys()]))
     prices = _prices(db, settings, refs, hist)
 
@@ -166,7 +202,22 @@ def _do_rebalance(
     if pv <= 0:
         raise ValidationError("basket portfolio value is zero — check prices / capital")
 
-    intents = plan_orders(targets.weights, net, prices, pv, drift_band_pct=float(b.drift_band_pct))
+    reasons: dict[str, str] = {}
+    for sym in set(targets.weights) | set(net):
+        sc = targets.score_of(sym)
+        if sym in targets.weights and sym not in net:
+            reasons[sym] = (
+                f"added — composite score {sc:.0f}/100" if sc is not None else "added — cleared the rule"
+            )
+        elif sym in net and sym not in targets.weights:
+            reasons[sym] = (
+                f"removed — score {sc:.0f}/100 below the hold buffer" if sc is not None
+                else "removed — fell below the rank / trend gate"
+            )
+    intents = plan_orders(
+        targets.weights, net, prices, pv,
+        drift_band_pct=float(b.drift_band_pct), reasons=reasons,
+    )
 
     placed = 0
     if applied:
