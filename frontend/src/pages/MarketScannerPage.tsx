@@ -86,6 +86,7 @@ export default function MarketScannerPage() {
   const openStock = useSym();
   const navigate = useNavigate();
   const [tab, setTab] = useState<(typeof TABS)[number]>("Movers");
+  const [breadthOpen, setBreadthOpen] = useState(false);
   const { data, isFetching, refetch, dataUpdatedAt } = useMarketOverview("nifty50");
 
   const liveSymbols = useMemo(() => {
@@ -218,10 +219,26 @@ export default function MarketScannerPage() {
           {/* slim breadth strip */}
           <BreadthStrip b={data.breadth} />
 
-          {/* full-market trade recommendations — above the movers/sectors */}
+          {/* full-market trade recommendations — the focus of this page */}
           <RecommendationsPanel />
 
-          {/* tabs — the meat, right at the top */}
+          {/* market breadth (movers / sectors / heat-map / signals) — collapsed
+              by default so the trade ideas stay the focus */}
+          <button
+            type="button"
+            onClick={() => setBreadthOpen((v) => !v)}
+            className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-left text-sm font-medium text-fg hover:border-line-strong"
+          >
+            <span className="text-fg-faint">{breadthOpen ? "▾" : "▸"}</span>
+            Market breadth
+            <span className="text-xs font-normal text-fg-faint">
+              movers · sectors · heat-map · signals · most active
+            </span>
+          </button>
+
+          {breadthOpen && (
+          <>
+          {/* tabs */}
           <div className="flex gap-1 border-b border-line">
             {TABS.map((t) => (
               <button
@@ -312,6 +329,8 @@ export default function MarketScannerPage() {
             {data.constituent_count} constituents · as of {new Date(data.as_of).toLocaleString()} ·
             auto-refreshes every 30s. Live Zerodha quotes — nothing simulated.
           </p>
+          </>
+          )}
         </>
       )}
     </div>

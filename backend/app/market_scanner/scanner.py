@@ -92,36 +92,46 @@ def _existing_open(db: Session, symbol: str, day: str) -> set[str]:
     return set(rows)
 
 
+_STYLE_LABEL = {
+    "EQUITY_DELIVERY": "Delivery", "EQUITY_INTRADAY": "Intraday", "OPTION": "Options",
+}
+
+
 def _persist(
-    db: Session, run: ScanRun, si: ScanInstrument, setup: signals.Setup,
-    overlay: dict[str, Any] | None, fv: Any, day: str,
+    db: Session, run: ScanRun, si: ScanInstrument, setup: signals.Setup, *,
+    trade_style: str, fv: Any, day: str, overlay: dict[str, Any] | None = None,
 ) -> ScanRecommendation:
+    """One recommendation. For ``trade_style="OPTION"`` the entry/stop/target
+    stay on the *underlying* (that is the thesis to manage against) and the
+    spread economics live in ``option_overlay``."""
+    is_option = trade_style == "OPTION"
     rec = ScanRecommendation(
         scan_run_id=run.id,
         exchange=si.exchange, tradingsymbol=si.tradingsymbol, instrument_token=si.instrument_token,
         segment=si.segment, name=si.name, underlying=si.underlying, asset_class=si.asset_class,
-        horizon=setup.horizon, direction=setup.direction, setup_type=setup.setup_type,
-        setup_tags=setup.setup_tags,
+        horizon=setup.horizon, trade_style=trade_style,
+        direction=setup.direction, setup_type=setup.setup_type, setup_tags=setup.setup_tags,
         ref_price=setup.entry, entry=setup.entry, entry_type=setup.entry_type,
         stop_loss=setup.stop_loss, target_1=setup.target_1, target_2=setup.target_2,
         rr=setup.rr, atr=setup.atr,
         confidence=setup.confidence, bias_score=setup.bias_score,
-        pop=(overlay or {}).get("pop"),
+        pop=(overlay or {}).get("pop") if is_option else None,
         factors=setup.factor_dicts(),
-        option_overlay=overlay,
+        option_overlay=overlay if is_option else None,
         fundamentals=fv.as_dict() if fv and getattr(fv, "available", False) else None,
         status="LIVE", trading_day=day,
         entered_price=setup.entry if setup.entry_type == "MARKET" else None,
     )
     db.add(rec)
     db.flush()
+    label = _STYLE_LABEL.get(trade_style, trade_style)
     db.add(ScannerAlert(
         recommendation_id=rec.id, kind="NEW_TRADE",
-        title=f"{setup.direction} {si.tradingsymbol} ({setup.horizon.title()})",
+        title=f"{setup.direction} {si.tradingsymbol} · {label}",
         body=(f"{setup.setup_type}. Entry {setup.entry}, SL {setup.stop_loss}, "
               f"T1 {setup.target_1}, R:R {setup.rr}, confidence {setup.confidence:.0f}."),
         payload={"recommendation_id": str(rec.id), "confidence": setup.confidence,
-                 "direction": setup.direction, "horizon": setup.horizon},
+                 "direction": setup.direction, "horizon": setup.horizon, "trade_style": trade_style},
     ))
     return rec
 
@@ -162,7 +172,10 @@ def _run_scan_locked(
         db.commit()
         return ScanOutcome(str(run.id), False, run.reason, 0, 0, {}, [run.reason])
 
-    uni = universe or build_universe(db, core_max=settings.market_scanner_core_max)
+    uni = universe or build_universe(
+        db, core_max=settings.market_scanner_core_max,
+        broad_max=settings.market_scanner_broad_max,
+    )
     cfg = SignalConfig()
     day = _today_ist()
     skipped: dict[str, str] = {}
@@ -182,25 +195,20 @@ def _run_scan_locked(
         elif setup:
             setups.append((si, setup))
 
-    # --- broad tier: quote screen, promote the movers -------------------
-    if uni.broad:
-        refs = [c.ref for c in uni.broad]
-        quotes = md.batched_quotes(client, refs)
-        ranked: list[tuple[float, ScanInstrument]] = []
-        for si in uni.broad:
-            sc = md.quote_screen_score(quotes.get(si.ref) or quotes.get(f"{si.exchange}:{si.tradingsymbol}"))
-            if sc and sc[0] >= 45:
-                ranked.append((sc[0], si))
-        ranked.sort(key=lambda x: -x[0])
-        for _score, si in ranked[: settings.market_scanner_broad_promote_max]:
-            scanned += 1
-            try:
-                setup, reason = _evaluate_instrument(client, settings, si, cfg, deep=False)
-            except Exception as exc:  # noqa: BLE001
-                skipped[si.ref] = f"{type(exc).__name__}: {exc}"
-                continue
-            if setup:
-                setups.append((si, setup))
+    # --- broad tier: liquid cash equities, daily-bar scan for delivery /
+    #     swing ideas (no F&O needed). Daily bars cache ~1h so repeat scans
+    #     in the session are cheap.
+    for si in uni.broad:
+        scanned += 1
+        try:
+            setup, reason = _evaluate_instrument(client, settings, si, cfg, deep=False)
+        except Exception as exc:  # noqa: BLE001
+            skipped[si.ref] = f"{type(exc).__name__}: {exc}"
+            continue
+        if reason:
+            skipped[si.ref] = reason
+        elif setup:
+            setups.append((si, setup))
 
     # --- rank, de-dupe, attach overlay, persist -------------------------
     setups.sort(key=lambda x: (-x[1].confidence, -abs(x[1].bias_score)))
@@ -215,6 +223,14 @@ def _run_scan_locked(
         if setup.direction in _existing_open(db, si.tradingsymbol, day):
             skipped[si.ref] = "already have an open call this direction today"
             continue
+        fv = None
+        if si.asset_class == "EQUITY":
+            fv = fund_mod.view(settings, si.tradingsymbol, asset_class=si.asset_class)
+
+        # 1. the equity idea (delivery / intraday) - the primary card.
+        #    Indices have no cash leg, so skip a bare equity card for them
+        #    unless there is no option overlay to carry the view.
+        style = signals.trade_style_for(setup.horizon, si.asset_class)
         overlay = None
         if si.has_options and si.underlying and setup.confidence >= settings.market_scanner_overlay_min_confidence:
             try:
@@ -224,11 +240,16 @@ def _run_scan_locked(
                 ))
             except Exception as exc:  # noqa: BLE001 - overlay is optional
                 logger.info("scanner_overlay_error", ref=si.ref, error=str(exc))
-        fv = None
-        if si.asset_class == "EQUITY":
-            fv = fund_mod.view(settings, si.tradingsymbol, asset_class=si.asset_class)
-        rec = _persist(db, run, si, setup, overlay, fv, day)
-        produced_ids.append(str(rec.id))
+
+        if si.asset_class != "INDEX" or overlay is None:
+            rec = _persist(db, run, si, setup, trade_style=style, fv=fv, day=day)
+            produced_ids.append(str(rec.id))
+
+        # 2. a separate OPTION card when a defined-risk spread expresses the
+        #    same view (its own KPIs; entry/stop/target stay on the underlying)
+        if overlay is not None and live_now + len(produced_ids) < settings.market_scanner_max_live:
+            orec = _persist(db, run, si, setup, trade_style="OPTION", fv=fv, day=day, overlay=overlay)
+            produced_ids.append(str(orec.id))
 
     run.finished_at = datetime.now(UTC)
     run.data_available = True

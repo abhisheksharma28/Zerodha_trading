@@ -45,13 +45,15 @@ def get_logbook(
     horizon: str | None = Query(None),
     setup: str | None = Query(None),
     direction: str | None = Query(None),
+    trade_style: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     return service.logbook(
         db, date_from=date_from, date_to=date_to, outcome=outcome, symbol=symbol,
-        horizon=horizon, setup=setup, direction=direction, page=page, page_size=page_size,
+        horizon=horizon, setup=setup, direction=direction, trade_style=trade_style,
+        page=page, page_size=page_size,
     )
 
 

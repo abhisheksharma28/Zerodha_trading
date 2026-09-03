@@ -257,3 +257,45 @@ def test_service_recommendations_and_logbook_shape(db):
     assert lb["total"] >= 1
     assert lb["stats"]["win_rate_pct"] is not None
     assert "Break-of-structure continuation" in lb["setups"]
+
+
+def test_trade_style_split_equity_vs_option():
+    from app.market_scanner.signals import trade_style_for
+    assert trade_style_for("SWING", "EQUITY") == "EQUITY_DELIVERY"
+    assert trade_style_for("INTRADAY", "EQUITY") == "EQUITY_INTRADAY"
+    assert trade_style_for("SWING", "INDEX") == "EQUITY_INTRADAY"
+
+
+def test_persist_keeps_pop_and_overlay_on_option_cards_only(db):
+    from types import SimpleNamespace
+
+    from app.market_scanner import scanner as sc
+
+    run = ScanRun(started_at=datetime.now(UTC), trigger="manual")
+    db.add(run)
+    db.flush()
+
+    si = SimpleNamespace(
+        exchange="NSE", tradingsymbol="RELIANCE", instrument_token="738561",
+        segment="NSE", name="Reliance", underlying="RELIANCE", asset_class="EQUITY",
+    )
+    setup = SimpleNamespace(
+        horizon="SWING", direction="LONG", setup_type="Golden-cross trend",
+        setup_tags=["golden_cross"], entry=1300.0, entry_type="MARKET",
+        stop_loss=1270.0, target_1=1360.0, target_2=1400.0, rr=2.0,
+        atr=20.0, confidence=80.0, bias_score=50.0,
+        factor_dicts=lambda: [{"name": "golden_cross", "detail": "x", "weight": 15,
+                               "side": "LONG", "group": "trend"}],
+    )
+    overlay = {"structure": "bull_call_spread", "pop": 0.41, "net_debit": 30.0,
+               "legs": [], "expiry": "2026-09-29", "dte": 26}
+
+    eq = sc._persist(db, run, si, setup, trade_style="EQUITY_DELIVERY", fv=None, day="2026-09-03")
+    op = sc._persist(db, run, si, setup, trade_style="OPTION", fv=None,
+                     day="2026-09-03", overlay=overlay)
+    db.flush()
+    assert eq.trade_style == "EQUITY_DELIVERY" and eq.pop is None and eq.option_overlay is None
+    assert op.trade_style == "OPTION" and float(op.pop) == 0.41
+    assert op.option_overlay["structure"] == "bull_call_spread"
+    # both keep the underlying levels as the thesis to manage against
+    assert float(op.entry) == 1300.0 and float(op.stop_loss) == 1270.0

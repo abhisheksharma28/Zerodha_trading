@@ -228,6 +228,14 @@ def _fundamental_factors(fv: FundamentalView | None, horizon: str) -> list[Facto
 # assembly
 # --------------------------------------------------------------------------
 
+def trade_style_for(horizon: str, asset_class: str) -> str:
+    """What the user actually trades. Indices have no cash-delivery leg, so
+    an index directional idea is always intraday (or the option overlay)."""
+    if asset_class == "EQUITY":
+        return "EQUITY_INTRADAY" if horizon == "INTRADAY" else "EQUITY_DELIVERY"
+    return "EQUITY_INTRADAY"  # INDEX / COMMODITY - no delivery
+
+
 def _round_tick(v: float, tick: float) -> float:
     if tick <= 0:
         return round(v, 2)

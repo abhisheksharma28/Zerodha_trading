@@ -15,6 +15,12 @@ import { cn } from "@/lib/utils";
 const OUTCOMES = ["", "TARGET", "SL", "NEUTRAL", "INVALIDATED"];
 const HORIZONS = ["", "INTRADAY", "SWING"];
 const DIRECTIONS = ["", "LONG", "SHORT"];
+const TRADE_STYLES: [string, string][] = [
+  ["", "any type"],
+  ["EQUITY_DELIVERY", "Delivery"],
+  ["EQUITY_INTRADAY", "Intraday"],
+  ["OPTION", "Options"],
+];
 const outcomeTone: Record<string, "success" | "destructive" | "warning" | "default"> = {
   TARGET: "success",
   SL: "destructive",
@@ -77,6 +83,20 @@ export default function LogBookPage() {
         </span>
       ),
       sortValue: (r) => r.direction,
+    },
+    {
+      key: "style",
+      header: "Type",
+      cell: (r) => (
+        <span className="text-fg-muted">
+          {r.trade_style === "OPTION"
+            ? "options"
+            : r.trade_style === "EQUITY_INTRADAY"
+              ? "intraday"
+              : "delivery"}
+        </span>
+      ),
+      sortValue: (r) => r.trade_style,
     },
     {
       key: "horizon",
@@ -195,6 +215,20 @@ export default function LogBookPage() {
               {OUTCOMES.map((o) => (
                 <option key={o} value={o}>
                   {o || "any"}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="text-fg-faint">Trade type</span>
+            <select
+              className="h-9 rounded-md border border-line bg-surface px-2 text-sm"
+              value={filters.trade_style ?? ""}
+              onChange={(e) => set("trade_style", e.target.value)}
+            >
+              {TRADE_STYLES.map(([v, label]) => (
+                <option key={v} value={v}>
+                  {label}
                 </option>
               ))}
             </select>

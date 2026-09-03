@@ -47,6 +47,7 @@ def rec_dict(r: ScanRecommendation) -> dict[str, Any]:
         "underlying": r.underlying,
         "instrument_token": r.instrument_token,
         "horizon": r.horizon,
+        "trade_style": r.trade_style,
         "direction": r.direction,
         "setup_type": r.setup_type,
         "setup_tags": r.setup_tags or [],
@@ -177,7 +178,7 @@ def _stats(rows: list[ScanRecommendation]) -> dict[str, Any]:
 def logbook(
     db: Session, *, date_from: str | None = None, date_to: str | None = None,
     outcome: str | None = None, symbol: str | None = None, horizon: str | None = None,
-    setup: str | None = None, direction: str | None = None,
+    setup: str | None = None, direction: str | None = None, trade_style: str | None = None,
     page: int = 1, page_size: int = 50,
 ) -> dict[str, Any]:
     stmt = select(ScanRecommendation).where(ScanRecommendation.status == "EXPIRED")
@@ -191,6 +192,8 @@ def logbook(
         stmt = stmt.where(ScanRecommendation.tradingsymbol.ilike(f"%{symbol.upper()}%"))
     if horizon:
         stmt = stmt.where(ScanRecommendation.horizon == horizon.upper())
+    if trade_style:
+        stmt = stmt.where(ScanRecommendation.trade_style == trade_style.upper())
     if setup:
         stmt = stmt.where(ScanRecommendation.setup_type == setup)
     if direction:

@@ -21,7 +21,10 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.market_data.nse_universe import NIFTY_200
 from app.models.instrument import Instrument
+
+_LIQUID_ORDER = {sym: i for i, sym in enumerate(NIFTY_200)}
 
 # NSE lists bonds, SGBs, govt securities, rights and partly-paid lines on the
 # same EQ segment as ordinary shares. Screen the obvious non-equity out of the
@@ -134,7 +137,7 @@ def _near_month_commodity_futs(db: Session) -> dict[str, Instrument]:
     return out
 
 
-def build(db: Session, *, core_max: int = 170, broad_max: int = 600) -> Universe:
+def build(db: Session, *, core_max: int = 170, broad_max: int = 250) -> Universe:
     nfo_roots = _fno_roots(db, "NFO")
     mcx_roots = _fno_roots(db, "MCX")
     cash = _cash_equities(db)
@@ -181,16 +184,17 @@ def build(db: Session, *, core_max: int = 170, broad_max: int = 600) -> Universe
     core = core[:core_max]
     used = {c.instrument_token for c in core}
 
-    # broad tier: the rest of the active NSE equity list, quote-screened only
-    broad: list[ScanInstrument] = []
-    for sym, inst in sorted(cash.items()):
-        if inst.instrument_token in used:
-            continue
-        broad.append(ScanInstrument(
+    # broad tier: liquid cash equities for delivery / swing ideas, most-
+    # liquid first (NIFTY 200 membership, then the rest alphabetically).
+    rest = [(sym, inst) for sym, inst in cash.items() if inst.instrument_token not in used]
+    rest.sort(key=lambda kv: (_LIQUID_ORDER.get(kv[0], 10_000), kv[0]))
+    broad = [
+        ScanInstrument(
             inst.exchange, inst.tradingsymbol, inst.instrument_token, inst.segment,
             inst.name, "EQUITY", sym in nfo_roots, sym if sym in nfo_roots else None,
             inst.lot_size,
-        ))
-    broad = broad[:broad_max]
+        )
+        for sym, inst in rest[:broad_max]
+    ]
 
     return Universe(core=core, broad=broad, generated_at_day=date.today().isoformat())

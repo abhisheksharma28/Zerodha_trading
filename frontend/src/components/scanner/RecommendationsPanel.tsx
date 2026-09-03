@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import type { ScanRecommendation } from "@/api/marketScanner";
@@ -6,10 +6,38 @@ import { SectionCard } from "@/components/SectionCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useScanRecommendations, useScannerStatus, useTriggerScan } from "@/hooks/useMarketScanner";
-import { num, pctSigned } from "@/lib/format";
+import { inr, num, pctSigned } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const dirTone = (d: string) => (d === "LONG" ? "text-pos" : "text-neg");
+
+const STYLE_LABEL: Record<ScanRecommendation["trade_style"], string> = {
+  EQUITY_DELIVERY: "Delivery",
+  EQUITY_INTRADAY: "Intraday",
+  OPTION: "Options",
+};
+const STYLE_HINT: Record<ScanRecommendation["trade_style"], string> = {
+  EQUITY_DELIVERY: "Buy/sell the stock · CNC · hold across days",
+  EQUITY_INTRADAY: "Buy/sell the stock · MIS · square off by ~15:20",
+  OPTION: "Defined-risk option spread expressing the same view",
+};
+
+type FilterKey = "ALL" | "EQUITY_DELIVERY" | "EQUITY_INTRADAY" | "OPTION" | "LONG" | "SHORT";
+const FILTERS: { key: FilterKey; label: string }[] = [
+  { key: "ALL", label: "All" },
+  { key: "EQUITY_DELIVERY", label: "Delivery" },
+  { key: "EQUITY_INTRADAY", label: "Intraday" },
+  { key: "OPTION", label: "Options" },
+  { key: "LONG", label: "Long" },
+  { key: "SHORT", label: "Short" },
+];
+
+const outcomeTone: Record<string, "success" | "destructive" | "warning" | "default"> = {
+  TARGET: "success",
+  SL: "destructive",
+  NEUTRAL: "warning",
+  INVALIDATED: "default",
+};
 
 function SymbolLabel({ rec, className }: { rec: ScanRecommendation; className?: string }) {
   if (rec.asset_class === "EQUITY") {
@@ -21,13 +49,6 @@ function SymbolLabel({ rec, className }: { rec: ScanRecommendation; className?: 
   }
   return <span className={className}>{rec.tradingsymbol}</span>;
 }
-
-const outcomeTone: Record<string, "success" | "destructive" | "warning" | "default"> = {
-  TARGET: "success",
-  SL: "destructive",
-  NEUTRAL: "warning",
-  INVALIDATED: "default",
-};
 
 function ConfMeter({ value }: { value: number | null }) {
   const v = value ?? 0;
@@ -74,52 +95,69 @@ function Level({ label, value, tone }: { label: string; value: number | null; to
   return (
     <div className="flex flex-col">
       <span className="text-[10px] uppercase tracking-wide text-fg-faint">{label}</span>
-      <span className={cn("tabular-nums text-sm font-semibold", tone)}>{value == null ? "—" : num(value, 2)}</span>
+      <span className={cn("tabular-nums text-sm font-semibold", tone)}>
+        {value == null ? "—" : num(value, 2)}
+      </span>
     </div>
   );
 }
 
-function OverlayBlock({ o }: { o: NonNullable<ScanRecommendation["option_overlay"]> }) {
-  return (
-    <div className="mt-2 rounded-md border border-line bg-elevated/50 p-2 text-xs">
-      <div className="flex items-center justify-between">
-        <span className="font-semibold text-fg">
-          {o.structure.replace(/_/g, " ")} · {o.expiry} ({o.dte}d)
-        </span>
-        {o.pop != null && (
-          <span className="tabular-nums text-fg-muted">POP {num(o.pop * 100, 0)}%</span>
-        )}
-      </div>
-      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-fg-muted">
-        {o.legs.map((l) => (
-          <span key={l.tradingsymbol} className="tabular-nums">
-            {l.side} {l.strike} {l.option_type} @ {num(l.price, 2)}
-          </span>
-        ))}
-      </div>
-      <div className="mt-1 flex flex-wrap gap-x-4 tabular-nums text-fg-muted">
-        <span>net debit {num(o.net_debit, 2)}</span>
-        {o.max_profit != null && <span className="text-pos">max +₹{num(o.max_profit, 0)}</span>}
-        {o.max_loss != null && <span className="text-neg">max −₹{num(o.max_loss, 0)}</span>}
-        <span>BE {num(o.breakeven, 1)}</span>
-        {o.rr != null && <span>R:R {num(o.rr, 2)}</span>}
-      </div>
-    </div>
-  );
+function estDays(rec: ScanRecommendation): number | null {
+  if (!rec.atr || !rec.entry || !rec.target_1) return null;
+  const d = Math.abs(rec.target_1 - rec.entry) / rec.atr;
+  return d >= 1 ? Math.round(d) : 1;
 }
 
-function LiveCard({ rec }: { rec: ScanRecommendation }) {
+function Factors({ rec }: { rec: ScanRecommendation }) {
   const [open, setOpen] = useState(false);
-  const fund = rec.fundamentals as { bias?: string; flags?: string[] } | null;
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="mt-2 text-[11px] font-medium text-accent hover:underline"
+      >
+        {open ? "Hide" : "Why this trade"} ({rec.factors.length} factors)
+      </button>
+      {open && (
+        <ul className="mt-1 space-y-0.5 text-[11px] text-fg-muted">
+          {rec.factors.map((f, i) => (
+            <li key={i} className="flex items-start gap-1.5">
+              <span
+                className={cn(
+                  "mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full",
+                  f.side === "LONG" ? "bg-pos" : "bg-neg",
+                )}
+              />
+              <span>
+                {f.detail}{" "}
+                <span className="text-fg-faint">
+                  ({f.group}, {f.weight > 0 ? "+" : ""}
+                  {num(f.weight, 0)})
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
+function EquityCard({ rec }: { rec: ScanRecommendation }) {
+  const fund = rec.fundamentals as { bias?: string } | null;
+  const days = rec.trade_style === "EQUITY_DELIVERY" ? estDays(rec) : null;
   return (
     <div className="rounded-lg border border-line bg-surface p-3">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className={cn("text-xs font-bold", dirTone(rec.direction))}>{rec.direction}</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={cn("text-xs font-bold", dirTone(rec.direction))}>
+              {rec.direction === "LONG" ? "BUY" : "SELL"}
+            </span>
             <SymbolLabel rec={rec} className="truncate font-semibold text-fg" />
-            <Badge variant="default" className="shrink-0 text-[10px]">
-              {rec.horizon}
+            <Badge variant="default" className="shrink-0 text-[10px]" title={STYLE_HINT[rec.trade_style]}>
+              {STYLE_LABEL[rec.trade_style]}
             </Badge>
             {rec.tracking_state === "STALE" && (
               <Badge variant="warning" className="shrink-0 text-[10px]">
@@ -142,11 +180,13 @@ function LiveCard({ rec }: { rec: ScanRecommendation }) {
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-fg-muted">
         <span className="tabular-nums">R:R {rec.rr == null ? "—" : num(rec.rr, 2)}</span>
         {rec.risk_pct != null && <span className="tabular-nums">risk {num(rec.risk_pct, 2)}%</span>}
-        {rec.pop != null && <span className="tabular-nums">POP {num(rec.pop * 100, 0)}%</span>}
         {rec.last_ltp != null && <span className="tabular-nums">LTP {num(rec.last_ltp, 2)}</span>}
         <span>entry: {rec.entry_type.toLowerCase()}</span>
+        {days != null && <span>~{days}d to T1</span>}
         {fund?.bias && fund.bias !== "NEUTRAL" && (
-          <span className="text-fg-faint">fnd: {fund.bias.replace("SUPPORTIVE_", "").toLowerCase()}</span>
+          <span className="text-fg-faint">
+            fnd: {fund.bias.replace("SUPPORTIVE_", "").toLowerCase()}
+          </span>
         )}
       </div>
 
@@ -162,41 +202,95 @@ function LiveCard({ rec }: { rec: ScanRecommendation }) {
         </div>
       )}
 
-      {rec.option_overlay && <OverlayBlock o={rec.option_overlay} />}
-
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="mt-2 text-[11px] font-medium text-accent hover:underline"
-      >
-        {open ? "Hide" : "Why this trade"} ({rec.factors.length} factors)
-      </button>
-      {open && (
-        <ul className="mt-1 space-y-0.5 text-[11px] text-fg-muted">
-          {rec.factors.map((f, i) => (
-            <li key={i} className="flex items-start gap-1.5">
-              <span className={cn("mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full", f.side === "LONG" ? "bg-pos" : "bg-neg")} />
-              <span>
-                {f.detail} <span className="text-fg-faint">({f.group}, {f.weight > 0 ? "+" : ""}{num(f.weight, 0)})</span>
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+      <Factors rec={rec} />
       <p className="mt-2 text-[10px] italic text-fg-faint">{rec.disclaimer}</p>
     </div>
   );
 }
 
+function OptionCard({ rec }: { rec: ScanRecommendation }) {
+  const o = rec.option_overlay;
+  return (
+    <div className="rounded-lg border border-accent/30 bg-accent-soft/30 p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="default" className="shrink-0 text-[10px]">
+              OPTIONS
+            </Badge>
+            <span className={cn("text-xs font-bold", dirTone(rec.direction))}>{rec.direction}</span>
+            <SymbolLabel rec={rec} className="truncate font-semibold text-fg" />
+            <span className="text-[11px] text-fg-faint">view: {rec.horizon.toLowerCase()}</span>
+          </div>
+          <p className="mt-0.5 truncate text-xs text-fg-muted">
+            {o ? o.structure.replace(/_/g, " ") : rec.setup_type}
+            {o ? ` · ${o.expiry} (${o.dte}d)` : ""}
+          </p>
+        </div>
+        <ConfMeter value={rec.confidence} />
+      </div>
+
+      {o && (
+        <>
+          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Level label="Net debit" value={o.net_debit} />
+            <Level label="Breakeven" value={o.breakeven} />
+            <div className="flex flex-col">
+              <span className="text-[10px] uppercase tracking-wide text-fg-faint">Max profit</span>
+              <span className="tabular-nums text-sm font-semibold text-pos">
+                {o.max_profit == null ? "—" : `+${inr(o.max_profit)}`}
+              </span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] uppercase tracking-wide text-fg-faint">Max loss</span>
+              <span className="tabular-nums text-sm font-semibold text-neg">
+                {o.max_loss == null ? "—" : `−${inr(o.max_loss)}`}
+              </span>
+            </div>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] tabular-nums text-fg-muted">
+            {o.legs.map((l) => (
+              <span key={l.tradingsymbol}>
+                {l.side} {l.strike} {l.option_type} @ {num(l.price, 2)}
+              </span>
+            ))}
+          </div>
+          <div className="mt-1 flex flex-wrap gap-x-4 text-[11px] tabular-nums text-fg-muted">
+            {o.pop != null && <span>POP {num(o.pop * 100, 0)}%</span>}
+            {o.rr != null && <span>R:R {num(o.rr, 2)}</span>}
+            <span>1 lot ({o.lot_size})</span>
+          </div>
+        </>
+      )}
+
+      <p className="mt-2 rounded bg-surface/70 px-2 py-1 text-[11px] text-fg-muted">
+        Manage against {rec.tradingsymbol}: exit if it breaks{" "}
+        <span className="tabular-nums text-neg">{num(rec.stop_loss, 1)}</span>, book near{" "}
+        <span className="tabular-nums text-pos">{num(rec.target_1, 1)}</span>.
+      </p>
+
+      <Factors rec={rec} />
+      <p className="mt-2 text-[10px] italic text-fg-faint">{rec.disclaimer}</p>
+    </div>
+  );
+}
+
+function Card({ rec }: { rec: ScanRecommendation }) {
+  return rec.trade_style === "OPTION" ? <OptionCard rec={rec} /> : <EquityCard rec={rec} />;
+}
+
 function ExpiredRow({ rec }: { rec: ScanRecommendation }) {
   return (
     <div className="flex items-center gap-3 border-b border-line/60 px-3 py-2 text-xs last:border-0">
-      <Badge variant={outcomeTone[rec.outcome ?? "INVALIDATED"]} className="w-20 shrink-0 justify-center text-[10px]">
+      <Badge
+        variant={outcomeTone[rec.outcome ?? "INVALIDATED"]}
+        className="w-20 shrink-0 justify-center text-[10px]"
+      >
         {rec.outcome}
       </Badge>
       <span className={cn("w-12 shrink-0 font-bold", dirTone(rec.direction))}>{rec.direction}</span>
       <SymbolLabel rec={rec} className="w-28 shrink-0 truncate font-medium text-fg" />
-      <span className="w-16 shrink-0 text-fg-faint">{rec.horizon.toLowerCase()}</span>
+      <span className="w-16 shrink-0 text-fg-faint">{STYLE_LABEL[rec.trade_style].toLowerCase()}</span>
       <span className="flex-1 truncate text-fg-muted">{rec.setup_type}</span>
       <span
         className={cn(
@@ -218,14 +312,34 @@ export function RecommendationsPanel() {
   const { data: status } = useScannerStatus();
   const scan = useTriggerScan();
   const [showExpired, setShowExpired] = useState(true);
+  const [filter, setFilter] = useState<FilterKey>("ALL");
 
   const phase = data?.market_phase ?? "closed";
   const feedStale = status?.tick_feed?.stale;
 
+  const counts = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const r of data?.live ?? []) {
+      c[r.trade_style] = (c[r.trade_style] ?? 0) + 1;
+      c[r.direction] = (c[r.direction] ?? 0) + 1;
+    }
+    return c;
+  }, [data?.live]);
+
+  const shown = useMemo(() => {
+    const live = data?.live ?? [];
+    if (filter === "ALL") return live;
+    if (filter === "LONG" || filter === "SHORT") return live.filter((r) => r.direction === filter);
+    return live.filter((r) => r.trade_style === filter);
+  }, [data?.live, filter]);
+
   const header = (
     <div className="flex flex-wrap items-center gap-2">
       <span>Trade Ideas</span>
-      <Badge variant={phase === "open" ? "success" : phase === "tracking_only" ? "warning" : "default"} className="text-[10px]">
+      <Badge
+        variant={phase === "open" ? "success" : phase === "tracking_only" ? "warning" : "default"}
+        className="text-[10px]"
+      >
         {phase === "open" ? "scanning" : phase === "tracking_only" ? "tracking only" : "market closed"}
       </Badge>
       {feedStale && (
@@ -256,6 +370,34 @@ export function RecommendationsPanel() {
 
   return (
     <SectionCard title={header} actions={actions} bodyClassName="p-3">
+      {data && data.available && (data.live.length > 0 || filter !== "ALL") && (
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          {FILTERS.map((f) => {
+            const n =
+              f.key === "ALL"
+                ? data.live.length
+                : f.key === "LONG" || f.key === "SHORT"
+                  ? counts[f.key] ?? 0
+                  : counts[f.key] ?? 0;
+            return (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setFilter(f.key)}
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors",
+                  filter === f.key
+                    ? "border-accent bg-accent-soft text-accent"
+                    : "border-line text-fg-muted hover:border-line-strong",
+                )}
+              >
+                {f.label} <span className="tabular-nums opacity-70">{n}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {isLoading ? (
         <p className="py-6 text-center text-sm text-fg-faint">Loading recommendations…</p>
       ) : !data?.available ? (
@@ -267,10 +409,12 @@ export function RecommendationsPanel() {
           No high-conviction setups right now.{" "}
           {data.last_scan?.at && `Last scan ${new Date(data.last_scan.at).toLocaleTimeString("en-IN")}.`}
         </p>
+      ) : shown.length === 0 ? (
+        <p className="py-6 text-center text-sm text-fg-faint">No {filter.toLowerCase().replace("_", " ")} ideas right now.</p>
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {data.live.map((r) => (
-            <LiveCard key={r.id} rec={r} />
+          {shown.map((r) => (
+            <Card key={r.id} rec={r} />
           ))}
         </div>
       )}

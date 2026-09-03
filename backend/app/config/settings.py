@@ -83,10 +83,11 @@ class Settings(BaseSettings):
     market_scanner_enabled: bool = True
     market_scanner_scan_interval_seconds: int = 300
     market_scanner_track_interval_seconds: int = 20
-    market_scanner_core_max: int = 120            # deep-scanned F&O names / cycle
-    market_scanner_broad_promote_max: int = 15    # quote-screened equities promoted / cycle
-    market_scanner_max_live: int = 24             # cap on concurrent LIVE recommendations
-    market_scanner_overlay_min_confidence: float = 68.0  # attach an option spread above this
+    market_scanner_core_max: int = 120            # deep-scanned F&O names (daily + 15m) / cycle
+    market_scanner_broad_max: int = 250           # cash equities scanned daily-only for delivery/swing
+    market_scanner_broad_promote_max: int = 15    # (legacy, unused)
+    market_scanner_max_live: int = 40             # cap on concurrent LIVE recommendations
+    market_scanner_overlay_min_confidence: float = 68.0  # add a separate OPTION card above this
     market_scanner_eod_flatten_ist: str = "15:20"       # unresolved -> NEUTRAL at this IST time
 
     # --- Strategy-evaluation worker (app.workers) ---

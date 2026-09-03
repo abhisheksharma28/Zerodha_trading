@@ -65,7 +65,12 @@ class ScanRecommendation(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     asset_class: Mapped[str] = mapped_column(String(16), nullable=False, default="EQUITY")  # EQUITY | INDEX | COMMODITY
 
     # --- the call -------------------------------------------------------
-    horizon: Mapped[str] = mapped_column(String(10), nullable=False)  # INTRADAY | SWING
+    horizon: Mapped[str] = mapped_column(String(10), nullable=False)  # INTRADAY | SWING  (view timeframe)
+    # what to actually trade:
+    #   EQUITY_DELIVERY  - buy/sell the stock, CNC, hold across days
+    #   EQUITY_INTRADAY  - buy/sell the stock, MIS, square off same day
+    #   OPTION           - a defined-risk option spread expressing the view
+    trade_style: Mapped[str] = mapped_column(String(20), nullable=False, default="EQUITY_DELIVERY", index=True)
     direction: Mapped[str] = mapped_column(String(6), nullable=False)  # LONG | SHORT
     setup_type: Mapped[str] = mapped_column(String(48), nullable=False)  # human label of the primary setup
     setup_tags: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)  # ["golden_cross", "fvg_15m", ...]

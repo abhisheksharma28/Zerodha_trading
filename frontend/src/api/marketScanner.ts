@@ -45,6 +45,7 @@ export interface ScanRecommendation {
   underlying: string | null;
   instrument_token: string;
   horizon: "INTRADAY" | "SWING";
+  trade_style: "EQUITY_DELIVERY" | "EQUITY_INTRADAY" | "OPTION";
   direction: "LONG" | "SHORT";
   setup_type: string;
   setup_tags: string[];
@@ -155,6 +156,7 @@ export interface LogbookFilters {
   horizon?: string;
   setup?: string;
   direction?: string;
+  trade_style?: string;
   page?: number;
   page_size?: number;
 }
