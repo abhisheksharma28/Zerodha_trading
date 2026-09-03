@@ -75,7 +75,8 @@ def _resolve_universe(
 ) -> universe.ScreenResult:
     plan = TEST_PLANS[slug]
     pool = _screen_pool(db, settings, plan.years, plan.pool_scope)
-    return universe.run_screen(plan.screen, pool, as_of.date(), plan.screen_params)
+    return universe.run_screen(plan.screen, pool, as_of.date(), plan.screen_params,
+                               settings=settings)
 
 
 def run_canonical(db: Session, settings: Settings, slug: str) -> dict[str, Any]:

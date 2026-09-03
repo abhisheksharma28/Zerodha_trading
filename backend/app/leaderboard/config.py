@@ -196,6 +196,13 @@ TEST_PLANS: dict[str, TestPlan] = {
                                          {}, "1d", 10.0, pool_scope="indices",
                                          design_note="Needs ~10 years of sector-index history to "
                                                      "build a reliable month-by-month table."),
+    "seasonal-sector-stock-rotation": TestPlan(
+        "seasonal-sector-stock-rotation", "seasonal_sector_stock_leaders",
+        {"n": 120, "min_quality": 45.0, "apply_fundamental_gate": True}, "1d", 10.0,
+        pool_scope="full",
+        design_note="Liquid stocks that clear a current-fundamentals quality gate, plus the "
+                    "sector indices; the strategy adds a per-stock technical gate and rotates "
+                    "monthly by seasonality. 10y window for the seasonal table."),
     "volatility-contraction-breakout": TestPlan(
         "volatility-contraction-breakout", "consolidation_prone",
         {"n": 40, "base_n": 150, "window": 25, "tight_pct": 15.0}, "1d", 5.0,

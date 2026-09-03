@@ -262,6 +262,7 @@ NSE version.
 |---|---|---|
 | `volatility-contraction-breakout` — multi-week tight base + compressing vol, buy the break above the range if not already extended; stop on the base, target = R multiple | Minervini VCP; Darvas; Wyckoff accumulation | `consolidation_prone` (names that historically build tight bases) |
 | `seasonal-sector-rotation` — each month hold the sectors with the strongest *historical record for that calendar month* (mean/median return + hit rate), built causally from history so far | calendar-seasonality literature | `sector_index_basket` (indices-only pool, 10y) |
+| `seasonal-sector-stock-rotation` — same seasonal engine, but holds the individual **stocks** in the month's favoured sectors (sector = the sector index each stock correlates with most over `corr_window`) that pass a technical gate (ROC > 0, close > SMA, RSI ≤ max); a *current* fundamentals quality gate is applied upstream in the screen | seasonality + Minervini-style trend/quality filters | `seasonal_sector_stock_leaders` (liquid stocks clearing a yfinance quality gate + the sector indices, 10y) |
 
 Seasonality helper: `app/strategies/seasonality.py::monthly_sector_stats` /
 `best_sectors_for_month` / `report` (lives under `app.strategies`, not
@@ -270,6 +271,13 @@ Seasonality helper: `app/strategies/seasonality.py::monthly_sector_stats` /
 ~10 years — the standalone "which sector is strong in which month" insight.
 `TestPlan.pool_scope="indices"` skips the ~400 equity pulls for sector/index
 strategies.
+
+**Fundamentals in a backtest:** no point-in-time fundamentals exist (yfinance
+`get_key_metrics` is present-day). So `seasonal_sector_stock_leaders` applies the
+quality gate *once, at screen time, with current data* — a mild look-ahead on
+which companies are "quality", disclosed as a caveat on every result. Screens
+that need `settings` (for a provider fetch) declare a `settings` kwarg;
+`universe.run_screen` forwards it by signature inspection.
 
 > Refresh operational note: run the canonical suite as a **standalone process**
 > (`SessionLocal()` + `service.refresh_all`), not through the uvicorn worker — a

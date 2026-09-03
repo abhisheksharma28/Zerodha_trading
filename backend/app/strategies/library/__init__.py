@@ -36,6 +36,9 @@ from app.strategies.library.regime_adaptive import RegimeAdaptiveStrategy
 from app.strategies.library.rs_line_high import RsLineHighStrategy
 from app.strategies.library.rsi2_reversion import Rsi2ReversionStrategy
 from app.strategies.library.seasonal_sector_rotation import SeasonalSectorRotationStrategy
+from app.strategies.library.seasonal_sector_stock_rotation import (
+    SeasonalSectorStockRotationStrategy,
+)
 from app.strategies.library.sector_momentum_rotation import SectorMomentumRotationStrategy
 from app.strategies.library.supertrend import SupertrendStrategy
 from app.strategies.library.trend_following import TrendFollowingStrategy
@@ -81,6 +84,7 @@ TEMPLATES: list[type[TemplateStrategy]] = [
     RsLineHighStrategy,
     VolatilityContractionBreakoutStrategy,
     SeasonalSectorRotationStrategy,
+    SeasonalSectorStockRotationStrategy,
     LatencyArbitrageStrategy,
     IndexFuturesArbitrageStrategy,
 ]
@@ -129,6 +133,7 @@ __all__ = [
     "RsLineHighStrategy",
     "VolatilityContractionBreakoutStrategy",
     "SeasonalSectorRotationStrategy",
+    "SeasonalSectorStockRotationStrategy",
     "LatencyArbitrageStrategy",
     "IndexFuturesArbitrageStrategy",
 ]

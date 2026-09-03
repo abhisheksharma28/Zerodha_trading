@@ -34,6 +34,7 @@ from app.strategies.library import (
     Rsi2ReversionStrategy,
     RsLineHighStrategy,
     SeasonalSectorRotationStrategy,
+    SeasonalSectorStockRotationStrategy,
     SectorMomentumRotationStrategy,
     SupertrendStrategy,
     TrendFollowingStrategy,
@@ -1326,3 +1327,41 @@ def test_seasonal_sector_rotation_favours_a_seasonally_strong_sector():
     _emitted, positions = run(SeasonalSectorRotationStrategy, p, steps)
     assert positions.get("NIFTY IT", 0) > 0
     assert positions.get("NIFTY FMCG", 0) == 0
+
+
+def test_seasonal_sector_stock_rotation_holds_it_stocks_in_december():
+    import random
+
+    rng = random.Random(11)
+    steps = []
+    start = datetime(2026, 1, 1)
+    for i in range(1085):                       # ~3y, ending in December of year 3
+        d = start + timedelta(days=i)
+        ts = d.strftime("%Y-%m-%dT00:00:00") + IST_OFFSET
+        dec = d.month == 12
+        it_idx = 100.0 + 10.0 * (d.day / 31.0) if dec else 100.0
+        ph_f = rng.uniform(-0.6, 0.6)                      # pharma common factor
+        ph_idx = 100.0 + ph_f
+        # IT stocks: gentle noisy uptrend + the same December bump -> track NIFTY IT
+        bump = 1.0 + 0.09 * (d.day / 31.0) if dec else 1.0
+        jit = lambda: 1.0 + rng.uniform(-0.009, 0.009)     # noqa: E731 - keeps RSI off 100
+        steps.append(_bar("NIFTY IT", round(it_idx, 2), ts))
+        steps.append(_bar("NIFTY PHARMA", round(ph_idx, 2), ts))
+        steps.append(_bar("TCS", round(1000.0 * (1.0004 ** i) * bump * jit(), 2), ts))
+        steps.append(_bar("INFY", round(1400.0 * (1.00035 ** i) * bump * jit(), 2), ts))
+        # pharma stocks: gentle noisy uptrend + the pharma factor -> track NIFTY PHARMA
+        steps.append(_bar("SUNPHARMA",
+                          round(500.0 * (1.0004 ** i) * (1 + ph_f / 60.0) * jit(), 2), ts))
+        steps.append(_bar("CIPLA",
+                          round(900.0 * (1.00035 ** i) * (1 + ph_f / 60.0) * jit(), 2), ts))
+    p = SeasonalSectorStockRotationStrategy.resolve_params({
+        **SeasonalSectorStockRotationStrategy.presets()["balanced"],
+        "top_sectors": 1, "hold_n": 2, "corr_window": 200, "mom_lookback": 40,
+        "trend_ma_period": 100, "rsi_max": 95.0, "min_years": 2, "min_hit_rate": 0.5,
+        "history_window": 3000, "sizing_method": "fixed_capital",
+        "capital_allocation": 1_000_000.0, "regime_filter_enabled": False,
+    })
+    _emitted, positions = run(SeasonalSectorStockRotationStrategy, p, steps)
+    assert positions.get("TCS", 0) > 0 or positions.get("INFY", 0) > 0
+    assert positions.get("SUNPHARMA", 0) == 0 and positions.get("CIPLA", 0) == 0
+    assert positions.get("NIFTY IT", 0) == 0 and positions.get("NIFTY PHARMA", 0) == 0

@@ -96,6 +96,10 @@ TUNING_GRID: dict[str, dict[str, list]] = {
         "hold_n": [2, 3, 4],
         "metric": ["mean_pct", "median_pct"],
     },
+    "seasonal-sector-stock-rotation": {
+        "top_sectors": [2, 3],
+        "hold_n": [6, 8, 12],
+    },
     # intraday templates excluded — 5-minute grid runs are too slow.
 }
 

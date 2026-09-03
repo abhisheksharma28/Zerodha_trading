@@ -19,6 +19,7 @@ over-represents survivors. This is disclosed on every result.
 
 from __future__ import annotations
 
+import inspect
 import itertools
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -365,6 +366,61 @@ def consolidation_prone(
                         [_SURVIVORSHIP])
 
 
+def seasonal_sector_stock_leaders(
+    bars: dict[str, list[Bar]], as_of: date, *,
+    n: int = 120, min_quality: float = 45.0, min_valuation: float = 0.0,
+    apply_fundamental_gate: bool = True, settings: Any = None,
+) -> ScreenResult:
+    """Liquid stocks that clear a current-fundamentals quality gate, plus every
+    sector index — the strategy classifies each stock to a sector by
+    correlation and rotates monthly into the technically-strongest names within
+    the month's seasonally-favoured sectors."""
+    base = _base_syms(bars, as_of, n)
+    kept: list[str] = []
+    no_data = 0
+    q_vals: list[float] = []
+    if apply_fundamental_gate and settings is not None:
+        from app.market_scanner import fundamentals as fnd
+
+        for s in base:
+            try:
+                fv = fnd.view(settings, s)
+            except Exception:  # noqa: BLE001 - a bad fundamentals fetch must not sink the screen
+                fv = None
+            if fv is None or not fv.available or fv.quality is None:
+                no_data += 1
+                kept.append(s)                      # don't punish a data gap
+                continue
+            q_vals.append(fv.quality)
+            if fv.quality >= min_quality and (fv.valuation or 0.0) >= min_valuation:
+                kept.append(s)
+    else:
+        kept = list(base)
+
+    sectors = [s for s in SECTOR_INDICES if len(bars.get(s, [])) >= 260]
+    syms = kept + [s for s in sectors if s not in kept]
+    med_q = float(np.median(q_vals)) if q_vals else None
+    gate = (f"pass a current-fundamentals quality gate (>= {min_quality:.0f}"
+            + (f", valuation >= {min_valuation:.0f}" if min_valuation > 0 else "") + ")")
+    rationale = (
+        f"Of {len(base)} liquid names, {len(kept)} {gate}"
+        + (f" (median quality {med_q:.0f}; {no_data} had no fundamentals and were kept)"
+           if q_vals else "")
+        + f". Paired with the {len(sectors)} NSE sector indices; the strategy rotates monthly "
+        "into the technically-strongest of these stocks inside each month's seasonally-favoured "
+        "sectors."
+    )
+    caveats = [_SURVIVORSHIP,
+               "The fundamental gate uses present-day data (no point-in-time fundamentals are "
+               "available) — a mild look-ahead on which companies are 'quality'."]
+    return ScreenResult(syms, rationale,
+                        {"candidates": len(base), "fundamental_pass": len(kept),
+                         "no_fundamentals": no_data, "median_quality": (
+                             round(med_q, 1) if med_q is not None else None),
+                         "sectors": len(sectors)},
+                        caveats)
+
+
 def leaders_with_benchmark(
     bars: dict[str, list[Bar]], as_of: date, *,
     n: int = 60, benchmark: str = "NIFTY 50", min_bars: int = 260,
@@ -467,6 +523,7 @@ SCREENS: dict[str, Screen] = {
     "low_volatility": low_volatility,
     "broad_cross_section": broad_cross_section,
     "consolidation_prone": consolidation_prone,
+    "seasonal_sector_stock_leaders": seasonal_sector_stock_leaders,
     "leaders_with_benchmark": leaders_with_benchmark,
     "sector_index_basket": sector_index_basket,
     "index_proxy": index_proxy,
@@ -475,10 +532,14 @@ SCREENS: dict[str, Screen] = {
 
 
 def run_screen(
-    name: str, bars: dict[str, list[Bar]], as_of: date, params: dict[str, Any] | None = None,
+    name: str, bars: dict[str, list[Bar]], as_of: date,
+    params: dict[str, Any] | None = None, *, settings: Any = None,
 ) -> ScreenResult:
     try:
         fn = SCREENS[name]
     except KeyError as exc:
         raise ValueError(f"Unknown universe screen '{name}' — {sorted(SCREENS)}") from exc
-    return fn(bars, as_of, **(params or {}))
+    kwargs = dict(params or {})
+    if "settings" in inspect.signature(fn).parameters:
+        kwargs["settings"] = settings
+    return fn(bars, as_of, **kwargs)

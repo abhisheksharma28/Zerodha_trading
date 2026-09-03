@@ -34,6 +34,7 @@ SWEEP: dict[str, tuple[str, list[float]] | None] = {
     "rs-line-high": ("rs_lookback", [42, 63, 126, 189, 252]),
     "volatility-contraction-breakout": ("contraction_pct", [8.0, 10.0, 12.0, 16.0, 20.0]),
     "seasonal-sector-rotation": ("min_years", [3, 4, 5, 6, 8]),
+    "seasonal-sector-stock-rotation": ("mom_lookback", [21, 42, 63, 126, 189]),
     # intraday templates: MC + walk-forward only (5m sweeps are too slow)
     "opening-range-breakout": None,
     "opening-breakout-us": None,
