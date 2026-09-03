@@ -65,6 +65,38 @@ def is_configured(settings: Settings) -> bool:
     return configured(settings)[0]
 
 
+def reachable(settings: Settings) -> tuple[bool, str | None]:
+    """Live check that the active provider can actually be called right now.
+
+    For a local Ollama this pings ``/api/tags`` (a down server is the usual
+    reason the chat "doesn't work"); for hosted providers, having a key is
+    treated as enough so we don't burn quota on every status poll.
+    """
+    ok, reason, _ = configured(settings)
+    if not ok:
+        return False, reason
+    if _provider(settings) != "ollama":
+        return True, None
+    base = settings.ollama_base_url.rstrip("/")
+    try:
+        resp = httpx.get(f"{base}/api/tags", timeout=httpx.Timeout(3.0, connect=2.0))
+    except httpx.HTTPError:
+        return False, (
+            f"Ollama isn't reachable at {base}. Start it with `ollama serve`, then "
+            f"`ollama pull {settings.ollama_model}`."
+        )
+    if resp.status_code != 200:
+        return False, f"Ollama at {base} returned HTTP {resp.status_code}."
+    want = str(settings.ollama_model).split(":")[0]
+    names = [str(m.get("name", "")).split(":")[0] for m in (resp.json().get("models") or [])]
+    if want and names and want not in names:
+        return False, (
+            f"Ollama is running but the model '{settings.ollama_model}' isn't pulled. "
+            f"Run `ollama pull {settings.ollama_model}`."
+        )
+    return True, None
+
+
 def complete(
     settings: Settings, *, system: str, messages: list[dict[str, Any]],
     max_tokens: int | None = None,

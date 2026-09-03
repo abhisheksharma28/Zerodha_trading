@@ -46,11 +46,13 @@ _SUGGESTIONS = [
 
 
 def status(settings: Settings) -> dict[str, Any]:
-    ok, reason, model = llm.configured(settings)
+    configured_ok, _, model = llm.configured(settings)
+    live_ok, reason = llm.reachable(settings)
     return {
-        "available": ok,
+        "available": live_ok,
+        "configured": configured_ok,
         "provider": settings.assistant_provider,
-        "model": model if ok else None,
+        "model": model if configured_ok else None,
         "reason": reason,
     }
 

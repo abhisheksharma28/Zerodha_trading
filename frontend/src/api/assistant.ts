@@ -2,6 +2,7 @@ import { apiClient } from "@/api/client";
 
 export interface AssistantStatus {
   available: boolean;
+  configured: boolean;
   provider: string;
   model: string | null;
   reason: string | null;
