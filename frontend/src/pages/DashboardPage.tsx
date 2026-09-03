@@ -16,7 +16,6 @@ import { Bot, FlaskConical, Radar, Wallet } from "lucide-react";
 import type { ScanRecommendation } from "@/api/marketScanner";
 import { DataTable, type Column } from "@/components/DataTable";
 import { ModeBadge } from "@/components/ModeBadge";
-import { PageHeader } from "@/components/PageHeader";
 import { SectionCard } from "@/components/SectionCard";
 import { StatCard } from "@/components/StatCard";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +23,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useBacktests } from "@/hooks/useBacktests";
 import { useDeployments } from "@/hooks/useDeployments";
 import { useBacktestCatalog } from "@/hooks/useLeaderboard";
+import { useMarketOverview } from "@/hooks/useMarket";
 import { useScanRecommendations, useScannerStatus } from "@/hooks/useMarketScanner";
 import {
   useAddIdeaToPaper,
@@ -122,6 +122,115 @@ function IdeaRow({
       >
         {taken ? "✓ in paper" : adding ? "…" : "＋ paper"}
       </button>
+    </div>
+  );
+}
+
+const HERO_ACTIONS = [
+  { to: "/", label: "Trade ideas", hint: "scanner feed" },
+  { to: "/paper", label: "Paper trading", hint: "demo account" },
+  { to: "/strategy-editor", label: "Code a strategy", hint: "Python editor" },
+  { to: "/backtests", label: "Backtests", hint: "the catalog" },
+  { to: "/charting", label: "Charting", hint: "candles & tools" },
+];
+
+function greeting(d = new Date()): string {
+  const h = d.getHours();
+  return h < 5 ? "Late night" : h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+}
+
+function WelcomeHero({
+  netWorth,
+  dayPnl,
+  algoOn,
+  liveIdeas,
+}: {
+  netWorth: number | null;
+  dayPnl: number;
+  algoOn: boolean;
+  liveIdeas: number;
+}) {
+  const { data: ov } = useMarketOverview("nifty50");
+  const b = ov?.available ? ov.breadth : null;
+  const today = new Date().toLocaleDateString("en-IN", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-line bg-surface/60 backdrop-blur">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-90"
+        style={{
+          background:
+            "radial-gradient(40rem 22rem at 0% 0%, var(--color-accent-soft), transparent 60%), radial-gradient(30rem 20rem at 100% 0%, color-mix(in oklab, #4f7cff 12%, transparent), transparent 55%)",
+        }}
+      />
+      <div className="relative flex flex-col gap-4 p-5 sm:p-6">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.18em] text-fg-faint">{today}</p>
+            <h1 className="font-display mt-1 text-2xl font-semibold tracking-tight text-fg sm:text-[26px]">
+              {greeting()}.
+            </h1>
+            <p className="mt-1 max-w-xl text-sm text-fg-muted">
+              Your paper portfolio, the auto-trader and what the engine is watching — at a glance.
+            </p>
+          </div>
+          <div className="flex items-center gap-4 text-right">
+            <div>
+              <p className="text-[10px] uppercase tracking-wide text-fg-faint">Net worth</p>
+              <p className="font-display text-lg font-semibold tabular-nums text-fg">
+                {netWorth == null ? "—" : inr(netWorth)}
+              </p>
+            </div>
+            <div className="h-8 w-px bg-line-strong" />
+            <div>
+              <p className="text-[10px] uppercase tracking-wide text-fg-faint">Today</p>
+              <p
+                className={cn(
+                  "font-display text-lg font-semibold tabular-nums",
+                  dayPnl > 0 ? "text-pos" : dayPnl < 0 ? "text-neg" : "text-fg-muted",
+                )}
+              >
+                {inr(dayPnl)}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-muted">
+          {b && (
+            <span className="flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-pos" />
+              {b.advances} up
+              <span className="h-1.5 w-1.5 rounded-full bg-neg" />
+              {b.declines} down
+              <span className="text-fg-faint">· A/D {b.ad_ratio ?? "–"}</span>
+            </span>
+          )}
+          <span className={cn("flex items-center gap-1.5", algoOn ? "text-pos" : "text-fg-faint")}>
+            <span className={cn("h-1.5 w-1.5 rounded-full", algoOn ? "bg-pos" : "bg-line-strong")} />
+            Auto-trader {algoOn ? "on" : "off"}
+          </span>
+          <span className="text-fg-faint">{liveIdeas} live ideas</span>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {HERO_ACTIONS.map((a) => (
+            <Link
+              key={a.to}
+              to={a.to}
+              className="hover-lift group flex items-center gap-2 rounded-xl border border-line bg-surface/80 px-3 py-2 text-sm"
+            >
+              <span className="font-medium text-fg">{a.label}</span>
+              <span className="text-[11px] text-fg-faint group-hover:text-fg-muted">{a.hint}</span>
+            </Link>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -248,9 +357,11 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader
-        title="Dashboard"
-        subtitle="Your paper portfolio, the auto-trader, and what the engine is watching right now."
+      <WelcomeHero
+        netWorth={sm?.net_worth ?? null}
+        dayPnl={dayPnl}
+        algoOn={algoOn}
+        liveIdeas={scan?.live_count ?? recs?.summary.live ?? 0}
       />
 
       {live.length > 0 && (

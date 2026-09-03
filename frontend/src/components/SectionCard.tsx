@@ -29,7 +29,7 @@ export function SectionCard({
               {index}
             </span>
           )}
-          <h2 className="text-sm font-semibold text-fg">{title}</h2>
+          <h2 className="font-display text-sm font-semibold text-fg">{title}</h2>
         </div>
         {actions}
       </div>

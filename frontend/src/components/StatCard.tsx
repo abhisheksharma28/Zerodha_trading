@@ -28,14 +28,16 @@ export function StatCard({
         ? "text-neg"
         : "text-fg-muted";
   return (
-    <Card className="hover:border-line-strong">
+    <Card className="hover-lift hover:border-line-strong">
       <CardContent className="flex items-start justify-between gap-3 py-4">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-fg-faint">
             {Icon && <Icon className="h-3.5 w-3.5" />}
             <span className="truncate">{label}</span>
           </div>
-          <p className={cn("mt-1.5 text-2xl font-semibold tabular-nums", valueClassName)}>{value}</p>
+          <p className={cn("font-display mt-1.5 text-2xl font-semibold tabular-nums", valueClassName)}>
+            {value}
+          </p>
           {delta && <p className={cn("mt-0.5 text-xs font-medium tabular-nums", tone)}>{delta}</p>}
         </div>
         {spark && spark.length > 1 && (

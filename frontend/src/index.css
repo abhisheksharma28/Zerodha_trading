@@ -31,6 +31,13 @@
 
   --font-sans:
     "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display:
+    "Sora", "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  /* ambient accent used only for the background mesh */
+  --ambient-a: #f0b429;
+  --ambient-b: #4f7cff;
+  --ambient-c: #34d399;
 }
 
 [data-theme="light"] {
@@ -62,6 +69,101 @@
 body {
   @apply bg-bg text-fg antialiased;
   font-family: var(--font-sans);
+  min-height: 100vh;
+}
+
+/* Ambient page backdrop — a soft colour mesh + a masked hairline grid +
+   a faint grain, fixed behind everything. Original CSS/SVG, no images.
+   Kept low-contrast so dense data on top always stays readable. */
+.app-ambient {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(55rem 38rem at 8% -8%,
+      color-mix(in oklab, var(--ambient-a) 16%, transparent), transparent 62%),
+    radial-gradient(48rem 40rem at 102% -4%,
+      color-mix(in oklab, var(--ambient-b) 13%, transparent), transparent 58%),
+    radial-gradient(42rem 42rem at 50% 118%,
+      color-mix(in oklab, var(--ambient-c) 9%, transparent), transparent 60%);
+}
+[data-theme="light"] .app-ambient {
+  background:
+    radial-gradient(55rem 38rem at 8% -8%,
+      color-mix(in oklab, var(--ambient-a) 22%, transparent), transparent 62%),
+    radial-gradient(48rem 40rem at 102% -4%,
+      color-mix(in oklab, var(--ambient-b) 15%, transparent), transparent 58%),
+    radial-gradient(42rem 42rem at 50% 118%,
+      color-mix(in oklab, var(--ambient-c) 12%, transparent), transparent 60%);
+}
+.app-ambient::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--color-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-line) 1px, transparent 1px);
+  background-size: 46px 46px;
+  -webkit-mask-image: radial-gradient(72% 55% at 50% 0%, #000 12%, transparent 92%);
+  mask-image: radial-gradient(72% 55% at 50% 0%, #000 12%, transparent 92%);
+  opacity: 0.5;
+}
+.app-ambient::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/></svg>");
+  opacity: 0.02;
+}
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes ambient-drift {
+    0%,
+    100% {
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+    50% {
+      transform: translate3d(1.5%, -1.2%, 0) scale(1.04);
+    }
+  }
+  .app-ambient {
+    animation: ambient-drift 34s ease-in-out infinite;
+    will-change: transform;
+  }
+}
+
+/* smoother interactions everywhere */
+@media (prefers-reduced-motion: no-preference) {
+  a,
+  button,
+  [role="button"],
+  summary {
+    transition:
+      color 0.15s ease,
+      background-color 0.15s ease,
+      border-color 0.15s ease,
+      box-shadow 0.15s ease,
+      transform 0.15s ease;
+  }
+}
+
+.hover-lift {
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    border-color 0.18s ease;
+}
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 34px -14px rgb(0 0 0 / 0.4);
+}
+[data-theme="light"] .hover-lift:hover {
+  box-shadow: 0 10px 30px -16px rgb(20 22 28 / 0.18);
+}
+
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
 }
 
 * {
@@ -80,7 +182,7 @@ body {
 @keyframes fade-in {
   from {
     opacity: 0;
-    transform: translateY(4px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -88,7 +190,13 @@ body {
   }
 }
 .animate-in {
-  animation: fade-in 0.18s ease-out;
+  animation: fade-in 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-in,
+  .animate-menu {
+    animation: none;
+  }
 }
 
 @keyframes menu-in {

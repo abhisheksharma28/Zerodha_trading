@@ -196,18 +196,21 @@ export function AppLayout() {
   }, []);
 
   return (
-    <div className="flex min-h-screen flex-col bg-bg text-fg">
-      <header className="sticky top-0 z-40 border-b border-line bg-surface/80 backdrop-blur">
+    <div className="relative flex min-h-screen flex-col bg-bg text-fg">
+      <div className="app-ambient" aria-hidden="true" />
+
+      <header className="sticky top-0 z-40 border-b border-line bg-surface/70 backdrop-blur-xl">
+        <div className="pointer-events-none absolute inset-x-0 -bottom-px h-px bg-gradient-to-r from-transparent via-accent/50 to-transparent" />
         <div className="mx-auto flex h-14 max-w-[1600px] items-center gap-2 px-4">
           <button
             type="button"
             onClick={() => navigate("/")}
-            className="mr-2 flex items-center gap-2"
+            className="group mr-2 flex items-center gap-2"
           >
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-accent text-accent-fg">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-accent to-accent-strong text-accent-fg shadow-[0_2px_12px_-2px_var(--color-accent)] transition-transform group-hover:scale-105">
               <CandlestickChart className="h-4 w-4" />
             </span>
-            <span className="text-sm font-semibold tracking-tight">AlgoEdge</span>
+            <span className="font-display text-[15px] font-semibold tracking-tight">AlgoEdge</span>
           </button>
 
           <nav className="flex items-center gap-0.5" onMouseLeave={closeSoon}>
@@ -288,9 +291,11 @@ export function AppLayout() {
         </div>
       </header>
 
-      <IndexStrip />
+      <div className="relative z-10">
+        <IndexStrip />
+      </div>
 
-      <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-6">
+      <main className="relative z-10 mx-auto w-full max-w-[1600px] flex-1 px-4 py-6">
         <div className="animate-in">
           <Suspense
             fallback={
