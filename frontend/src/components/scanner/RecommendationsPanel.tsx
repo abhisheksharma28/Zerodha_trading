@@ -304,6 +304,8 @@ function EquityCard({
 
       <ProgressToTarget rec={rec} />
 
+      {rec.status === "LIVE" && <AddToPaper rec={rec} taken={taken} />}
+
       {rec.setup_tags.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">
           {rec.setup_tags.slice(0, 8).map((t) => (
@@ -317,7 +319,6 @@ function EquityCard({
       <HedgeNote rec={rec} />
       <PairNote rec={rec} siblingStyle={siblingStyle} />
       <Factors rec={rec} />
-      {rec.status === "LIVE" && <AddToPaper rec={rec} taken={taken} />}
       <p className="mt-2 text-[10px] italic text-fg-faint">{rec.disclaimer}</p>
     </div>
   );
@@ -392,9 +393,10 @@ function OptionCard({
         <span className="tabular-nums text-pos">{num(rec.target_1, 1)}</span>.
       </p>
 
+      {rec.status === "LIVE" && <AddToPaper rec={rec} taken={taken} />}
+
       <PairNote rec={rec} siblingStyle={siblingStyle} />
       <Factors rec={rec} />
-      {rec.status === "LIVE" && <AddToPaper rec={rec} taken={taken} />}
       <p className="mt-2 text-[10px] italic text-fg-faint">{rec.disclaimer}</p>
     </div>
   );
