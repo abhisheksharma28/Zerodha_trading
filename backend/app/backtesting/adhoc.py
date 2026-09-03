@@ -293,6 +293,18 @@ def run_adhoc(
     )
     metrics["cost_breakdown"] = result.cost_breakdown
     metrics["timeframe"] = tf.token
+
+    # equal-weight buy-and-hold of the same names over the same window, so a
+    # strategy's return has honest context (beating +40% of index != +12%).
+    rets = [
+        (float(b[-1].close) / float(b[0].close) - 1.0) * 100.0
+        for b in candles.values() if b and float(b[0].close) > 0
+    ]
+    if rets:
+        bh = sum(rets) / len(rets)
+        metrics["benchmark_return_pct"] = round(bh, 2)
+        metrics["excess_return_pct"] = round(float(metrics.get("return_pct") or 0.0) - bh, 2)
+
     charts = build_charts(result.equity_curve, trades, float(capital))
 
     diag = result.diagnostics.to_dict()

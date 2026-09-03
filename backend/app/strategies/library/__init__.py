@@ -15,9 +15,13 @@ before it is considered for live deployment.
 """
 
 from app.strategies.library.base import TemplateStrategy
+from app.strategies.library.bollinger_reversion import BollingerReversionStrategy
 from app.strategies.library.chinese_transformer import ChineseTransformerStrategy
 from app.strategies.library.donchian_breakout import DonchianBreakoutStrategy
+from app.strategies.library.dual_momentum import DualMomentumStrategy
+from app.strategies.library.fiftytwo_week_high import FiftyTwoWeekHighStrategy
 from app.strategies.library.force_index import ForceIndexStrategy
+from app.strategies.library.golden_cross import GoldenCrossStrategy
 from app.strategies.library.index_futures_arbitrage import IndexFuturesArbitrageStrategy
 from app.strategies.library.latency_arbitrage import LatencyArbitrageStrategy
 from app.strategies.library.macd_grid import MacdGridStrategy
@@ -28,6 +32,8 @@ from app.strategies.library.opening_breakout_us import OpeningBreakoutUSStrategy
 from app.strategies.library.opening_range_breakout import OpeningRangeBreakoutStrategy
 from app.strategies.library.pairs_trading import PairsTradingStrategy
 from app.strategies.library.regime_adaptive import RegimeAdaptiveStrategy
+from app.strategies.library.rsi2_reversion import Rsi2ReversionStrategy
+from app.strategies.library.supertrend import SupertrendStrategy
 from app.strategies.library.trend_following import TrendFollowingStrategy
 from app.strategies.library.triple_screen import TripleScreenStrategy
 from app.strategies.library.volatility_regime import VolatilityRegimeStrategy
@@ -46,6 +52,12 @@ TEMPLATES: list[type[TemplateStrategy]] = [
     ZScoreRegimeStrategy,
     TripleScreenStrategy,
     ForceIndexStrategy,
+    SupertrendStrategy,
+    GoldenCrossStrategy,
+    Rsi2ReversionStrategy,
+    BollingerReversionStrategy,
+    FiftyTwoWeekHighStrategy,
+    DualMomentumStrategy,
     VolatilityRegimeStrategy,
     RegimeAdaptiveStrategy,
     OpeningRangeBreakoutStrategy,
@@ -80,6 +92,12 @@ __all__ = [
     "ZScoreRegimeStrategy",
     "TripleScreenStrategy",
     "ForceIndexStrategy",
+    "SupertrendStrategy",
+    "GoldenCrossStrategy",
+    "Rsi2ReversionStrategy",
+    "BollingerReversionStrategy",
+    "FiftyTwoWeekHighStrategy",
+    "DualMomentumStrategy",
     "VolatilityRegimeStrategy",
     "RegimeAdaptiveStrategy",
     "OpeningRangeBreakoutStrategy",

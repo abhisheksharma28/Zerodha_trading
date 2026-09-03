@@ -34,6 +34,8 @@ function CatalogCard({ e }: { e: CatalogEntry }) {
   const v = e.summary?.verdict ?? (e.status === "not_run" ? "insufficient" : "marginal");
   const badge = VERDICT[v] ?? VERDICT.marginal;
   const ret = m.return_pct ?? null;
+  const bench = m.benchmark_return_pct ?? null;
+  const excess = m.excess_return_pct ?? (ret != null && bench != null ? ret - bench : null);
   const curve = e.equity_curve?.map(([, val]) => Number(val)) ?? [];
 
   return (
@@ -74,6 +76,23 @@ function CatalogCard({ e }: { e: CatalogEntry }) {
             />
             <Metric label="Trades" value={m.total_trades == null ? "—" : num(m.total_trades, 0)} />
           </div>
+          {bench != null && (
+            <p className="mt-1.5 text-[11px] text-fg-faint">
+              Equal-weight buy &amp; hold of the same names:{" "}
+              <span className="tabular-nums text-fg-muted">{pctSigned(bench)}</span>
+              {excess != null && (
+                <span
+                  className={cn(
+                    "ml-1 tabular-nums font-semibold",
+                    excess < 0 ? "text-neg" : "text-pos",
+                  )}
+                >
+                  ({excess < 0 ? "" : "+"}
+                  {num(excess, 1)} pts {excess < 0 ? "behind" : "ahead"})
+                </span>
+              )}
+            </p>
+          )}
           {curve.length > 2 && (
             <div className="mt-2 h-8 w-full">
               <Sparkline data={curve} tone={(ret ?? 0) < 0 ? "neg" : "accent"} />

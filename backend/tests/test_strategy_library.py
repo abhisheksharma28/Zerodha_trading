@@ -14,9 +14,13 @@ import pytest
 from app.strategies.base import Bar, StrategyContext
 from app.strategies.library import (
     TEMPLATES,
+    BollingerReversionStrategy,
     CrossSectionalMomentumStrategy,
     DonchianBreakoutStrategy,
+    DualMomentumStrategy,
+    FiftyTwoWeekHighStrategy,
     ForceIndexStrategy,
+    GoldenCrossStrategy,
     IndexFuturesArbitrageStrategy,
     LatencyArbitrageStrategy,
     MacdGridStrategy,
@@ -26,6 +30,8 @@ from app.strategies.library import (
     OpeningRangeBreakoutStrategy,
     PairsTradingStrategy,
     RegimeAdaptiveStrategy,
+    Rsi2ReversionStrategy,
+    SupertrendStrategy,
     TrendFollowingStrategy,
     TripleScreenStrategy,
     VolatilityRegimeStrategy,
@@ -1082,3 +1088,91 @@ def test_force_index_arms_on_a_dip_and_enters_on_the_break():
     })
     emitted, positions = run(ForceIndexStrategy, p, bars)
     assert emitted and positions.get("INFY", 0) > 0
+
+
+# --------------------------------------------------------------------------
+# well-known families (KB §9 additions)
+# --------------------------------------------------------------------------
+
+def test_supertrend_goes_long_after_an_up_flip():
+    # a clean downtrend (Supertrend locks to the short side) then a sharp reversal up,
+    # which forces a genuine down -> up flip and a long entry.
+    closes = [130.0 - 1.0 * i for i in range(30)]        # 130 -> 101
+    closes += [101.0 + 3.0 * i for i in range(1, 16)]    # sharp recovery
+    bars = [_bar("TATASTEEL", round(c, 2), daily_ts(i)) for i, c in enumerate(closes)]
+    p = SupertrendStrategy.resolve_params({
+        **SupertrendStrategy.presets()["balanced"], "atr_period": 5, "multiplier": 2.0,
+        "confirm_bars": 1, "take_profit_atr": 0.0, "trend_ma_period": 0,
+        "regime_filter_enabled": False,
+    })
+    emitted, positions = run(SupertrendStrategy, p, bars)
+    assert any(o.transaction_type == "BUY" for _, orders in emitted for o in orders)
+    assert positions.get("TATASTEEL", 0) > 0
+
+
+def test_golden_cross_holds_long_while_fast_above_slow():
+    closes = [100.0] * 40 + [100 + 1.5 * i for i in range(1, 220)]
+    bars = [_bar("INFY", round(c, 2), daily_ts(i)) for i, c in enumerate(closes)]
+    p = GoldenCrossStrategy.resolve_params({
+        **GoldenCrossStrategy.presets()["balanced"], "fast_period": 20, "slow_period": 50, "ma_type": "sma",
+        "sizing_method": "fixed_capital", "max_position_size_pct": 30.0,
+        "regime_filter_enabled": False,
+    })
+    _emitted, positions = run(GoldenCrossStrategy, p, bars)
+    assert positions.get("INFY", 0) > 0  # still long at the end of a strong uptrend
+
+
+def test_rsi2_reversion_buys_a_dip_above_the_regime_ma():
+    closes = [100.0 + 0.3 * i for i in range(80)]        # gentle rise -> above 60-SMA
+    closes += [closes[-1] * (1 - 0.03 * k) for k in range(1, 4)]  # sharp 3-bar dip -> RSI(2) low
+    bars = [_bar("SBIN", round(c, 2), daily_ts(i)) for i, c in enumerate(closes)]
+    p = Rsi2ReversionStrategy.resolve_params({
+        **Rsi2ReversionStrategy.presets()["balanced"], "regime_window": 50, "entry_rsi": 15.0,
+        "sizing_method": "fixed_capital", "max_position_size_pct": 25.0,
+        "regime_filter_enabled": False,
+    })
+    emitted, _ = run(Rsi2ReversionStrategy, p, bars)
+    assert emitted and emitted[0][1][0].transaction_type == "BUY"
+
+
+def test_bollinger_reversion_buys_below_the_lower_band():
+    # flat baseline (tight bands) then one close that punches through the lower band;
+    # the template's own regime filter is disabled here so we isolate the band-fade entry.
+    closes = [100.0] * 40 + [95.0]
+    bars = [_bar("RELIANCE", round(c, 2), daily_ts(i)) for i, c in enumerate(closes)]
+    p = BollingerReversionStrategy.resolve_params({
+        **BollingerReversionStrategy.presets()["balanced"], "bb_period": 20, "bb_stdev": 2.0,
+        "entry_pctb": 0.0, "regime_window": 0, "sizing_method": "fixed_capital",
+        "max_position_size_pct": 25.0, "regime_filter_enabled": False,
+    })
+    emitted, _ = run(BollingerReversionStrategy, p, bars)
+    assert emitted and emitted[-1][1][0].transaction_type == "BUY"
+
+
+def test_fiftytwo_week_high_buys_near_the_trailing_high():
+    closes = [100 + 0.4 * i for i in range(270)]  # steady climb -> always near its own high
+    bars = [_bar("TITAN", round(c, 2), daily_ts(i)) for i, c in enumerate(closes)]
+    p = FiftyTwoWeekHighStrategy.resolve_params({
+        **FiftyTwoWeekHighStrategy.presets()["balanced"], "high_window": 252, "band_pct": 3.0,
+        "mom_lookback": 60, "trend_ma": 0, "sizing_method": "fixed_capital",
+        "max_position_size_pct": 25.0, "regime_filter_enabled": False,
+    })
+    _emitted, positions = run(FiftyTwoWeekHighStrategy, p, bars)
+    assert positions.get("TITAN", 0) > 0
+
+
+def test_dual_momentum_rotates_into_the_stronger_name():
+    # two names: A rips, B drifts down -> monthly rebalance should hold A, not B
+    steps = []
+    for day in range(300):
+        a = 100 * (1.01 ** day)
+        b = 100 * (0.999 ** day)
+        steps.append(_bar("AAA", round(a, 2), daily_ts(day)))
+        steps.append(_bar("BBB", round(b, 2), daily_ts(day)))
+    p = DualMomentumStrategy.resolve_params({
+        **DualMomentumStrategy.presets()["balanced"], "lookback": 120, "top_n": 1,
+        "abs_min_return": 0.0, "trend_ma_period": 0, "sizing_method": "fixed_capital",
+        "capital_allocation": 1_000_000.0, "regime_filter_enabled": False,
+    })
+    _emitted, positions = run(DualMomentumStrategy, p, steps)
+    assert positions.get("AAA", 0) > 0 and positions.get("BBB", 0) == 0

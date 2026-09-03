@@ -33,6 +33,7 @@ _METRIC_KEYS = (
     "return_pct", "cagr_pct", "sharpe_ratio", "sortino_ratio", "calmar_ratio",
     "max_drawdown_pct", "win_rate_pct", "profit_factor", "total_trades",
     "avg_trade", "net_pnl", "total_costs", "turnover_ratio",
+    "benchmark_return_pct", "excess_return_pct",
 )
 
 

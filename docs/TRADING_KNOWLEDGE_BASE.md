@@ -185,6 +185,29 @@ negative deep in the second half (−0.3).
 | `triple-screen` — long-MA-slope "tide" + RSI pullback + prior-bar-break trigger | Elder, *Trading for a Living* | ✅ implemented |
 | `elder-force-index` — 13-EMA price trend + 2-EMA Force Index dip entry, exit on trend / FI centreline flip | Elder, *Trading for a Living* | ✅ implemented |
 
+### 9a. Well-known "proved" families added to the catalog
+
+Widely documented, decades-old strategies exposed as fully parameterised templates (no
+hard-coded numbers) so the algo runs and backtests them alongside the rest. Each carries
+its own `warning` — none is guaranteed profitable, and on Indian large-caps over a fixed
+multi-year window a naive version often trails an equal-weight buy-and-hold (the catalog
+now shows that benchmark next to every result).
+
+| Template | Source | Status |
+|---|---|---|
+| `supertrend` — ATR-band trend follower; long on an up-flip, the line is the trailing stop; optional confirm-bars, regime MA, ATR take-profit | Olivier Seban; ubiquitous on Indian retail platforms | ✅ implemented |
+| `golden-cross` — 50/200 MA regime (SMA or EMA), long while fast > slow, ATR stop | classic Dow-era trend filter | ✅ implemented |
+| `rsi2-reversion` — RSI(2) washout buy in a long-MA uptrend, exit on the snap-back / fast-MA / time / ATR stop | Connors & Alvarez, *Short Term Trading Strategies That Work* | ✅ implemented |
+| `bollinger-reversion` — fade a close below the lower band (%B) while the longer trend is up, cover at the mean | Bollinger, *Bollinger on Bollinger Bands* | ✅ implemented |
+| `fiftytwo-week-high` — long while price sits within a band of its trailing 252-day high with positive momentum; exit a set % below the running high | George & Hwang 2004, *The 52-Week High and Momentum Investing* (JF) | ✅ implemented |
+| `dual-momentum` — monthly: hold the top-N of a basket by trailing return, but only names whose own trailing return is positive (absolute-momentum gate) | Antonacci, *Dual Momentum Investing* | ✅ implemented |
+
+> Buffer-sizing gotcha (for future templates): `TemplateStrategy._compute_buffer_maxlen`
+> only counts a param toward the bar-buffer length if its **name** contains `lookback`,
+> `period`, `window` or `regression`. A long regime-MA param called anything else
+> (`regime_ma`, `trend_ma`, `slow`, …) silently gets the 250-bar default buffer and the
+> entry never fires. Name long-lookback params accordingly, or cap their `max` at ~250.
+
 ---
 
 ## 10. Risk & money management — 📖 (rules baked into the paper algo + scorer)

@@ -27,15 +27,17 @@ def _verdict(m: dict[str, Any], ruined: bool) -> tuple[str, str]:
     dd = abs(_f(m.get("max_drawdown_pct")) or 0.0)
     pf = _f(m.get("profit_factor")) or 0.0
     trades = int(_f(m.get("total_trades")) or 0)
+    excess = _f(m.get("excess_return_pct"))
+    beat_bh = excess is not None and excess > 0
     if trades < 20:
         return "insufficient", f"Only {trades} trades - not enough to judge; widen the universe or window."
     if sharpe >= 1.0 and ret > 0 and pf >= 1.3:
         return "strong", "Positive and reasonably risk-adjusted over the window (still validate out-of-sample)."
-    if sharpe >= 0.4 and ret > 0:
-        return "tradeable", "Net positive but modest risk-adjusted return - marginal edge at best."
-    if ret > 0 and dd < 25:
+    if sharpe >= 0.4 and ret > 0 and (excess is None or beat_bh):
+        return "tradeable", "Net positive risk-adjusted return; broadly kept pace with buy-and-hold."
+    if ret > 0 and dd < 25 and (excess is None or excess > -10):
         return "marginal", "Barely positive; the edge does not clearly beat the drawdown it takes."
-    return "avoid", "Net loser or worse than buy-and-hold risk over the window on this configuration."
+    return "avoid", "Net loser, or well behind an equal-weight buy-and-hold of the same names."
 
 
 def summarize(payload: dict[str, Any]) -> dict[str, Any]:
@@ -71,6 +73,9 @@ def summarize(payload: dict[str, Any]) -> dict[str, Any]:
         + ".",
     ]
 
+    bench = _f(m.get("benchmark_return_pct"))
+    excess = _f(m.get("excess_return_pct"))
+
     saw: list[str] = []
     if ret is not None:
         saw.append(
@@ -79,6 +84,10 @@ def summarize(payload: dict[str, Any]) -> dict[str, Any]:
             + (f", net P&L Rs {net:,.0f}" if net is not None else "")
             + "."
         )
+    if bench is not None:
+        vs = (f" — {'ahead of' if (excess or 0) >= 0 else 'behind'} an equal-weight "
+              f"buy-and-hold of the same names by {abs(excess or 0):.1f} pts")
+        saw.append(f"Buy-and-hold of the same basket did **{bench:+.1f}%** over the window{vs}.")
     if sharpe is not None:
         saw.append(
             f"Risk-adjusted: Sharpe {sharpe:.2f}"
