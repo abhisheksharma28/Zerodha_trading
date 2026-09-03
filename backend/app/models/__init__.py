@@ -9,6 +9,7 @@ from app.models.adaptive_options import (
 )
 from app.models.audit import AuditLog, ChangeLogEntry
 from app.models.backtest import Backtest
+from app.models.basket import Basket, BasketRebalanceEvent
 from app.models.broker_session import BrokerSession
 from app.models.deployment import Deployment
 from app.models.instrument import Instrument
@@ -35,6 +36,8 @@ __all__ = [
     "AuditLog",
     "ChangeLogEntry",
     "Backtest",
+    "Basket",
+    "BasketRebalanceEvent",
     "BrokerSession",
     "Deployment",
     "Instrument",

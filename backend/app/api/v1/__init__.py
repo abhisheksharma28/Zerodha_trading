@@ -6,6 +6,7 @@ from app.api.v1 import (
     assistant,
     audit,
     backtests,
+    baskets,
     broker,
     chinese_transformer,
     deployments,
@@ -36,6 +37,7 @@ api_router.include_router(strategy_editor.router)
 api_router.include_router(strategy_library.router)
 api_router.include_router(options_strategies.router)
 api_router.include_router(backtests.router)
+api_router.include_router(baskets.router)
 api_router.include_router(deployments.router)
 api_router.include_router(broker.router)
 api_router.include_router(instruments.router)
