@@ -1,9 +1,15 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+import { useQueryClient } from "@tanstack/react-query";
 
 import type { CatalogEntry } from "@/api/leaderboard";
 import { Sparkline } from "@/components/Sparkline";
 import { Button } from "@/components/ui/button";
-import { useBacktestCatalog, useRefreshLeaderboard } from "@/hooks/useLeaderboard";
+import {
+  useBacktestCatalog,
+  useRefreshLeaderboard,
+  useRefreshStatus,
+} from "@/hooks/useLeaderboard";
 import { num, pctSigned } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -164,8 +170,32 @@ function Block({ title, items }: { title: string; items: string[] }) {
 }
 
 export function BacktestCatalog() {
+  const qc = useQueryClient();
   const { data, isLoading } = useBacktestCatalog();
   const refresh = useRefreshLeaderboard();
+  const { data: status } = useRefreshStatus();
+
+  const running = status?.state === "running";
+  const prevRunning = useRef(false);
+  useEffect(() => {
+    if (prevRunning.current && !running) {
+      qc.invalidateQueries({ queryKey: ["leaderboard"] });
+    }
+    prevRunning.current = running;
+  }, [running, qc]);
+
+  const busy = running || refresh.isPending;
+  const progress =
+    running && status
+      ? `Running… ${status.completed ?? 0}/${status.total ?? "?"}${
+          status.current ? ` · ${status.current}` : ""
+        }`
+      : refresh.isPending
+        ? "Starting…"
+        : "Refresh catalog";
+  const refreshErr =
+    (refresh.error as { response?: { data?: { message?: string } } } | undefined)?.response?.data
+      ?.message ?? (refresh.isError ? "Could not start a refresh." : null);
 
   return (
     <section className="flex flex-col gap-3">
@@ -182,16 +212,30 @@ export function BacktestCatalog() {
               {data?.meta.total_backtests ?? 0} backtests on record
               {data ? ` (${data.meta.catalog_ran} catalog · ${data.meta.user_backtests} yours)` : ""}.
             </span>
+            {status?.state === "done" && !running && (
+              <span className="ml-1 text-pos">· last refresh finished</span>
+            )}
+            {(status?.state === "error" || status?.state === "stalled") && (
+              <span className="ml-1 text-neg">· last refresh {status.state}</span>
+            )}
           </p>
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={refresh.isPending}
-          onClick={() => refresh.mutate(undefined)}
-        >
-          {refresh.isPending ? "Running… (minutes)" : "Refresh catalog"}
-        </Button>
+        <div className="flex flex-col items-end gap-1">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => refresh.mutate(undefined)}
+          >
+            {progress}
+          </Button>
+          {running && (
+            <span className="text-[10px] text-fg-faint">
+              runs in the background — safe to leave this page
+            </span>
+          )}
+          {refreshErr && <span className="text-[10px] text-neg">{refreshErr}</span>}
+        </div>
       </div>
 
       {isLoading ? (

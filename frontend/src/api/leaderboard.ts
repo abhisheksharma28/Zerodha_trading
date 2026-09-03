@@ -263,6 +263,27 @@ export interface BacktestCatalog {
   strategies: CatalogEntry[];
 }
 
+export interface RefreshStatus {
+  state: "idle" | "running" | "done" | "error" | "stalled";
+  pid?: number;
+  started_at?: string;
+  updated_at?: string;
+  total?: number | null;
+  completed?: number;
+  current?: string | null;
+  results?: Record<string, string>;
+  elapsed_s?: number;
+  error?: string;
+  note?: string;
+}
+
+export interface RefreshJob {
+  job: string;
+  pid: number;
+  slugs: string[] | "all";
+  status_url: string;
+}
+
 export const leaderboardApi = {
   get: () => apiClient.get<Leaderboard>("/leaderboard").then((r) => r.data),
 
@@ -273,11 +294,14 @@ export const leaderboardApi = {
 
   refresh: (slugs?: string[]) =>
     apiClient
-      .post<{ results: Record<string, string> }>("/leaderboard/refresh", { slugs })
-      .then((r) => r.data.results),
+      .post<RefreshJob>("/leaderboard/refresh", { slugs })
+      .then((r) => r.data),
 
   refreshOne: (slug: string) =>
-    apiClient.post<LeaderboardDetail>(`/leaderboard/refresh/${slug}`).then((r) => r.data),
+    apiClient.post<RefreshJob>(`/leaderboard/refresh/${slug}`).then((r) => r.data),
+
+  refreshStatus: () =>
+    apiClient.get<RefreshStatus>("/leaderboard/refresh/status").then((r) => r.data),
 
   runRobustness: (slug: string) =>
     apiClient.post<RobustnessBlock>(`/leaderboard/robustness/${slug}`).then((r) => r.data),

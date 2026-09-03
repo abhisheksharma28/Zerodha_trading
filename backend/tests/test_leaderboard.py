@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
 import pytest
@@ -156,3 +157,86 @@ def test_catalog_summarises_cached_runs(cache_dir, monkeypatch, db):
 
     pending = next(e for e in cat["strategies"] if e["status"] == "not_run")
     assert pending["summary"] is None
+
+
+# --- out-of-process refresh (refresh_runner / refresh_control) --------------
+
+def test_refresh_runner_writes_progress_and_finishes(tmp_path, monkeypatch):
+    import types
+
+    import app.db.session as db_session
+    import app.leaderboard.service as svc
+    from app.leaderboard import refresh_runner as rr
+
+    monkeypatch.setattr(db_session, "SessionLocal",
+                        lambda: types.SimpleNamespace(close=lambda: None))
+
+    def fake_run_canonical(db, settings, slug):
+        if slug == "mean-reversion":
+            raise RuntimeError("boom")
+        return {"metrics": {"return_pct": 12.0, "sharpe_ratio": 0.3, "total_trades": 40},
+                "ruined": False}
+
+    monkeypatch.setattr(svc, "run_canonical", fake_run_canonical)
+    sp = tmp_path / "status.json"
+    final = rr.run(["donchian-breakout", "mean-reversion", "not-a-real-slug"], status_path=sp)
+
+    assert final["state"] == "done"
+    assert final["completed"] == 3 and final["total"] == 3
+    assert final["results"]["donchian-breakout"].startswith("ok:")
+    assert final["results"]["mean-reversion"].startswith("error: boom")
+    assert "skipped" in final["results"]["not-a-real-slug"]
+    on_disk = json.loads(sp.read_text())
+    assert on_disk["state"] == "done" and on_disk["current"] is None
+
+
+def test_refresh_control_start_status_and_conflict(tmp_path, monkeypatch):
+    import os
+
+    from app.core.exceptions import ConflictError
+    from app.leaderboard import refresh_control as rc
+
+    monkeypatch.setattr(rc, "STATUS_PATH", tmp_path / "status.json")
+    monkeypatch.setattr(rc, "_LOG_PATH", tmp_path / "refresh.log")
+
+    class _FakeProc:
+        pid = 999_999_999          # not a real live process
+
+    monkeypatch.setattr(rc.subprocess, "Popen", lambda *a, **k: _FakeProc())
+    out = rc.start_refresh(["donchian-breakout"])
+    assert out["job"] == "started" and out["pid"] == 999_999_999
+
+    # pid isn't alive -> status reconciles running -> stalled, and a new start is allowed
+    st = rc.read_status()
+    assert st["state"] == "stalled"
+
+    # now simulate a genuinely running job (our own pid) -> conflict
+    (tmp_path / "status.json").write_text(json.dumps(
+        {"state": "running", "pid": os.getpid(), "completed": 2, "total": 10}))
+    assert rc.is_running() is True
+    with pytest.raises(ConflictError):
+        rc.start_refresh(None)
+
+
+def test_refresh_endpoint_is_202_and_status_readable(cache_dir, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    import app.api.v1.leaderboard as lb_api
+    from app.main import app
+
+    started = {}
+    monkeypatch.setattr(lb_api, "start_refresh",
+                        lambda slugs=None: started.update(slugs=slugs) or {"job": "started", "pid": 1,
+                                                                           "slugs": slugs or "all",
+                                                                           "status_url": "x"})
+    monkeypatch.setattr(lb_api, "read_status", lambda: {"state": "running", "completed": 3, "total": 24})
+
+    with TestClient(app) as client:
+        r = client.post("/api/v1/leaderboard/refresh", json={"slugs": None})
+        assert r.status_code == 202 and r.json()["job"] == "started"
+        s = client.get("/api/v1/leaderboard/refresh/status")
+        assert s.status_code == 200 and s.json()["state"] == "running"
+        one = client.post("/api/v1/leaderboard/refresh/donchian-breakout")
+        assert one.status_code == 202 and started["slugs"] == ["donchian-breakout"]
+        bad = client.post("/api/v1/leaderboard/refresh/nope")
+        assert bad.status_code == 404

@@ -1,16 +1,17 @@
 """Strategy Leaderboard API.
 
 ``GET /leaderboard`` is cheap (reads cached canonical runs + live paper
-fills). ``POST /leaderboard/refresh`` re-runs the canonical backtests and
-is slow — NIFTY 100 x 3 years per strategy — so it is synchronous and
-meant to be triggered deliberately.
+fills). ``POST /leaderboard/refresh`` re-runs the canonical backtests and is
+slow (per-strategy dynamic screen + a 5-year backtest), so it now spawns a
+detached worker process and returns immediately; poll
+``GET /leaderboard/refresh/status`` for progress.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body, Depends, status
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
@@ -21,11 +22,10 @@ from app.leaderboard import (
     catalog,
     ensure_paper_deployments,
     leaderboard,
-    refresh_all,
-    run_canonical,
 )
 from app.leaderboard import store as lb_store
 from app.leaderboard.config import canonical_for
+from app.leaderboard.refresh_control import read_status, start_refresh
 from app.leaderboard.service import live_paper_stats, sector_seasonality
 from app.robustness.service import (
     param_sim_for,
@@ -67,24 +67,29 @@ def get_sector_seasonality(
     return sector_seasonality(db, settings, years=years)
 
 
-@router.post("/refresh")
+@router.post("/refresh", status_code=status.HTTP_202_ACCEPTED)
 def refresh(
     slugs: list[str] | None = Body(default=None, embed=True),
-    db: Session = Depends(get_db),
-    settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    return {"results": refresh_all(db, settings, slugs)}
+    """Kick a detached refresh of the canonical suite (or the given slugs) and
+    return at once. Poll GET /leaderboard/refresh/status. 409 if one is
+    already running."""
+    return start_refresh(slugs)
 
 
-@router.post("/refresh/{slug}")
-def refresh_one(
-    slug: str,
-    db: Session = Depends(get_db),
-    settings: Settings = Depends(get_settings),
-) -> dict[str, Any]:
+@router.get("/refresh/status")
+def refresh_status() -> dict[str, Any]:
+    """Progress of the running / last refresh: state (idle|running|done|error|
+    stalled), completed / total, current slug, per-slug results."""
+    return read_status()
+
+
+@router.post("/refresh/{slug}", status_code=status.HTTP_202_ACCEPTED)
+def refresh_one(slug: str) -> dict[str, Any]:
+    """Refresh a single canonical strategy, out of process (same status feed)."""
     if slug not in CANONICAL:
         raise NotFoundError(f"'{slug}' is not part of the canonical leaderboard suite.")
-    return run_canonical(db, settings, slug)
+    return start_refresh([slug])
 
 
 @router.post("/paper-deployments")

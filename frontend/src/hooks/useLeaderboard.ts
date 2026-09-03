@@ -28,11 +28,23 @@ export function useLeaderboardDetail(slug: string | undefined) {
   });
 }
 
+const REFRESH_STATUS_KEY = [...KEY, "refresh-status"] as const;
+
+export function useRefreshStatus() {
+  return useQuery({
+    queryKey: REFRESH_STATUS_KEY,
+    queryFn: leaderboardApi.refreshStatus,
+    staleTime: 0,
+    refetchInterval: (q) => (q.state.data?.state === "running" ? 2500 : false),
+    refetchOnWindowFocus: true,
+  });
+}
+
 export function useRefreshLeaderboard() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (slugs?: string[]) => leaderboardApi.refresh(slugs),
-    onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: REFRESH_STATUS_KEY }),
   });
 }
 
@@ -40,7 +52,7 @@ export function useRefreshOne() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (slug: string) => leaderboardApi.refreshOne(slug),
-    onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: REFRESH_STATUS_KEY }),
   });
 }
 
