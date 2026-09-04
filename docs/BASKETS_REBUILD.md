@@ -1,4 +1,11 @@
-# Baskets rebuild — Phase 1 report
+# Baskets rebuild — running report
+
+Phases 1-6 + the Golden Wealth tactical engine are shipped. This file is
+the chronological record; each phase section stands on its own.
+
+---
+
+# Phase 1 report
 
 Scope of Phase 1: the **product / config layer**. Turn the 26 mixed
 templates into 12 flagship investment products with a professional
@@ -277,30 +284,108 @@ CAGR small mixed moves, drawdowns basket-specific noise. Backtest-neutral
 by design — the value is fewer trades on the live path (real costs / tax).
 Sector caps are a forward guardrail that rarely bound historically.
 
-**Still open — correlation control** ("don't hold 10 names that are the
-same trade"): deferred to share the pairwise-correlation / hierarchical
-clustering machinery with **Alpha Discovery Engine P2** (universe
-reduction), which needs the same code. Risk-contribution analysis is a
-smaller follow-up on top of that.
+### Phase 4 part 3 — correlation control + risk contribution (done)
+
+- **`RiskLimits.max_pair_corr`** (0 ⇒ off) + `corr_lookback`. After the
+  sector cap, `engine._correlation_deconcentrate()` unions holdings whose
+  pairwise daily-return correlation exceeds the threshold into clusters;
+  the largest position in each cluster keeps its weight, the rest taper to
+  50 %, and the freed weight moves to holdings outside any correlated
+  cluster (genuine diversifiers) — leftover to cash. Shares the union-find
+  / correlation machinery with `app/discovery/screen.py`.
+- **`ResolveResult.risk_contribution`** — each holding's share of
+  portfolio variance (`wᵢ·(Σw)ᵢ / wᵀΣw`), on every resolve, surfaced on
+  the paper rebalance preview and each backtest `RebalanceSnapshot`.
+- Catalog: `max_pair_corr: 0.9` on Momentum Leaders + Adaptive Alpha.
+  8y backtest **exactly neutral** across all 12 products — Indian
+  large/mid caps don't sustain >0.9 pairwise daily correlation on a
+  rolling window, so it never fires historically. It is a live-path guard
+  against the ranking bunching into near-identical names, not a return
+  knob; tightening it to force a backtest effect would be curve-fitting.
 
 ---
 
-## Deferred (later phases)
+# Phase 5 — universe management + eligibility screen (done)
 
-- **Phase 3 follow-up** — migrate the scanner + seasonality regime logic
-  onto the shared `app/regime/` engine.
-- **Phase 4 follow-up** — correlation control + risk-contribution (shared
-  with Discovery P2).
-- **Phase 5** — universe management with metadata + eligibility screen;
-  pre-scoring data-quality gate.
-- **Phase 6** — factor-attribution explainability store on rebalance
-  events; rolling metrics + up/down capture; full test matrix.
-- **Dynamic Sector Rotation** currently concentrates in strong sectors via
-  a combined sector universe; the explicit sector-score → top-3-sector
-  allocation is Phase 2/4.
-- **Golden Wealth** ships with the strategic allocation; the tactical
-  tilt-within-ranges engine (folding in Permanent Portfolio / 60-40 /
-  Risk-Parity Lite as internal models) is Phase 2.
+- **`app/baskets/eligibility.py`** — `EligibilityGate` +
+  `assess_member` / `screen_members`: a data-quality + tradeability bar
+  for a sleeve's candidates (history length, staleness, internal gaps,
+  penny-price floor, optional median-turnover liquidity test), with a
+  per-member reason list and stats.
+- **`universes.py`** — metadata for every named pool (`label`,
+  selection `intent`, `curation`) via `describe()` / `catalog()`.
+- **Service + API** — `universe_catalog()` and `screen_universe()` run the
+  screen against live daily candles. `GET /baskets/universes` and
+  `GET /baskets/universes/{name}/screen` — a read-only "what's tradeable
+  right now, and why not" view that never touches the scoring path.
+- The rebalance engine emits a `stale data` note when a held member's
+  newest bar is > 30 d before `as_of` (visibility only, no exclusion — a
+  binding gate stays opt-in through `EligibilityGate`).
+- Frontend: `BasketUniversesPage` (`/baskets/universes`).
+
+---
+
+# Phase 6 — factor-attribution explainability (done)
+
+- **`engine.attribution_of(res)`** — a serialisable "why these holdings"
+  record: per sleeve, each name with its composite score, per-factor
+  ranks, final weight and held/new status, plus the regime, dropped
+  names, risk contribution and notes.
+- Stored on `basket_rebalance_events.attribution` (nullable JSONB,
+  migration `b4c9d2e5f6a8`); the paper rebalance / deploy write it and
+  `GET /baskets/{id}/events` returns it. The backtest result carries
+  `final_attribution` (the last rebalance — what a user deploying today
+  actually gets).
+- **New backtest metrics** — `up_capture_pct` / `down_capture_pct`
+  (calendar-month buckets vs benchmark) and `rolling_12m` min / median /
+  max return. Added to the catalog summary whitelist.
+- Frontend: `AttributionPanel` on the basket detail page (under the
+  backtest, and expandable per row in the rebalance history);
+  `MetricsRow` shows the new capture / rolling stats.
+
+---
+
+# Golden Wealth — tactical tilt-within-bands (done)
+
+- **`app/baskets/tactical.py`** — an allocation overlay that shifts a
+  strategic multi-asset basket's sleeve weights inside hard per-sleeve
+  bands each rebalance. Models: `strategic` (identity), `trend_tilt`
+  (default — lean toward the asset with the stronger 200-DMA + 6-month
+  momentum; never lean growth up in a `risk_off` regime), `risk_parity_lite`,
+  `permanent_portfolio`, `sixty_forty`. A `max_step_pct` cap keeps every
+  sleeve within N points of strategic per rebalance.
+- **`spec.TacticalSpec`** — `model` + `max_step_pct` + per-sleeve
+  `[strategic, floor, ceiling]` bands, validated so band strategics match
+  sleeve weights, every sleeve is covered, and floors/ceilings can
+  bracket 100. `resolve_targets` applies it before the sleeve loop;
+  `SleeveResolution.target_pct` carries the tilted weight; backtest
+  warm-up bumped to 210 bars when a tilt is active.
+- Golden Wealth switched to `trend_tilt` (equity 35-60 / midcap 5-20 /
+  bonds 15-30 / gold 10-30 / liquid 5-20, 8-pt step). 8y backtest:
+  **CAGR 12.03 → 13.02, Sharpe 1.407 → 1.422, MaxDD -18.67 → -18.73,
+  turnover 24.9 → 19.2** — a modest genuine gain with *lower* churn
+  (rebalancing to a slowly-moving target beats snapping to fixed weights
+  quarterly).
+
+---
+
+## Deferred / assessed
+
+- **Phase 3 follow-up (migrate scanner + seasonality regime onto the
+  shared engine) — not worth doing.** There is no real duplication: the
+  scanner has no index-level regime concept (only per-stock trend
+  factors), `app/seasonality/regime.py` is a monthly point-in-time
+  2×3 (trend × vol) classifier for the research pipeline, and
+  `app/adaptive_options/regime.py` is an IV-rank/term-structure options
+  classifier. Different time semantics and purposes; forcing one
+  abstraction would lose meaning for no gain. They already share the live
+  read via `/market/regime` and the insights briefing.
+- **Dynamic Sector Rotation** still concentrates via a combined sector
+  universe; an explicit sector-score → top-3-sector allocation layer
+  remains a possible enhancement.
+- **Discovery P1b** — fill the full ETF universe + USD/INR (needs
+  `TWELVEDATA_API_KEY` or more MCP CSV fetches into
+  `data/discovery_seed/`).
 
 ## Confirmed constraints
 
