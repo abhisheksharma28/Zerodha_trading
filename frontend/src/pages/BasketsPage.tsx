@@ -1,12 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Layers, Loader2, Plus } from "lucide-react";
+import { Layers, Loader2, Plus, X } from "lucide-react";
 
 import type { BasketSpec, BasketTemplate, Frequency, Sleeve } from "@/api/baskets";
 import { basketsApi } from "@/api/baskets";
 import { SleeveEditor, emptySleeve } from "@/components/baskets/SleeveEditor";
 import { PageHeader } from "@/components/PageHeader";
-import { SectionCard } from "@/components/SectionCard";
 import { Sparkline } from "@/components/Sparkline";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +31,7 @@ export default function BasketsPage() {
   const create = useCreateBasket();
 
   const [open, setOpen] = useState(false);
+  const [templateName, setTemplateName] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("");
@@ -49,6 +49,7 @@ export default function BasketsPage() {
     sleeves.every((sl) => sl.members.length > 0);
 
   const resetForm = () => {
+    setTemplateName(null);
     setName("");
     setDescription("");
     setCategory("");
@@ -64,6 +65,7 @@ export default function BasketsPage() {
     const t = catalog?.templates.find((x) => x.key === key);
     if (!t) return;
     setOpen(true);
+    setTemplateName(t.name);
     setName(t.name);
     setDescription(t.description);
     setCategory(t.category);
@@ -109,21 +111,73 @@ export default function BasketsPage() {
 
   const rows = useMemo(() => baskets ?? [], [baskets]);
 
+  const closeForm = () => {
+    resetForm();
+    setOpen(false);
+  };
+
+  // esc-to-close + lock the page scroll while the modal is up
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeForm();
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Baskets"
         subtitle="Smallcase-style portfolios — fixed-weight sleeves with an optional rotation rule, rebalanced on a schedule and deployable to the paper account."
         actions={
-          <Button size="sm" onClick={() => setOpen((o) => !o)}>
+          <Button
+            size="sm"
+            onClick={() => {
+              if (open) closeForm();
+              else {
+                resetForm();
+                setOpen(true);
+              }
+            }}
+          >
             <Plus className="mr-1 h-4 w-4" /> New basket
           </Button>
         }
       />
 
       {open && (
-        <SectionCard title="New basket" index={1}>
-          <div className="flex flex-col gap-4 p-4">
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:p-8"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeForm();
+          }}
+        >
+          <div className="my-auto w-full max-w-3xl rounded-lg border border-line-strong bg-surface shadow-2xl">
+            <div className="flex items-center justify-between border-b border-line px-4 py-3">
+              <div>
+                <p className="font-display text-sm font-semibold text-fg">New basket</p>
+                {templateName && (
+                  <p className="text-[11px] text-accent">
+                    Loaded from “{templateName}” — review &amp; adjust below
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={closeForm}
+                className="rounded-md p-1 text-fg-muted hover:bg-elevated"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          <div className="flex max-h-[80vh] flex-col gap-4 overflow-y-auto p-4">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
               <Field label="Name">
                 <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="All-Weather" />
@@ -190,13 +244,7 @@ export default function BasketsPage() {
                 {create.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
                 Create &amp; backtest
               </Button>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  resetForm();
-                  setOpen(false);
-                }}
-              >
+              <Button variant="ghost" onClick={closeForm}>
                 Cancel
               </Button>
               {!canSubmit && (
@@ -206,7 +254,8 @@ export default function BasketsPage() {
               )}
             </div>
           </div>
-        </SectionCard>
+          </div>
+        </div>
       )}
 
       {catalog && catalog.templates.length > 0 && (
