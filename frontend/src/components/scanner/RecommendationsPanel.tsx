@@ -6,9 +6,25 @@ import { SectionCard } from "@/components/SectionCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAddIdeaToPaper } from "@/hooks/usePaperAccount";
+import { useLiveTicks } from "@/hooks/useLiveTick";
 import { useScanRecommendations, useScannerStatus, useTriggerScan } from "@/hooks/useMarketScanner";
 import { inr, num, pctSigned } from "@/lib/format";
 import { cn } from "@/lib/utils";
+
+const recSymbol = (r: ScanRecommendation) => `${r.exchange}:${r.tradingsymbol}`;
+
+// Where price sits between SL (−1), entry (0) and T1 (+1), from a live LTP.
+// Matches the backend `progress` semantics so the two agree between polls.
+function liveProgress(rec: ScanRecommendation, ltp: number): number | null {
+  const { entry, stop_loss: sl, target_1: t1 } = rec;
+  if (entry == null || sl == null || t1 == null) return null;
+  if (rec.direction === "LONG") {
+    if (ltp >= entry) return t1 > entry ? (ltp - entry) / (t1 - entry) : null;
+    return entry > sl ? -((entry - ltp) / (entry - sl)) : null;
+  }
+  if (ltp <= entry) return entry > t1 ? (entry - ltp) / (entry - t1) : null;
+  return sl > entry ? -((ltp - entry) / (sl - entry)) : null;
+}
 
 const dirTone = (d: string) => (d === "LONG" ? "text-pos" : "text-neg");
 
@@ -109,27 +125,68 @@ function ScoreBadge({ rec }: { rec: ScanRecommendation }) {
   );
 }
 
-function ProgressToTarget({ rec }: { rec: ScanRecommendation }) {
-  const p = rec.progress;
-  if (p == null) return null;
-  const pct = Math.max(0, Math.min(100, (p / 1) * 100));
-  const past = p < 0;
+// Entry / SL / T1 bar with a live marker that tracks the streaming LTP.
+function ProgressToTarget({
+  rec,
+  liveLtp,
+  streaming,
+}: {
+  rec: ScanRecommendation;
+  liveLtp?: number | null;
+  streaming?: boolean;
+}) {
+  const ltp = liveLtp ?? rec.last_ltp ?? null;
+  const live = liveLtp != null;
+  const p = (ltp != null ? liveProgress(rec, ltp) : null) ?? rec.progress;
+  if (p == null && ltp == null) return null;
+
+  // track: SL at 0%, entry at 50%, T1 at 100%
+  const clamped = Math.max(-1.15, Math.min(1.15, p ?? 0));
+  const markerPct = Math.max(1, Math.min(99, 50 + clamped * 50));
+  const adverse = (p ?? 0) < 0;
+  const fmt = (v: number | null) => (v == null ? "—" : num(v, 2));
+
   return (
     <div className="mt-2">
-      <div className="flex justify-between text-[10px] text-fg-faint">
-        <span>SL</span>
-        <span>entry</span>
-        <span>T1</span>
+      <div className="mb-1 flex items-center justify-between text-[10px] tabular-nums">
+        <span className="text-neg">SL {fmt(rec.stop_loss)}</span>
+        <span className="text-fg-muted">Entry {fmt(rec.entry)}</span>
+        <span className="text-pos">T1 {fmt(rec.target_1)}</span>
       </div>
-      <div className="relative mt-0.5 h-1.5 rounded-full bg-elevated">
-        <div className="absolute inset-y-0 left-1/2 w-px bg-line-strong" />
+      <div className="relative h-2 rounded-full bg-elevated">
+        <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-line-strong" />
         <div
-          className={cn("absolute inset-y-0 rounded-full", past ? "bg-neg" : "bg-pos")}
-          style={{
-            left: past ? `${50 + pct * 0.5}%` : "50%",
-            width: past ? `${Math.min(50, -p * 50)}%` : `${pct * 0.5}%`,
-          }}
+          className={cn("absolute inset-y-0 rounded-full", adverse ? "bg-neg/70" : "bg-pos/70")}
+          style={{ left: adverse ? `${markerPct}%` : "50%", width: `${Math.abs(markerPct - 50)}%` }}
         />
+        <div
+          className={cn(
+            "absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-surface",
+            adverse ? "bg-neg" : "bg-pos",
+            live && "ring-2 ring-accent/40",
+          )}
+          style={{ left: `${markerPct}%` }}
+          title={ltp != null ? `LTP ${num(ltp, 2)}` : undefined}
+        />
+      </div>
+      <div className="mt-1 text-center text-[10px]">
+        <span
+          className={cn(
+            "tabular-nums font-semibold",
+            ltp == null ? "text-fg-faint" : adverse ? "text-neg" : "text-pos",
+          )}
+        >
+          {live && streaming && (
+            <span className="mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-pos align-middle" />
+          )}
+          LTP {ltp == null ? "—" : num(ltp, 2)}
+        </span>
+        {p != null && (
+          <span className="ml-1 text-fg-faint">
+            · {p >= 0 ? "+" : ""}
+            {num(p * 100, 0)}% to T1
+          </span>
+        )}
       </div>
     </div>
   );
@@ -254,13 +311,18 @@ function EquityCard({
   rec,
   siblingStyle,
   taken,
+  liveLtp,
+  streaming,
 }: {
   rec: ScanRecommendation;
   siblingStyle: string | null;
   taken: boolean;
+  liveLtp?: number | null;
+  streaming?: boolean;
 }) {
   const fund = rec.fundamentals as { bias?: string } | null;
   const days = rec.trade_style === "EQUITY_DELIVERY" ? estDays(rec) : null;
+  const ltp = liveLtp ?? rec.last_ltp ?? null;
   return (
     <div className="rounded-lg border border-line bg-surface p-3">
       <div className="flex items-start justify-between gap-2">
@@ -294,7 +356,14 @@ function EquityCard({
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-fg-muted">
         <span className="tabular-nums">R:R {rec.rr == null ? "—" : num(rec.rr, 2)}</span>
         {rec.risk_pct != null && <span className="tabular-nums">risk {num(rec.risk_pct, 2)}%</span>}
-        {rec.last_ltp != null && <span className="tabular-nums">LTP {num(rec.last_ltp, 2)}</span>}
+        {ltp != null && (
+          <span
+            className={cn("tabular-nums", liveLtp != null && streaming && "text-fg")}
+            title={liveLtp != null ? "live" : "last checked"}
+          >
+            LTP {num(ltp, 2)}
+          </span>
+        )}
         <span>entry: {rec.entry_type.toLowerCase()}</span>
         {days != null && <span>~{days}d to T1</span>}
         {fund?.bias && fund.bias !== "NEUTRAL" && (
@@ -304,7 +373,7 @@ function EquityCard({
         )}
       </div>
 
-      <ProgressToTarget rec={rec} />
+      <ProgressToTarget rec={rec} liveLtp={liveLtp} streaming={streaming} />
 
       {rec.status === "LIVE" && <AddToPaper rec={rec} taken={taken} />}
 
@@ -330,10 +399,14 @@ function OptionCard({
   rec,
   siblingStyle,
   taken,
+  liveLtp,
+  streaming,
 }: {
   rec: ScanRecommendation;
   siblingStyle: string | null;
   taken: boolean;
+  liveLtp?: number | null;
+  streaming?: boolean;
 }) {
   const o = rec.option_overlay;
   return (
@@ -395,6 +468,8 @@ function OptionCard({
         <span className="tabular-nums text-pos">{num(rec.target_1, 1)}</span>.
       </p>
 
+      <ProgressToTarget rec={rec} liveLtp={liveLtp} streaming={streaming} />
+
       {rec.status === "LIVE" && <AddToPaper rec={rec} taken={taken} />}
 
       <PairNote rec={rec} siblingStyle={siblingStyle} />
@@ -408,15 +483,31 @@ function Card({
   rec,
   siblingStyle,
   taken,
+  liveLtp,
+  streaming,
 }: {
   rec: ScanRecommendation;
   siblingStyle: string | null;
   taken: boolean;
+  liveLtp?: number | null;
+  streaming?: boolean;
 }) {
   return rec.trade_style === "OPTION" ? (
-    <OptionCard rec={rec} siblingStyle={siblingStyle} taken={taken} />
+    <OptionCard
+      rec={rec}
+      siblingStyle={siblingStyle}
+      taken={taken}
+      liveLtp={liveLtp}
+      streaming={streaming}
+    />
   ) : (
-    <EquityCard rec={rec} siblingStyle={siblingStyle} taken={taken} />
+    <EquityCard
+      rec={rec}
+      siblingStyle={siblingStyle}
+      taken={taken}
+      liveLtp={liveLtp}
+      streaming={streaming}
+    />
   );
 }
 
@@ -470,6 +561,15 @@ export function RecommendationsPanel() {
   const feedStale = status?.tick_feed?.stale;
   const paperTaken = useMemo(() => new Set(data?.paper_taken ?? []), [data?.paper_taken]);
 
+  // live LTP stream for every open idea, so the SL/entry/T1 bar tracks price
+  // between the 15 s recommendation polls
+  const liveSymbols = useMemo(
+    () => Array.from(new Set((data?.live ?? []).map(recSymbol))),
+    [data?.live],
+  );
+  const { ticks, status: streamStatus } = useLiveTicks(liveSymbols);
+  const streaming = streamStatus === "open";
+
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
     for (const r of data?.live ?? []) {
@@ -517,11 +617,16 @@ export function RecommendationsPanel() {
       >
         {phase === "open" ? "scanning" : phase === "tracking_only" ? "tracking only" : "market closed"}
       </Badge>
-      {feedStale && (
+      {feedStale ? (
         <Badge variant="warning" className="text-[10px]">
           tick feed stale
         </Badge>
-      )}
+      ) : streaming && Object.keys(ticks).length > 0 ? (
+        <Badge variant="success" className="text-[10px]">
+          <span className="mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-current align-middle" />
+          live prices
+        </Badge>
+      ) : null}
       {data?.summary && (
         <span className="text-[11px] font-normal text-fg-faint">
           {data.summary.live} live · {data.summary.target}✓ · {data.summary.sl}✗ · {data.summary.neutral}~ today
@@ -603,6 +708,8 @@ export function RecommendationsPanel() {
               rec={r}
               siblingStyle={siblingStyleFor(r)}
               taken={paperTaken.has(r.id)}
+              liveLtp={ticks[recSymbol(r)]?.ltp ?? null}
+              streaming={streaming}
             />
           ))}
         </div>
