@@ -48,6 +48,14 @@ def _closes_upto(bars: list[Any], as_of: datetime) -> list[float]:
     return out
 
 
+def _volumes_upto(bars: list[Any], as_of: datetime) -> list[float]:
+    out: list[float] = []
+    for b in bars:
+        if _as_dt(b.timestamp) <= as_of:
+            out.append(float(getattr(b, "volume", 0) or 0))
+    return out
+
+
 def _roc_pct(closes: list[float], lookback: int) -> float | None:
     if len(closes) <= lookback:
         return None
@@ -95,7 +103,12 @@ FundamentalsFn = Callable[[str], dict[str, float] | None]
 
 
 def _price_factor_raw(
-    factor: str, closes: list[float], rule: RuleSpec
+    factor: str,
+    closes: list[float],
+    rule: RuleSpec,
+    *,
+    volumes: list[float] | None = None,
+    market_closes: list[float] | None = None,
 ) -> float | None:
     """Raw value for a price factor in the composite score. Higher = better.
     Uses the multi-horizon factor library (app.baskets.factors)."""
@@ -105,6 +118,10 @@ def _price_factor_raw(
         return _f.low_vol_score(closes, min(rule.lookback, 90))
     if factor == "trend":
         return _f.trend_composite(closes, rule.trend_ma or 200)
+    if factor == "rs":
+        return _f.relative_strength(closes, market_closes, min(rule.lookback, 126))
+    if factor == "volume":
+        return _f.volume_trend(volumes or [], closes)
     return None
 
 
@@ -114,21 +131,29 @@ def _composite_scores(
     as_of: datetime,
     rule: RuleSpec,
     fundamentals_fn: FundamentalsFn | None,
-) -> dict[str, float]:
-    """0..100 blended score per member from the rule's factor_weights.
+    *,
+    market_bars: list[Any] | None = None,
+) -> tuple[dict[str, float], dict[str, dict[str, float]]]:
+    """0..100 blended score per member from the rule's factor_weights, plus
+    a per-member {factor: 0..100 rank} breakdown for explainability.
 
-    Price factors (momentum / low_vol / trend) are always available.
-    Fundamental factors (value / quality / growth) only contribute when a
-    ``fundamentals_fn`` is supplied (the live / paper path); in a backtest
-    it is None and those weights are renormalised away.
+    Price factors (momentum / low_vol / trend / rs / volume) are computed
+    from bars. Fundamental factors (value / quality / growth) only
+    contribute when a ``fundamentals_fn`` is supplied (the live / paper
+    path); in a backtest it is None and those weights are renormalised
+    away. ``rs`` needs ``market_bars``; without it that weight drops out.
     """
     weights = dict(rule.factor_weights) or {"momentum": 0.6, "trend": 0.2, "low_vol": 0.2}
     if fundamentals_fn is None:
         weights = {f: w for f, w in weights.items() if f in _PRICE_FACTORS}
+    if market_bars is None:
+        weights.pop("rs", None)
     if not weights:
         weights = {"momentum": 1.0}
     wsum = sum(weights.values()) or 1.0
     weights = {f: w / wsum for f, w in weights.items()}
+
+    market_closes = _closes_upto(market_bars, as_of) if market_bars else None
 
     # per-factor raw values across members
     raw_by_factor: dict[str, dict[str, float]] = {}
@@ -136,7 +161,11 @@ def _composite_scores(
         vals: dict[str, float] = {}
         if factor in _PRICE_FACTORS:
             for m in members:
-                v = _price_factor_raw(factor, _closes_upto(bars_by_symbol[m], as_of), rule)
+                closes = _closes_upto(bars_by_symbol[m], as_of)
+                vols = _volumes_upto(bars_by_symbol[m], as_of) if factor == "volume" else None
+                v = _price_factor_raw(
+                    factor, closes, rule, volumes=vols, market_closes=market_closes
+                )
                 if v is not None:
                     vals[m] = v
         else:
@@ -149,17 +178,22 @@ def _composite_scores(
     ranks_by_factor = {f: _pct_ranks(v) for f, v in raw_by_factor.items()}
 
     scores: dict[str, float] = {}
+    breakdown: dict[str, dict[str, float]] = {}
     for m in members:
         num = 0.0
         wtot = 0.0
+        row: dict[str, float] = {}
         for factor, w in weights.items():
             r = ranks_by_factor.get(factor, {}).get(m)
             if r is None:
                 continue
+            row[factor] = round(100.0 * r, 1)
             num += w * r
             wtot += w
         scores[m] = 100.0 * (num / wtot) if wtot > 0 else 0.0
-    return scores
+        if row:
+            breakdown[m] = row
+    return scores, breakdown
 
 
 # --------------------------------------------------------------------------
@@ -173,6 +207,7 @@ class SleeveResolution:
     target_pct: float
     selected: dict[str, float]  # symbol -> weight (fraction of the whole basket)
     scores: dict[str, float] = field(default_factory=dict)  # 0..100, when a scored rule ran
+    factor_ranks: dict[str, dict[str, float]] = field(default_factory=dict)  # sym -> {factor: 0..100}
     cash_pct: float = 0.0
     notes: list[str] = field(default_factory=list)
 
@@ -198,10 +233,11 @@ class ResolveResult:
 
 def _member_metric(
     sleeve: SleeveSpec, bars_by_symbol: dict[str, list[Any]], as_of: datetime,
-    fundamentals_fn: FundamentalsFn | None,
-) -> tuple[dict[str, float], list[str], list[str]]:
+    fundamentals_fn: FundamentalsFn | None, *, market_bars: list[Any] | None = None,
+) -> tuple[dict[str, float], list[str], list[str], dict[str, dict[str, float]]]:
     """(-> score/ROC per member that passes entry gates, -> gate notes,
-    -> members that failed only the trend/min-ROC gate)."""
+    -> members that failed only the trend/min-ROC gate,
+    -> per-member factor-rank breakdown for a scored rule)."""
     rule = sleeve.rule
     have = [m for m in sleeve.members if bars_by_symbol.get(m)]
     notes: list[str] = []
@@ -210,7 +246,9 @@ def _member_metric(
         notes.append(f"no price history for {', '.join(missing)}")
 
     if rule.type == "composite_score":
-        scores = _composite_scores(have, bars_by_symbol, as_of, rule, fundamentals_fn)
+        scores, breakdown = _composite_scores(
+            have, bars_by_symbol, as_of, rule, fundamentals_fn, market_bars=market_bars
+        )
         # entry gate: trend filter + min-ROC still apply as hard screens
         passed: dict[str, float] = {}
         soft_fail: list[str] = []
@@ -226,7 +264,7 @@ def _member_metric(
                 soft_fail.append(m)
                 continue
             passed[m] = scores.get(m, 0.0)
-        return passed, notes, soft_fail
+        return passed, notes, soft_fail, {m: breakdown[m] for m in passed if m in breakdown}
 
     # momentum_top_k
     passed = {}
@@ -246,7 +284,7 @@ def _member_metric(
                 soft_fail.append(m)
                 continue
         passed[m] = roc
-    return passed, notes, soft_fail
+    return passed, notes, soft_fail, {}
 
 
 def _rank_members(
@@ -256,10 +294,11 @@ def _rank_members(
     *,
     held: frozenset[str] = frozenset(),
     fundamentals_fn: FundamentalsFn | None = None,
-) -> tuple[list[str], dict[str, float], list[str]]:
+    market_bars: list[Any] | None = None,
+) -> tuple[list[str], dict[str, float], list[str], dict[str, dict[str, float]]]:
     """Apply the sleeve rule with anti-churn hysteresis.
 
-    -> (selected symbols, {symbol: metric/score}, notes)
+    -> (selected symbols, {symbol: metric/score}, notes, factor-rank breakdown)
     """
     rule = sleeve.rule
     if not rule.active:
@@ -268,9 +307,11 @@ def _rank_members(
         missing = [m for m in sleeve.members if not bars_by_symbol.get(m)]
         if missing:
             notes.append(f"no price history for {', '.join(missing)}")
-        return have, {}, notes
+        return have, {}, notes, {}
 
-    metric, notes, soft_fail = _member_metric(sleeve, bars_by_symbol, as_of, fundamentals_fn)
+    metric, notes, soft_fail, breakdown = _member_metric(
+        sleeve, bars_by_symbol, as_of, fundamentals_fn, market_bars=market_bars
+    )
 
     # rank everything that cleared the hard screens, best first
     ranked = sorted(metric.items(), key=lambda kv: kv[1], reverse=True)
@@ -302,7 +343,7 @@ def _rank_members(
 
     if soft_fail and not selected:
         notes.append("rule cleared no members — sleeve goes to cash")
-    return selected, metric, notes
+    return selected, metric, notes, {m: breakdown[m] for m in selected if m in breakdown}
 
 
 def _weight_within_sleeve(
@@ -386,7 +427,11 @@ def resolve_targets(
     *,
     current_holdings: dict[str, int] | set[str] | None = None,
     fundamentals_fn: FundamentalsFn | None = None,
+    market_bars: list[Any] | None = None,
 ) -> ResolveResult:
+    """``market_bars`` is the basket benchmark's bar series; when supplied it
+    powers the ``rs`` (relative strength) composite factor. Without it that
+    factor's weight is renormalised away."""
     as_of_dt = _as_dt(as_of)
     held: frozenset[str] = frozenset(
         current_holdings if isinstance(current_holdings, (set, frozenset))
@@ -410,8 +455,9 @@ def resolve_targets(
     per_sleeve: list[SleeveResolution] = []
 
     for sleeve in spec.sleeves:
-        selected, metric, s_notes = _rank_members(
-            sleeve, bars_by_symbol, as_of_dt, held=held, fundamentals_fn=fundamentals_fn
+        selected, metric, s_notes, factor_ranks = _rank_members(
+            sleeve, bars_by_symbol, as_of_dt, held=held,
+            fundamentals_fn=fundamentals_fn, market_bars=market_bars,
         )
         within = _weight_within_sleeve(sleeve, selected, metric, bars_by_symbol, as_of_dt)
         scale = risk_scale if sleeve.risk_asset else 1.0
@@ -425,7 +471,7 @@ def resolve_targets(
             SleeveResolution(
                 sleeve_id=sleeve.id, name=sleeve.name, target_pct=sleeve.weight_pct,
                 selected=sleeve_weights, scores={k: round(v, 1) for k, v in scores.items()},
-                cash_pct=cash_pct, notes=s_notes,
+                factor_ranks=factor_ranks, cash_pct=cash_pct, notes=s_notes,
             )
         )
         notes.extend(f"{sleeve.id}: {n}" for n in s_notes)

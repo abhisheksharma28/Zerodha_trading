@@ -75,6 +75,26 @@ def test_low_vol_score_prefers_the_calmer_name():
     assert sc_calm > sc_wild  # negated vol -> calmer name is the larger (closer to 0)
 
 
+def test_relative_strength_is_excess_over_the_market():
+    stock = _trend(200, 0.0015)
+    mkt = _trend(200, 0.0005)
+    rs = f.relative_strength(stock, mkt, 126)
+    assert rs is not None and rs > 0  # outperforming
+    assert f.relative_strength(stock, _trend(200, 0.003), 126) < 0  # lagging a hotter market
+    assert f.relative_strength(stock, None, 126) is None  # no market series -> factor drops out
+
+
+def test_volume_trend_positive_when_volume_expands_into_a_rising_price():
+    closes = _trend(120, 0.001)
+    vols = [1000.0] * 90 + [2500.0] * 30  # recent surge
+    v = f.volume_trend(vols, closes, short=21, long=63)
+    assert v is not None and v > 0
+    # same surge but into a falling price -> negative (distribution)
+    down = _trend(120, -0.001)
+    assert f.volume_trend(vols, down, short=21, long=63) < 0
+    assert f.volume_trend([1000.0] * 10, closes) is None  # not enough history
+
+
 def test_annualisation_factor_is_sqrt_252():
     # sanity: total_vol of a 1%/day alternating series is in a plausible band
     alt = [100.0]

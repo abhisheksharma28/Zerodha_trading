@@ -36,12 +36,14 @@ WEIGHTINGS = ("equal", "inverse_vol", "momentum_weighted", "score_weighted")
 RULE_TYPES = ("none", "momentum_top_k", "composite_score")
 FREQUENCIES = ("weekly", "monthly", "quarterly")
 
-# factors the composite_score rule can blend. The first three are computed
-# causally from price bars in a backtest; the last three come from
-# present-day fundamentals (yfinance) so they carry look-ahead bias in a
-# historical backtest and are only applied when explicitly weighted.
-COMPOSITE_FACTORS = ("momentum", "low_vol", "trend", "value", "quality", "growth")
-_PRICE_FACTORS = frozenset({"momentum", "low_vol", "trend"})
+# factors the composite_score rule can blend. The price factors are
+# computed causally from price / volume bars (available in a backtest);
+# the fundamental factors come from present-day fundamentals (yfinance),
+# carry look-ahead bias in a historical backtest, and are only applied on
+# the live / paper signal.
+_PRICE_FACTORS = frozenset({"momentum", "low_vol", "trend", "rs", "volume"})
+_FUNDAMENTAL_FACTORS = ("value", "quality", "growth")
+COMPOSITE_FACTORS = (*sorted(_PRICE_FACTORS), *_FUNDAMENTAL_FACTORS)
 
 
 class SpecError(ValueError):

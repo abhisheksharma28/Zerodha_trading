@@ -388,7 +388,10 @@ def run_backtest(
         is_rebalance = pkey not in seen_periods
         if is_rebalance:
             seen_periods.add(pkey)
-            res = resolve_targets(spec, bars_by_symbol, dt, current_holdings=holdings)
+            res = resolve_targets(
+                spec, bars_by_symbol, dt, current_holdings=holdings,
+                market_bars=bench_bars,
+            )
             prices = {s: price_on(s, dt) or 0.0 for s in set(spec.symbols) | set(holdings)}
             reasons: dict[str, str] = {}
             for sym in set(res.weights) | set(holdings):

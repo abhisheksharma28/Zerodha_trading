@@ -82,17 +82,24 @@ def _composite(lookback: int, top_k: int, factor_weights: dict[str, float], *,
     }
 
 
-# blended factor profiles. Only momentum / trend / low_vol apply in a
-# backtest; quality / growth / value are added to the live signal.
-FW_QUALITY_MOMENTUM = {"momentum": 0.35, "trend": 0.15, "quality": 0.35, "growth": 0.15}
-FW_MOMENTUM = {"momentum": 0.55, "trend": 0.25, "low_vol": 0.10, "quality": 0.10}
-FW_ADAPTIVE = {"momentum": 0.40, "trend": 0.20, "low_vol": 0.10,
-               "quality": 0.20, "value": 0.10}
-FW_GROWTH = {"momentum": 0.45, "trend": 0.20, "growth": 0.25, "quality": 0.10}
+# blended factor profiles. Price factors (momentum / trend / low_vol / rs /
+# volume) apply in a backtest; quality / growth / value are added on the
+# live signal only. rs (relative strength vs the benchmark) needs the
+# benchmark bar series — supplied on both the backtest and live paths.
+FW_QUALITY_MOMENTUM = {"momentum": 0.30, "trend": 0.15, "rs": 0.10,
+                       "quality": 0.35, "growth": 0.10}
+# momentum stays clearly primary; rs / volume confirm rather than dilute it
+# (they add signal across regimes and once fundamentals are live, but are
+# collinear with 6m momentum in a price-only backtest)
+FW_MOMENTUM = {"momentum": 0.50, "trend": 0.20, "rs": 0.10, "low_vol": 0.10, "quality": 0.10}
+FW_ADAPTIVE = {"momentum": 0.35, "trend": 0.15, "rs": 0.10, "low_vol": 0.10,
+               "volume": 0.05, "quality": 0.15, "value": 0.10}
+FW_GROWTH = {"momentum": 0.35, "trend": 0.20, "rs": 0.10, "growth": 0.25, "quality": 0.10}
 FW_QUALITY = {"low_vol": 0.20, "trend": 0.15, "quality": 0.45, "growth": 0.10, "value": 0.10}
 FW_DEFENSIVE = {"low_vol": 0.50, "trend": 0.15, "quality": 0.30, "value": 0.05}
-FW_CONSUMPTION = {"momentum": 0.35, "trend": 0.15, "growth": 0.30, "quality": 0.15, "value": 0.05}
-FW_SECTOR = {"momentum": 0.60, "trend": 0.30, "low_vol": 0.10}
+FW_CONSUMPTION = {"momentum": 0.30, "trend": 0.15, "rs": 0.10, "growth": 0.30,
+                  "quality": 0.10, "value": 0.05}
+FW_SECTOR = {"momentum": 0.40, "trend": 0.25, "rs": 0.20, "volume": 0.15}
 
 
 def _p(**kw: Any) -> dict[str, Any]:
@@ -253,9 +260,9 @@ CATALOG: list[dict[str, Any]] = [
             "Distinct from Momentum Leaders (one factor) and Growth Accelerators (business growth)",
         ],
         how_it_works=[
-            "Scores the universe on a blended factor model (momentum-tilted today; regime-adaptive weighting is Phase 2).",
+            "Scores the universe on a blended factor model — multi-horizon momentum, relative strength vs NIFTY 500, multi-MA trend, volume participation, low volatility, plus quality and value on the live signal.",
             "Holds the top 12, score-weighted, single-name cap 10%, monthly.",
-            "Live signal folds in quality and value from latest fundamentals; the backtest is price-factor only.",
+            "Regime-adaptive factor weighting (emphasise momentum in strong bulls, quality / low-vol in volatile tape) lands with the shared regime engine in Phase 3.",
             "Regime gate halves equity exposure when the Nifty is below its 200-day average.",
         ],
         spec={
@@ -437,9 +444,9 @@ CATALOG: list[dict[str, Any]] = [
             "10% gold sleeve as ballast",
         ],
         how_it_works=[
-            "Ranks a combined universe of nine sector books (Financials, IT, Pharma, Auto, FMCG, Metals, Energy, Infra, Realty) on a momentum + trend composite.",
+            "Ranks a combined universe of nine sector books (Financials, IT, Pharma, Auto, FMCG, Metals, Energy, Infra, Realty) on a momentum + relative-strength + trend + volume composite.",
             "Holds the top 10 at 90% weight, equal weighted, monthly.",
-            "Phase 2 adds an explicit sector score → top-3-sector allocation on top of this.",
+            "An explicit sector score → top-3-sector allocation on top of this lands in Phase 4.",
             "10% gold.",
         ],
         spec={

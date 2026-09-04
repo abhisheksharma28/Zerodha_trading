@@ -234,6 +234,31 @@ def test_composite_score_rule_ranks_and_exposes_scores():
     assert res.score_of("WIN") is not None and res.score_of("WIN") >= res.score_of("MID")
 
 
+def test_composite_score_uses_relative_strength_and_exposes_factor_ranks():
+    spec = parse_spec({"sleeves": [
+        {"id": "eq", "name": "Eq", "weight_pct": 100, "weighting": "score_weighted",
+         "members": ["LEAD", "LAG"],
+         "rule": {"type": "composite_score", "lookback": 60, "top_k": 1, "trend_ma": 0,
+                  "factor_weights": {"momentum": 0.4, "rs": 0.6}}},
+    ]})
+    bars = {
+        "LEAD": _series("LEAD", 100, 0.004, 200),
+        "LAG": _series("LAG", 100, 0.001, 200),
+    }
+    market = _series("NIFTY 50", 100, 0.002, 200)
+
+    # with a market series the rs factor participates and LEAD (out-performer) wins
+    res = resolve_targets(spec, bars, datetime(2020, 6, 1), market_bars=market)
+    assert set(res.weights) == {"LEAD"}
+    ranks = res.per_sleeve[0].factor_ranks
+    assert "LEAD" in ranks and set(ranks["LEAD"]) == {"momentum", "rs"}
+    assert ranks["LEAD"]["rs"] >= ranks.get("LAG", {}).get("rs", 0)
+
+    # without a market series the rs weight is renormalised away, no rs rank
+    res2 = resolve_targets(spec, bars, datetime(2020, 6, 1))
+    assert set(res2.per_sleeve[0].factor_ranks.get("LEAD", {})) == {"momentum"}
+
+
 def test_plan_orders_always_exits_a_dropped_name():
     prices = {"A": 100.0, "B": 50.0}
     pv = 100_000.0

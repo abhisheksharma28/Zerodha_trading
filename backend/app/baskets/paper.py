@@ -106,17 +106,18 @@ def _tagged_state(db: Session, account_id, basket_id) -> tuple[dict[str, int], f
     return net, cash_flow
 
 
-def _history(db: Session, settings: Settings, spec):
+def _history(db: Session, settings: Settings, spec, *, extra: tuple[str, ...] = ()):
     warmup = _warmup_bars(spec)
     days = int(warmup * 1.6) + 40
     end = datetime.now().date()
     start = end.fromordinal(end.toordinal() - days)
+    want_syms = list(dict.fromkeys([*spec.symbols, *extra]))
     candles, skipped = fetch_candles(
-        db, settings, symbols=list(spec.symbols), timeframe="1d",
+        db, settings, symbols=want_syms, timeframe="1d",
         start=start.isoformat(), end=end.isoformat(),
     )
     bars_by_symbol: dict[str, list] = {}
-    for want in spec.symbols:
+    for want in want_syms:
         for got, bars in candles.items():
             if got.upper() == want.upper():
                 bars_by_symbol[want] = bars
@@ -144,16 +145,12 @@ def _prices(db: Session, settings: Settings, refs: list[str], hist: dict[str, li
 
 
 def unit_cost_for_spec(db: Session, settings: Settings, spec) -> dict:
-    """Minimum capital to actually hold the basket at its target weights,
-    with integer-share constraints — NOT one share of the whole research
-    universe.
+    """Roughly the capital needed to hold one share of every name the basket
+    actually holds — NOT one share of the whole research universe.
 
-    For each sleeve we take the number of names it will actually hold
-    (``top_k`` / hold buffer for a ruled sleeve, all members for a static
-    one), estimate each held name's weight as ``sleeve_weight / k``, and
-    require enough capital that every held name can afford >= 1 share at
-    that weight. The constraining name is the priciest one that could be
-    picked, so this is a safe upper bound on the true minimum.
+    For each sleeve we take the number of names it will hold (``top_k`` /
+    hold buffer for a ruled sleeve, all members for a static one) and add
+    ``avg_member_price * k``. Static ETF sleeves contribute one share each.
 
     Deploying N "units" allocates ``unit_cost * N`` across the sleeves.
     """
@@ -176,13 +173,11 @@ def unit_cost_for_spec(db: Session, settings: Settings, spec) -> dict:
         k = rule.effective_hold_k if getattr(rule, "active", False) else len(sl.members)
         k = max(1, min(k, len(priced)))
         est_holdings += k
-        per_name_w = sl.weight / k  # fraction of the whole basket
-        # priciest k names are the worst case for "can I afford 1 share each"
-        constraining = sorted(priced, reverse=True)[:k]
-        for px in constraining:
-            need = max(need, px / per_name_w)
+        # one share of each of the ~k names the sleeve actually holds, using
+        # the average member price as the estimate of which k get picked
+        need += (sum(priced) / len(priced)) * k
 
-    unit_cost = round(need / 100.0) * 100.0 if need > 0 else round(sum(per.values()), 2)
+    unit_cost = round(need) if need > 0 else round(sum(per.values()), 2)
     return {
         "unit_cost": round(unit_cost, 2),
         "per_symbol": per,
@@ -297,7 +292,8 @@ def _do_rebalance_locked(
     net, cash_flow = _tagged_state(db, acct.id, b.id)
     basket_cash = float(b.capital) + cash_flow
 
-    hist, skipped = _history(db, settings, spec)
+    bench = (b.benchmark or "").strip()
+    hist, skipped = _history(db, settings, spec, extra=(bench,) if bench else ())
     if not hist:
         raise ValidationError("no price history for the basket members right now")
 
@@ -307,6 +303,7 @@ def _do_rebalance_locked(
     targets = resolve_targets(
         spec, hist, _as_dt(now.replace(tzinfo=None)),
         current_holdings=net, fundamentals_fn=fn,
+        market_bars=hist.get(bench) if bench else None,
     )
     refs = list(dict.fromkeys([*spec.symbols, *net.keys()]))
     prices = _prices(db, settings, refs, hist)

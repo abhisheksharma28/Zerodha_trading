@@ -9,8 +9,8 @@ Only price factors live here. Quality / growth / value come from latest
 fundamentals on the live signal and are handled in the engine, not here.
 
 Phase 2: multi-horizon momentum, multi-MA trend, downside-only volatility,
-distance from the 52-week high. Relative strength vs a market series and
-volume factors are a later increment.
+distance from the 52-week high, relative strength vs a market series, and
+a volume / participation trend.
 """
 
 from __future__ import annotations
@@ -142,3 +142,35 @@ def low_vol_score(closes: list[float], window: int) -> float | None:
         return None
     parts = [x for x in (dd, tv) if x is not None]
     return -(sum(parts) / len(parts))
+
+
+def relative_strength(
+    closes: list[float], market_closes: list[float] | None, lookback: int = 126
+) -> float | None:
+    """Excess return over the market series over ``lookback`` bars, in %.
+    Positive means the name is outperforming the benchmark."""
+    if not market_closes:
+        return None
+    r = roc(closes, lookback)
+    rm = roc(market_closes, lookback)
+    if r is None or rm is None:
+        return None
+    return r - rm
+
+
+def volume_trend(
+    volumes: list[float], closes: list[float], short: int = 21, long: int = 63
+) -> float | None:
+    """Relative volume (recent vs longer average), signed by the recent
+    price direction — expanding volume into a rising price reads as
+    accumulation and ranks higher."""
+    if len(volumes) < long + 1 or len(closes) < short + 1:
+        return None
+    v_short = sum(volumes[-short:]) / short
+    v_long = sum(volumes[-long:]) / long
+    if v_long <= 0:
+        return None
+    rel = v_short / v_long - 1.0
+    base = closes[-short - 1]
+    direction = 1.0 if (base > 0 and closes[-1] >= base) else -1.0
+    return rel * direction
