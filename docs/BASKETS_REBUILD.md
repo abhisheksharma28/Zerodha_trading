@@ -254,13 +254,43 @@ NIFTY 50 below all key averages, ~9 % off its 1-year high, but VIX calm.
 
 ---
 
+# Phase 4 — portfolio construction (3 of 4 done)
+
+- **Sector concentration caps** — `spec.risk.max_sector_pct` was parsed but
+  never applied. `app/baskets/sectors.py` maps members to NSE sectors
+  (ETF / gold / bond / cash buckets exempt); `engine._sector_cap()` trims
+  any over-cap equity sector in a single pass, places the freed weight into
+  under-cap sectors up to their headroom, the rest to cash. Applied after
+  the single-name cap, which is then re-checked. Catalog: 30 % on Momentum
+  Leaders / Adaptive Alpha / Growth Accelerators / Small & Midcap, 40 % on
+  Dynamic Sector Rotation, thematic / multi-asset products uncapped.
+- **Score-differential replacement** — `RuleSpec.replace_margin_pct`
+  (default 0.05): a held name gets a +5-point bump on its 0-100 composite
+  score when ranking, so a newcomer only displaces it once meaningfully
+  better. Stacks with the `hold_k` rank buffer.
+- **Tiered drift** — `plan_orders` is now `|drift| < band` → none;
+  `band … 1.5×band` → partial (half-step); `≥ 1.5×band` → full. Dropped /
+  new names always full. `to_weight` reports the actual post-trade weight.
+
+8y catalog backtest across both parts: **Sharpe flat** (±0.07),
+CAGR small mixed moves, drawdowns basket-specific noise. Backtest-neutral
+by design — the value is fewer trades on the live path (real costs / tax).
+Sector caps are a forward guardrail that rarely bound historically.
+
+**Still open — correlation control** ("don't hold 10 names that are the
+same trade"): deferred to share the pairwise-correlation / hierarchical
+clustering machinery with **Alpha Discovery Engine P2** (universe
+reduction), which needs the same code. Risk-contribution analysis is a
+smaller follow-up on top of that.
+
+---
+
 ## Deferred (later phases)
 
 - **Phase 3 follow-up** — migrate the scanner + seasonality regime logic
   onto the shared `app/regime/` engine.
-- **Phase 4** — portfolio construction: enforce sector caps (the
-  `max_sector_pct` field is currently parsed but not applied), correlation
-  control, risk-contribution, score-differential replacement, tiered drift.
+- **Phase 4 follow-up** — correlation control + risk-contribution (shared
+  with Discovery P2).
 - **Phase 5** — universe management with metadata + eligibility screen;
   pre-scoring data-quality gate.
 - **Phase 6** — factor-attribution explainability store on rebalance
