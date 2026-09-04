@@ -10,6 +10,7 @@ ingest run for reproducibility.
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import delete, select
@@ -174,3 +175,62 @@ def ingest_prices(
         "fx_rows": n_fx,
         "per_instrument": per,
     }
+
+
+# --- Twelve Data CSV helper + seed-file loader ------------------------
+
+def parse_twelvedata_csv(text: str) -> list[tuple[date, float]]:
+    """Twelve Data returns ``datetime;open;high;low;close;volume`` rows,
+    newest first. Keep (date, close)."""
+    out: list[tuple[date, float]] = []
+    for line in text.strip().splitlines():
+        line = line.strip()
+        if not line or line.lower().startswith("datetime"):
+            continue
+        parts = line.split(";")
+        if len(parts) < 5:
+            continue
+        try:
+            d = date.fromisoformat(parts[0][:10])
+            c = float(parts[4])
+        except ValueError:
+            continue
+        out.append((d, c))
+    return out
+
+
+_SEED_DIR = Path(__file__).resolve().parents[2] / "data" / "discovery_seed"
+
+
+def load_seed_dir(seed_dir: Path) -> tuple[Series, Series]:
+    """Read ``<SYMBOL>.csv`` (raw Twelve Data output) from a directory.
+    Files named like an FX pair (``USD-INR.csv``) go into the FX map."""
+    series: Series = {}
+    fx: Series = {}
+    for f in sorted(seed_dir.glob("*.csv")):
+        name = f.stem.upper()
+        pts = parse_twelvedata_csv(f.read_text())
+        if not pts:
+            continue
+        if "-" in name and len(name) <= 8:  # "USD-INR" -> "USD/INR"
+            fx[name.replace("-", "/")] = pts
+        else:
+            series[name] = pts
+    return series, fx
+
+
+if __name__ == "__main__":
+    import json
+
+    from app.db.session import SessionLocal
+
+    _series, _fx = load_seed_dir(_SEED_DIR)
+    _db = SessionLocal()
+    try:
+        result = ingest_prices(
+            _db, series=_series, fx=_fx, bar_interval="1month",
+            source="twelvedata", note=f"seed dir ({_SEED_DIR.name})",
+        )
+    finally:
+        _db.close()
+    print(json.dumps(result, indent=1))

@@ -89,6 +89,17 @@ def test_returns_frame_fx_adjusts_to_inr(db):
     assert math.isclose(inr["returns"]["SPY"][0], 0.01, abs_tol=1e-6)
 
 
+def test_parse_twelvedata_csv():
+    text = (
+        "datetime;open;high;low;close;volume\n"
+        "2026-08-01;749.44;779.37;748.79;767.05;833955700\n"
+        "2026-07-01;745;755.58;729.09;747.03;1064946100\n"
+        "bad line here\n"
+    )
+    pts = ingest.parse_twelvedata_csv(text)
+    assert pts == [(date(2026, 8, 1), 767.05), (date(2026, 7, 1), 747.03)]
+
+
 def test_returns_frame_reports_missing_symbols(db):
     ingest.ingest_prices(db, series={"SPY": _monthly(date(2019, 1, 1), 40, 0.005)}, source="test")
     fr = normalize.returns_frame(db, ["SPY", "QQQ"], currency="USD")
