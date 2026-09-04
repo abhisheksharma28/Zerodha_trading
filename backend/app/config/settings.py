@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     fundamentals_api_key: str = ""
     fundamentals_api_base: str = ""
 
+    # --- Twelve Data (Alpha Discovery Engine multi-asset history) ---
+    # Free tier: 800 calls/day, 8/min — https://twelvedata.com/apikey
+    # Only used by the one-off discovery ingest job, never on a request path.
+    twelvedata_api_key: str = ""
+    twelvedata_api_base: str = "https://api.twelvedata.com"
+
     # --- Research assistant ("Ask AI" chat) ---
     # Provider-agnostic; ASSISTANT_PROVIDER picks the backend:
     #   openai    - any OpenAI-compatible /chat/completions endpoint. The

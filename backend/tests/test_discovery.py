@@ -5,6 +5,8 @@ from __future__ import annotations
 import math
 from datetime import date
 
+import pytest
+
 from app.discovery import ingest, normalize, universe
 from app.discovery import service as disc_service
 
@@ -87,6 +89,39 @@ def test_returns_frame_fx_adjusts_to_inr(db):
     assert inr["fx_adjusted"] is True
     assert math.isclose(usd["returns"]["SPY"][0], 0.0, abs_tol=1e-9)
     assert math.isclose(inr["returns"]["SPY"][0], 0.01, abs_tol=1e-6)
+
+
+def test_twelvedata_series_parses_the_rest_response(monkeypatch):
+    from app.discovery import providers
+
+    class _Resp:
+        def raise_for_status(self): ...
+        def json(self):
+            return {"status": "ok", "values": [
+                {"datetime": "2020-01-01", "close": "100.0"},
+                {"datetime": "2020-02-01", "close": "105.5"},
+                {"datetime": "2020-03-01", "close": "0"},   # dropped (<= 0)
+            ]}
+
+    class _Client:
+        def get(self, url, params=None):
+            assert params["symbol"] == "SPY" and params["apikey"] == "k"
+            return _Resp()
+
+    monkeypatch.setattr(providers, "_throttle", lambda: None)
+    monkeypatch.setattr(providers, "get_settings", lambda: type(
+        "S", (), {"twelvedata_api_key": "k", "twelvedata_api_base": "http://x"})())
+    pts = providers.twelvedata_series("SPY", client=_Client())
+    assert pts == [(date(2020, 1, 1), 100.0), (date(2020, 2, 1), 105.5)]
+
+
+def test_twelvedata_series_raises_without_a_key(monkeypatch):
+    from app.discovery import providers
+
+    monkeypatch.setattr(providers, "get_settings", lambda: type(
+        "S", (), {"twelvedata_api_key": "", "twelvedata_api_base": "http://x"})())
+    with pytest.raises(RuntimeError, match="TWELVEDATA_API_KEY"):
+        providers.twelvedata_series("SPY")
 
 
 def test_parse_twelvedata_csv():

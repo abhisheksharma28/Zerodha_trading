@@ -219,17 +219,51 @@ def load_seed_dir(seed_dir: Path) -> tuple[Series, Series]:
     return series, fx
 
 
+def fetch_via_twelvedata(*, interval: str = "1month", start: str = "2004-01-01") -> tuple[Series, Series]:
+    """Pull every universe instrument + FX pair from the Twelve Data REST
+    API. Needs TWELVEDATA_API_KEY. One bad symbol is logged and skipped so
+    a single delisting doesn't abort the whole run."""
+    import httpx
+
+    from app.discovery.providers import twelvedata_series
+
+    series: Series = {}
+    fx: Series = {}
+    with httpx.Client(timeout=30.0) as client:
+        for u in U.all_instruments():
+            try:
+                series[u.symbol] = twelvedata_series(
+                    u.provider_symbol, interval=interval, start=start, client=client
+                )
+            except Exception as exc:  # noqa: BLE001 - one symbol must not stop the batch
+                logger.warning("discovery_fetch_failed", symbol=u.symbol, err=str(exc))
+        for pair in U.FX_PAIRS:
+            try:
+                fx[pair] = twelvedata_series(pair, interval=interval, start=start, client=client)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("discovery_fetch_failed", symbol=pair, err=str(exc))
+    return series, fx
+
+
 if __name__ == "__main__":
     import json
+    import sys
 
     from app.db.session import SessionLocal
 
-    _series, _fx = load_seed_dir(_SEED_DIR)
+    _mode = sys.argv[1] if len(sys.argv) > 1 else "seed"
+    if _mode == "fetch":
+        _series, _fx = fetch_via_twelvedata()
+        _note = "twelvedata REST fetch"
+    else:
+        _series, _fx = load_seed_dir(_SEED_DIR)
+        _note = f"seed dir ({_SEED_DIR.name})"
+
     _db = SessionLocal()
     try:
         result = ingest_prices(
             _db, series=_series, fx=_fx, bar_interval="1month",
-            source="twelvedata", note=f"seed dir ({_SEED_DIR.name})",
+            source="twelvedata", note=_note,
         )
     finally:
         _db.close()
