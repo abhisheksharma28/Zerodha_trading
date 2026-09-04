@@ -25,6 +25,19 @@ def overview(
     return market_data_service.market_overview(db, settings, universe=universe)
 
 
+@router.get("/regime")
+def regime(
+    fresh: bool = Query(False, description="Bypass the 2-minute cache"),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Current 5-state market regime (strong_bull / bull / neutral / caution
+    / risk_off) from NIFTY 50 trend, momentum, drawdown and volatility."""
+    from app.regime.service import current_regime
+
+    return current_regime(db, settings, fresh=fresh)
+
+
 @router.get("/option-chain")
 def option_chain(
     underlying: str = Query(..., description="e.g. NIFTY, BANKNIFTY, RELIANCE"),

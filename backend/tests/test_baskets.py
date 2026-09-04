@@ -200,21 +200,32 @@ def test_global_position_cap_waterfills_excess():
     assert sum(res.weights.values()) == pytest.approx(1.0, abs=1e-6)
 
 
-def test_regime_gate_scales_risk_assets_when_benchmark_is_below_its_ma():
+def test_regime_gate_trims_risk_assets_in_a_risk_off_market():
     spec = parse_spec({"sleeves": [
         {"id": "eq", "name": "Equity", "weight_pct": 70, "weighting": "equal",
          "members": ["E"], "rule": {"type": "none"}, "risk_asset": True},
         {"id": "gold", "name": "Gold", "weight_pct": 30, "weighting": "equal",
          "members": ["G"], "rule": {"type": "none"}, "risk_asset": False},
     ], "risk": {"regime": {"benchmark": "NIFTY 50", "ma": 50, "risk_off_scale": 0.5}}})
-    down = _series("NIFTY 50", 200, -0.004, 160)  # ends well below its 50-DMA
-    bars = {"E": _series("E", 100, 0.0, 160), "G": _series("G", 100, 0.0, 160),
+    # a choppy 15-month decline: downtrend + drawdown + elevated volatility -> risk_off
+    down = _series("NIFTY 50", 400, -0.005, 320,
+                   noise=lambda i: 0.03 if i % 2 else -0.028)
+    bars = {"E": _series("E", 100, 0.0, 320), "G": _series("G", 100, 0.0, 320),
             "NIFTY 50": down}
-    res = resolve_targets(spec, bars, datetime(2020, 5, 1))
-    assert res.regime == "risk_off"
-    assert res.weights["E"] == pytest.approx(0.35, abs=1e-6)   # 0.70 * 0.5
-    assert res.weights["G"] == pytest.approx(0.30, abs=1e-6)   # gold untouched
-    assert res.cash_weight == pytest.approx(0.35, abs=1e-6)
+    res = resolve_targets(spec, bars, datetime(2020, 11, 1))
+    assert res.regime in ("risk_off", "caution")
+    # equity sleeve is scaled down; gold (risk_asset=False) is untouched
+    assert res.weights["E"] < 0.70
+    assert res.weights["G"] == pytest.approx(0.30, abs=1e-6)
+    assert res.cash_weight == pytest.approx(0.70 - res.weights["E"], abs=1e-6)
+
+    # a healthy uptrend -> full risk-asset exposure, no scaling
+    up = _series("NIFTY 50", 100, 0.0015, 320)
+    res2 = resolve_targets(
+        spec, {"E": bars["E"], "G": bars["G"], "NIFTY 50": up}, datetime(2020, 11, 1)
+    )
+    assert res2.regime in ("bull", "strong_bull")
+    assert res2.weights["E"] == pytest.approx(0.70, abs=1e-6)
 
 
 def test_composite_score_rule_ranks_and_exposes_scores():

@@ -100,7 +100,8 @@ def _warmup_bars(spec: BasketSpec) -> int:
         if s.weighting in ("inverse_vol", "momentum_weighted", "score_weighted"):
             need = max(need, 95)
     if spec.risk.regime is not None:
-        need = max(need, spec.risk.regime.ma + 5)
+        # the 5-state regime engine wants ~1y for its trend / vol-percentile signals
+        need = max(need, spec.risk.regime.ma + 5, 260)
     return need
 
 
@@ -406,8 +407,8 @@ def run_backtest(
                         f"removed — score {sc:.0f}/100 below the hold buffer" if sc is not None
                         else "removed — fell below the rank / trend gate"
                     )
-            if res.regime == "risk_off":
-                reasons["_regime"] = "risk-off: benchmark below its trend average"
+            if res.regime not in ("normal", "strong_bull", "bull"):
+                reasons["_regime"] = f"regime {res.regime}: risk-asset exposure trimmed"
             intents = plan_orders(
                 res.weights, holdings, prices, pv,
                 drift_band_pct=drift_band_pct, reasons=reasons,

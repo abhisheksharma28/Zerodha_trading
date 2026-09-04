@@ -265,6 +265,13 @@ def build(db: Session, settings: Settings, *, universe: str = "nifty100") -> dic
     vol_label, vol_why = _vol_regime(vix)
     tone, tone_why = _risk_tone(nifty.get("change_pct"), brd.get("ad_ratio"), vix)
 
+    try:
+        from app.regime.service import current_regime
+
+        regime = current_regime(db, settings)
+    except Exception:  # noqa: BLE001 - one failing section must not sink the briefing
+        regime = {"available": False}
+
     pulse = {
         "nifty": {"ltp": nifty.get("ltp"), "change_pct": nifty.get("change_pct")},
         "bank": {"ltp": bank.get("ltp"), "change_pct": bank.get("change_pct")},
@@ -273,6 +280,7 @@ def build(db: Session, settings: Settings, *, universe: str = "nifty100") -> dic
         "vol_regime_why": vol_why,
         "risk_tone": tone,
         "risk_tone_why": tone_why,
+        "market_regime": regime,
         "breadth": brd,
         "indices": ov.get("indices", []),
         "signals": ov.get("signals", {}),

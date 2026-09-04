@@ -5,6 +5,17 @@ export interface InsightIndex {
   change_pct: number | null;
 }
 
+export interface MarketRegime {
+  available: boolean;
+  regime?: "strong_bull" | "bull" | "neutral" | "caution" | "risk_off";
+  score?: number;
+  drivers?: string[];
+  signals?: Record<string, number>;
+  index?: string;
+  as_of?: string;
+  reason?: string;
+}
+
 export interface InsightPulse {
   nifty: InsightIndex;
   bank: InsightIndex;
@@ -13,6 +24,7 @@ export interface InsightPulse {
   vol_regime_why: string;
   risk_tone: string;
   risk_tone_why: string;
+  market_regime?: MarketRegime;
   breadth: {
     advances: number;
     declines: number;

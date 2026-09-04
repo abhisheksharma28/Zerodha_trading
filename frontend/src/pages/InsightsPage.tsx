@@ -14,6 +14,14 @@ const short = (s: string) => s.replace(/^NIFTY /, "");
 const sgn = (v: number | null | undefined, d = 2) =>
   v == null ? "—" : `${v >= 0 ? "+" : ""}${num(v, d)}`;
 
+const REGIME_TONE: Record<string, string> = {
+  strong_bull: "bg-pos/15 text-pos",
+  bull: "bg-pos/10 text-pos",
+  neutral: "bg-elevated text-fg-muted",
+  caution: "bg-amber-400/15 text-amber-600",
+  risk_off: "bg-neg/15 text-neg",
+};
+
 const TONE_CLS: Record<string, string> = {
   "risk-on": "bg-pos/15 text-pos border-pos/40",
   resilient: "bg-pos/10 text-pos border-pos/30",
@@ -129,6 +137,25 @@ function Briefing({ data }: { data: InsightsBriefing }) {
                 <div className="bg-neg" style={{ width: `${(brd.declines / total) * 100}%` }} />
               </div>
             </div>
+            {p.market_regime?.available && p.market_regime.regime && (
+              <div className="rounded-md border border-line/70 bg-bg/40 p-2 text-[11px]">
+                <div className="flex items-center justify-between">
+                  <span className="text-fg-faint">Market regime</span>
+                  <span
+                    className={cn(
+                      "rounded px-1.5 py-0.5 font-semibold capitalize",
+                      REGIME_TONE[p.market_regime.regime],
+                    )}
+                  >
+                    {p.market_regime.regime.replace("_", " ")}
+                    {p.market_regime.score != null ? ` · ${Math.round(p.market_regime.score)}` : ""}
+                  </span>
+                </div>
+                {p.market_regime.drivers?.length ? (
+                  <p className="mt-1 text-fg-muted">{p.market_regime.drivers.join(" · ")}</p>
+                ) : null}
+              </div>
+            )}
             <p className="text-[11px] text-fg-faint">{p.vol_regime_why}</p>
             {(p.signals?.gap_up?.length || p.signals?.gap_down?.length) && (
               <p className="text-[11px] text-fg-muted">

@@ -132,10 +132,17 @@ class SleeveSpec:
 class RegimeGate:
     benchmark: str = "NIFTY 50"
     ma: int = 200
-    risk_off_scale: float = 0.5  # scale risk-asset sleeves by this when benchmark < SMA(ma)
+    risk_off_scale: float = 0.5  # floor for risk-asset sleeves in a weak regime
+    # hard_cut: any non-bull regime drops straight to risk_off_scale (no
+    # graduated neutral/caution bands). For high-beta baskets (midcaps)
+    # where staying partly invested through pullbacks costs too much.
+    hard_cut: bool = False
 
     def to_dict(self) -> dict[str, Any]:
-        return {"benchmark": self.benchmark, "ma": self.ma, "risk_off_scale": self.risk_off_scale}
+        return {
+            "benchmark": self.benchmark, "ma": self.ma,
+            "risk_off_scale": self.risk_off_scale, "hard_cut": self.hard_cut,
+        }
 
 
 @dataclass(frozen=True)
@@ -328,7 +335,8 @@ def _parse_risk(raw: Any) -> RiskLimits:
         if not 0.0 <= scale <= 1.0:
             raise SpecError("spec.risk.regime.risk_off_scale must be in [0, 1]")
         regime = RegimeGate(
-            benchmark=str(rg.get("benchmark") or "NIFTY 50"), ma=ma, risk_off_scale=scale
+            benchmark=str(rg.get("benchmark") or "NIFTY 50"), ma=ma, risk_off_scale=scale,
+            hard_cut=bool(rg.get("hard_cut", False)),
         )
     return RiskLimits(
         max_position_pct=_pct("max_position_pct"),

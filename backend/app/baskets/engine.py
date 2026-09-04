@@ -25,7 +25,10 @@ from datetime import date, datetime
 from typing import Any
 
 from app.baskets import factors as _f
-from app.baskets.spec import _PRICE_FACTORS, BasketSpec, RegimeGate, RuleSpec, SleeveSpec
+from app.baskets.spec import _PRICE_FACTORS, BasketSpec, RuleSpec, SleeveSpec
+from app.regime import classify as _regime_classify
+from app.regime import exposure_scale as _regime_exposure
+from app.regime import factor_tilt as _regime_tilt
 
 
 def _as_dt(ts: Any) -> datetime:
@@ -133,6 +136,7 @@ def _composite_scores(
     fundamentals_fn: FundamentalsFn | None,
     *,
     market_bars: list[Any] | None = None,
+    regime: str | None = None,
 ) -> tuple[dict[str, float], dict[str, dict[str, float]]]:
     """0..100 blended score per member from the rule's factor_weights, plus
     a per-member {factor: 0..100 rank} breakdown for explainability.
@@ -142,6 +146,8 @@ def _composite_scores(
     contribute when a ``fundamentals_fn`` is supplied (the live / paper
     path); in a backtest it is None and those weights are renormalised
     away. ``rs`` needs ``market_bars``; without it that weight drops out.
+    ``regime`` (when supplied) tilts the weights toward the factors that
+    work in that market state.
     """
     weights = dict(rule.factor_weights) or {"momentum": 0.6, "trend": 0.2, "low_vol": 0.2}
     if fundamentals_fn is None:
@@ -152,6 +158,8 @@ def _composite_scores(
         weights = {"momentum": 1.0}
     wsum = sum(weights.values()) or 1.0
     weights = {f: w / wsum for f, w in weights.items()}
+    if regime:
+        weights = _regime_tilt(regime, weights)
 
     market_closes = _closes_upto(market_bars, as_of) if market_bars else None
 
@@ -234,6 +242,7 @@ class ResolveResult:
 def _member_metric(
     sleeve: SleeveSpec, bars_by_symbol: dict[str, list[Any]], as_of: datetime,
     fundamentals_fn: FundamentalsFn | None, *, market_bars: list[Any] | None = None,
+    regime: str | None = None,
 ) -> tuple[dict[str, float], list[str], list[str], dict[str, dict[str, float]]]:
     """(-> score/ROC per member that passes entry gates, -> gate notes,
     -> members that failed only the trend/min-ROC gate,
@@ -247,7 +256,8 @@ def _member_metric(
 
     if rule.type == "composite_score":
         scores, breakdown = _composite_scores(
-            have, bars_by_symbol, as_of, rule, fundamentals_fn, market_bars=market_bars
+            have, bars_by_symbol, as_of, rule, fundamentals_fn,
+            market_bars=market_bars, regime=regime,
         )
         # entry gate: trend filter + min-ROC still apply as hard screens
         passed: dict[str, float] = {}
@@ -295,6 +305,7 @@ def _rank_members(
     held: frozenset[str] = frozenset(),
     fundamentals_fn: FundamentalsFn | None = None,
     market_bars: list[Any] | None = None,
+    regime: str | None = None,
 ) -> tuple[list[str], dict[str, float], list[str], dict[str, dict[str, float]]]:
     """Apply the sleeve rule with anti-churn hysteresis.
 
@@ -310,7 +321,8 @@ def _rank_members(
         return have, {}, notes, {}
 
     metric, notes, soft_fail, breakdown = _member_metric(
-        sleeve, bars_by_symbol, as_of, fundamentals_fn, market_bars=market_bars
+        sleeve, bars_by_symbol, as_of, fundamentals_fn,
+        market_bars=market_bars, regime=regime,
     )
 
     # rank everything that cleared the hard screens, best first
@@ -407,19 +419,6 @@ def _waterfill_cap(frac: dict[str, float], cap: float) -> dict[str, float]:
     return out
 
 
-def _regime_risk_off(
-    gate: RegimeGate, bars_by_symbol: dict[str, list[Any]], as_of: datetime
-) -> bool | None:
-    bars = bars_by_symbol.get(gate.benchmark)
-    if not bars:
-        return None
-    closes = _closes_upto(bars, as_of)
-    ma = _sma(closes, gate.ma)
-    if ma is None:
-        return None
-    return closes[-1] < ma
-
-
 def resolve_targets(
     spec: BasketSpec,
     bars_by_symbol: dict[str, list[Any]],
@@ -438,17 +437,28 @@ def resolve_targets(
         else (k for k, v in (current_holdings or {}).items() if v)
     )
 
+    # market regime: graduated exposure + regime-adaptive factor weights,
+    # only for baskets that opted in via spec.risk.regime
     regime = "normal"
     risk_scale = 1.0
     notes: list[str] = []
+    tilt_regime: str | None = None
     if spec.risk.regime is not None:
-        ro = _regime_risk_off(spec.risk.regime, bars_by_symbol, as_of_dt)
-        if ro is True:
-            regime = "risk_off"
-            risk_scale = spec.risk.regime.risk_off_scale
+        gate = spec.risk.regime
+        idx_bars = market_bars or bars_by_symbol.get(gate.benchmark)
+        if idx_bars:
+            state = _regime_classify(
+                _closes_upto(idx_bars, as_of_dt), as_of_label=as_of_dt.date().isoformat()
+            )
+            regime = state.regime
+            tilt_regime = state.regime
+            risk_scale = _regime_exposure(
+                state.regime, floor=gate.risk_off_scale, hard_cut=gate.hard_cut
+            )
             notes.append(
-                f"regime: {spec.risk.regime.benchmark} below its {spec.risk.regime.ma}-day "
-                f"average — risk-asset sleeves scaled to {risk_scale:.0%}"
+                f"regime: {state.regime} (score {state.score:.0f}) — "
+                f"risk-asset sleeves at {risk_scale:.0%}"
+                + (f"; {state.drivers[0]}" if state.drivers else "")
             )
 
     weights: dict[str, float] = {}
@@ -458,6 +468,7 @@ def resolve_targets(
         selected, metric, s_notes, factor_ranks = _rank_members(
             sleeve, bars_by_symbol, as_of_dt, held=held,
             fundamentals_fn=fundamentals_fn, market_bars=market_bars,
+            regime=tilt_regime,
         )
         within = _weight_within_sleeve(sleeve, selected, metric, bars_by_symbol, as_of_dt)
         scale = risk_scale if sleeve.risk_asset else 1.0

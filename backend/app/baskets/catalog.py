@@ -62,7 +62,9 @@ JOURNEYS: dict[str, list[str]] = {
 
 _NONE = {"type": "none"}
 _REGIME = {"benchmark": "NIFTY 50", "ma": 200, "risk_off_scale": 0.5}
-_REGIME_TIGHT = {"benchmark": "NIFTY 50", "ma": 200, "risk_off_scale": 0.4}
+# hard_cut: high-beta baskets drop straight to the floor in any non-bull
+# regime rather than riding pullbacks down at partial weight
+_REGIME_TIGHT = {"benchmark": "NIFTY 50", "ma": 200, "risk_off_scale": 0.4, "hard_cut": True}
 
 
 def _mom(lookback: int, top_k: int, *, trend_ma: int = 200, hold_k: int = 0,
