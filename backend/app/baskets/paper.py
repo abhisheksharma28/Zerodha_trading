@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.backtesting.adhoc import fetch_candles
 from app.baskets.backtest import _warmup_bars
-from app.baskets.engine import _as_dt, plan_orders, resolve_targets
+from app.baskets.engine import _as_dt, attribution_of, plan_orders, resolve_targets
 from app.baskets.spec import SpecError, parse_spec
 from app.config import Settings
 from app.core.exceptions import NotFoundError, ValidationError
@@ -357,6 +357,7 @@ def _do_rebalance_locked(
         note=f"{reason} — {placed}/{len(intents)} orders placed"
         if applied
         else f"{reason} — {len(intents)} orders planned",
+        attribution=attribution_of(targets, held=set(net)),
     )
     db.add(ev)
     db.commit()
@@ -538,7 +539,7 @@ def events(db: Session, basket_id: str, *, limit: int = 50) -> list[dict]:
         {
             "id": str(e.id), "as_of": e.as_of.isoformat(), "mode": e.mode,
             "applied": e.applied, "target_weights": e.target_weights,
-            "orders": e.orders, "note": e.note,
+            "orders": e.orders, "note": e.note, "attribution": e.attribution,
         }
         for e in rows
     ]

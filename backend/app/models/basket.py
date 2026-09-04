@@ -76,5 +76,8 @@ class BasketRebalanceEvent(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # [{symbol, side, qty, est_value, from_weight, to_weight}]
     applied: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     note: Mapped[str | None] = mapped_column(String(300))
+    attribution: Mapped[dict | None] = mapped_column(JSONB)
+    # {regime, sleeves: [{sleeve_id, name, holdings: [{symbol, weight_pct, score,
+    #  factor_ranks, status}]}], dropped, risk_contribution, notes}
 
     __table_args__ = (Index("ix_basket_reb_basket_time", "basket_id", "as_of"),)

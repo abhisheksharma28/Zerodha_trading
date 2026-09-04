@@ -372,6 +372,40 @@ class ResolveResult:
         return None
 
 
+def attribution_of(
+    res: ResolveResult, *, held: set[str] | frozenset[str] = frozenset()
+) -> dict[str, Any]:
+    """A serialisable "why these holdings" record for a rebalance: per
+    sleeve, each selected name with its composite score, per-factor ranks,
+    final weight and held/new status — plus the regime and risk
+    contribution. Stored on the rebalance event (Phase 6 explainability)."""
+    selected_now = set(res.weights)
+    sleeves = []
+    for s in res.per_sleeve:
+        holdings = []
+        for sym, w in sorted(s.selected.items(), key=lambda kv: kv[1], reverse=True):
+            holdings.append({
+                "symbol": sym,
+                "weight_pct": round(w * 100.0, 2),
+                "score": s.scores.get(sym),
+                "factor_ranks": s.factor_ranks.get(sym, {}),
+                "status": "held" if sym in held else "new",
+            })
+        sleeves.append({
+            "sleeve_id": s.sleeve_id, "name": s.name,
+            "target_pct": s.target_pct, "cash_pct": round(s.cash_pct, 2),
+            "holdings": holdings,
+        })
+    dropped = sorted(held - selected_now)
+    return {
+        "regime": res.regime,
+        "sleeves": sleeves,
+        "dropped": dropped,
+        "risk_contribution": res.risk_contribution,
+        "notes": res.notes[:10],
+    }
+
+
 def _member_metric(
     sleeve: SleeveSpec, bars_by_symbol: dict[str, list[Any]], as_of: datetime,
     fundamentals_fn: FundamentalsFn | None, *, market_bars: list[Any] | None = None,

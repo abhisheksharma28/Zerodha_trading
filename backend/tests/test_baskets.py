@@ -399,6 +399,14 @@ def test_run_backtest_synthetic(monkeypatch):
         assert k in d["metrics"]
     assert d["oos"]["out_of_sample"]["return_pct"] is not None
     assert "bull_tape" in d["regime_breakdown"]
+    # Phase 6: up/down capture + rolling dispersion are in the metrics
+    for k in ("up_capture_pct", "down_capture_pct", "rolling_12m_median_pct"):
+        assert k in d["metrics"]
+    # Phase 6: the final rebalance carries a factor-attribution record
+    fa = d["final_attribution"]
+    assert fa["regime"]
+    assert any(sl["holdings"] for sl in fa["sleeves"])
+    assert set(fa["risk_contribution"]) <= set(d["final_holdings"]) | set(res.final_holdings)
 
 
 def test_run_backtest_rejects_when_no_history(monkeypatch):
@@ -576,6 +584,56 @@ def test_resolve_targets_reports_risk_contribution():
     res = resolve_targets(spec, bars, datetime(2020, 5, 1))
     assert set(res.risk_contribution) == set(res.weights)
     assert sum(res.risk_contribution.values()) == pytest.approx(100.0, abs=1.0)
+
+
+def test_attribution_of_records_sleeves_scores_and_dropped_names():
+    from app.baskets.engine import attribution_of
+
+    spec = parse_spec({
+        "sleeves": [
+            {"id": "mom", "name": "Momentum", "weight_pct": 100, "weighting": "score_weighted",
+             "members": ["A", "B", "C", "D"], "max_weight_pct": 40,
+             "rule": {"type": "composite_score", "lookback": 60, "top_k": 2,
+                      "factor_weights": {"momentum": 1.0}, "trend_ma": 0}},
+        ],
+    })
+    # A,B strong up; C,D weak — so A,B get picked, and a previously-held D is dropped
+    bars = {
+        "A": _series("A", 100, 0.004, 160),
+        "B": _series("B", 100, 0.003, 160),
+        "C": _series("C", 100, 0.0005, 160),
+        "D": _series("D", 100, 0.0002, 160),
+    }
+    res = resolve_targets(spec, bars, datetime(2020, 6, 1), current_holdings={"D": 10})
+    attr = attribution_of(res, held={"D"})
+    assert attr["regime"] in ("normal", "risk_off")
+    sl = attr["sleeves"][0]
+    assert sl["sleeve_id"] == "mom"
+    assert [h["symbol"] for h in sl["holdings"]][:1] in (["A"], ["B"])
+    assert all(h["status"] == "new" for h in sl["holdings"])  # none were held
+    assert "D" in attr["dropped"]
+    assert all("score" in h for h in sl["holdings"])
+
+
+def test_capture_stats_bounds():
+    from app.baskets.backtest import _capture_stats
+
+    # portfolio tracks 1.5x the benchmark's monthly moves
+    curve, bench = [], []
+    pv, bv = 100.0, 100.0
+    for k in range(60):
+        yr, mo = 2018 + k // 12, k % 12 + 1
+        step = 0.03 if k % 3 else -0.04
+        for day in range(1, 21):
+            bv *= (1 + step) ** (1 / 20)
+            pv *= (1 + step * 1.5) ** (1 / 20)
+            d = f"{yr:04d}-{mo:02d}-{day:02d}"
+            curve.append((d, round(pv, 4)))
+            bench.append((d, round(bv, 4)))
+    out = _capture_stats(curve, bench)
+    assert out["up_capture_pct"] is not None and out["up_capture_pct"] > 100.0
+    assert out["down_capture_pct"] is not None and out["down_capture_pct"] > 100.0
+    assert out["up_months"] + out["down_months"] <= 60
 
 
 def test_spec_parses_and_round_trips_max_pair_corr():

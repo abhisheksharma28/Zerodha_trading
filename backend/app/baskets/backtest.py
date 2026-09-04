@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.backtesting.adhoc import fetch_candles
 from app.backtesting.costs import CostModel
-from app.baskets.engine import _as_dt, plan_orders, resolve_targets
+from app.baskets.engine import _as_dt, attribution_of, plan_orders, resolve_targets
 from app.baskets.spec import BasketSpec
 from app.config import Settings
 from app.core.exceptions import ValidationError
@@ -57,6 +57,7 @@ class BasketBacktestResult:
     caveats: list[str]
     oos: dict[str, Any] = field(default_factory=dict)
     regime_breakdown: dict[str, Any] = field(default_factory=dict)
+    final_attribution: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -68,6 +69,7 @@ class BasketBacktestResult:
             "metrics": self.metrics,
             "oos": self.oos,
             "regime_breakdown": self.regime_breakdown,
+            "final_attribution": self.final_attribution,
             "rebalances": [
                 {
                     "as_of": r.as_of, "portfolio_value": round(r.portfolio_value, 2),
@@ -216,6 +218,55 @@ def _extended_stats(
     if years:
         out["best_year_pct"] = round(max(years) * 100.0, 2)
         out["worst_year_pct"] = round(min(years) * 100.0, 2)
+    return out
+
+
+def _capture_stats(
+    curve: list[tuple[str, float]], bench: list[tuple[str, float]]
+) -> dict[str, float | None]:
+    """Up / down capture vs the benchmark (calendar-month buckets) and the
+    spread of 12-month rolling returns."""
+    out: dict[str, float | None] = {
+        "up_capture_pct": None, "down_capture_pct": None,
+        "up_months": None, "down_months": None,
+        "rolling_12m_min_pct": None, "rolling_12m_median_pct": None,
+        "rolling_12m_max_pct": None,
+    }
+    if len(curve) < 40:
+        return out
+
+    def _monthly(series: list[tuple[str, float]]) -> dict[str, float]:
+        by: dict[str, tuple[float, float]] = {}
+        for d, v in series:
+            k = d[:7]
+            first, _last = by.get(k, (v, v))
+            by[k] = (first, v)
+        return {k: (last / first - 1.0) if first > 0 else 0.0 for k, (first, last) in by.items()}
+
+    pm, bm = _monthly(curve), _monthly(bench)
+    common = sorted(set(pm) & set(bm))
+    if len(common) >= 12:
+        up_p = sum(pm[k] for k in common if bm[k] > 0)
+        up_b = sum(bm[k] for k in common if bm[k] > 0)
+        dn_p = sum(pm[k] for k in common if bm[k] < 0)
+        dn_b = sum(bm[k] for k in common if bm[k] < 0)
+        out["up_months"] = sum(1 for k in common if bm[k] > 0)
+        out["down_months"] = sum(1 for k in common if bm[k] < 0)
+        if abs(up_b) > 1e-9:
+            out["up_capture_pct"] = round(up_p / up_b * 100.0, 1)
+        if abs(dn_b) > 1e-9:
+            out["down_capture_pct"] = round(dn_p / dn_b * 100.0, 1)
+
+    # 12-month rolling returns off the daily curve (~252 trading days)
+    vals = [v for _, v in curve]
+    win = 252
+    if len(vals) > win:
+        roll = [vals[i] / vals[i - win] - 1.0 for i in range(win, len(vals)) if vals[i - win] > 0]
+        if roll:
+            roll.sort()
+            out["rolling_12m_min_pct"] = round(roll[0] * 100.0, 2)
+            out["rolling_12m_median_pct"] = round(roll[len(roll) // 2] * 100.0, 2)
+            out["rolling_12m_max_pct"] = round(roll[-1] * 100.0, 2)
     return out
 
 
@@ -375,6 +426,8 @@ def run_backtest(
 
     bench_p0 = price_on(benchmark, dates[warmup])
     seen_periods: set[tuple] = set()
+    last_res: Any = None
+    held_before_last: set[str] = set()
 
     def mtm(dt: datetime, cash_now: float, held: dict[str, int]) -> float:
         v = cash_now
@@ -395,6 +448,8 @@ def run_backtest(
                 spec, bars_by_symbol, dt, current_holdings=holdings,
                 market_bars=bench_bars,
             )
+            last_res = res
+            held_before_last = {s for s, q in holdings.items() if q}
             prices = {s: price_on(s, dt) or 0.0 for s in set(spec.symbols) | set(holdings)}
             reasons: dict[str, str] = {}
             for sym in set(res.weights) | set(holdings):
@@ -470,6 +525,7 @@ def run_backtest(
     bench_ret = (bench_curve[-1][1] / capital - 1.0) * 100.0 if bench_curve else None
     ann = _annualised_stats(equity_curve)
     ext = _extended_stats(equity_curve, bench_curve, capital)
+    cap = _capture_stats(equity_curve, bench_curve)
     # the first rebalance buys the whole basket from cash — exclude it so the
     # turnover numbers reflect ongoing churn, not the one-off deployment
     ongoing = [r.turnover_pct for r in rebalances[1:] if r.turnover_pct > 0]
@@ -491,9 +547,13 @@ def run_backtest(
         "avg_holding_days": round(sum(all_spans) / len(all_spans), 0) if all_spans else None,
         **ann,
         **ext,
+        **cap,
     }
     oos = _split_stats(equity_curve, bench_curve)
     regime_breakdown = _regime_breakdown(equity_curve, bench_curve)
+    final_attribution = (
+        attribution_of(last_res, held=held_before_last) if last_res is not None else {}
+    )
 
     caveats = [
         "Daily close-to-close fills at the rebalance date's close, plus slippage + the "
@@ -518,4 +578,5 @@ def run_backtest(
         caveats=caveats,
         oos=oos,
         regime_breakdown=regime_breakdown,
+        final_attribution=final_attribution,
     )
