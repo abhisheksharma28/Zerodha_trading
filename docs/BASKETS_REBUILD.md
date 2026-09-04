@@ -116,13 +116,74 @@ browser.
   `python -m app.baskets.template_backtests [years]` and patched by
   `... min-funds`.
 
+---
+
+# Phase 2 — factor library (done)
+
+`backend/app/baskets/factors.py` replaces the three thin single-lookback
+price factors in the composite-score engine:
+
+| Factor | Before | After |
+|---|---|---|
+| `momentum` | one ROC at the sleeve lookback | blend of 12-1 month, 6 month, 3 month returns (6m anchor; degrades under 1y history) |
+| `trend` | distance above one MA | distance above the main MA + multi-MA structure check (px vs 50/100/200, 50>200) + 50-day MA slope |
+| `low_vol` | total daily stdev | negated blend of **downside deviation** and total vol (upside vol not punished) |
+| `rs` *(new)* | — | excess return vs the basket benchmark over ~126 bars |
+| `volume` *(new)* | — | relative volume (21d vs 63d) signed by recent price direction |
+| `dist_from_high` *(helper)* | — | distance below the rolling 52-week high |
+
+**Plumbing:** `resolve_targets(..., market_bars=)` carries the benchmark
+bar series; `rs` uses it and its weight renormalises away when absent.
+`backtest.py` passes the benchmark bars; `paper.py` fetches the basket
+benchmark alongside the members. `_composite_scores` also returns a
+per-name `{factor: 0-100 rank}` breakdown, surfaced on
+`SleeveResolution.factor_ranks` — the foundation for Phase 6
+explainability.
+
+**Per-basket factor profiles** (`catalog.py`): the alpha / growth / sector
+/ consumption products now weight `rs` (and `volume` for Adaptive Alpha
+and Sector Rotation). `rs` is a *confirming* weight (0.10) on the two
+pure-momentum products — 126-day RS is collinear with 6-month momentum in
+a price-only backtest, so a heavier weight dilutes rather than adds; it
+earns its place across regimes and once the live fundamentals signal is
+in the mix. Deliberately **not** tuned further to max the single 8y
+backtest (the spec warns against overfitting).
+
+**8y catalog backtest, Phase 2 vs the Phase 1 baseline** (composite-score
+products only; static ETF baskets unchanged):
+
+| Product | CAGR Δ | vs-bench Δ | Sharpe Δ |
+|---|---|---|---|
+| Dynamic Sector Rotation | +3.2 | +65 | +0.15 |
+| Adaptive Alpha | +2.1 | +48 | +0.10 |
+| Growth Accelerators | +1.5 | +28 | +0.05 |
+| Small & Midcap Smart Alpha | +1.0 | +25 | +0.08 |
+| India Consumption Growth | +0.9 | +12 | +0.04 |
+| Momentum Leaders | +0.4 | +10 | +0.04 |
+| Quality Compounders | +0.25 | +2.8 | +0.02 |
+| Core Growth | −0.13 | −1.5 | −0.03 |
+| Defensive Leaders | −0.44 | −5.0 | −0.03 |
+
+The two small negatives are defensive baskets where the composite is a
+minor sleeve and price-proxy quality is inherently weak — the live
+fundamentals path (unchanged) is where real quality selection happens.
+
+**Validation:** `pytest` full suite **722 passed, 1 skipped**;
+`tests/test_baskets_factors.py` (10 tests) + a `resolve_targets`
+market-bars / factor-ranks test. `ruff` clean.
+
+**Still open in Phase 2's original scope:**
+- ADX / beta / ATR-percentile as distinct factors (the current `trend`
+  and `low_vol` cover the intent; these are refinements).
+- A standalone `StockScorecard` object — `SleeveResolution.factor_ranks`
+  currently serves the attribution need.
+- **Regime-adaptive factor weights** — moved to Phase 3 (needs the shared
+  5-state regime engine).
+
+---
+
 ## Deferred (later phases)
 
-- **Phase 2** — factor library (`app/baskets/factors/`): multi-horizon
-  momentum, multi-MA trend + ADX, downside/beta/ATR volatility,
-  decomposed quality/growth/value (live), volume; a `StockScorecard`;
-  regime-adaptive factor weights. This is what makes *every* equity sleeve
-  genuinely multi-factor and retires the last hardcoded lists.
 - **Phase 3** — shared 5-state regime engine (`app/regime/`) used by
   baskets + scanner + seasonality.
 - **Phase 4** — portfolio construction: enforce sector caps (the
