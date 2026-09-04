@@ -11,6 +11,8 @@ for liquidity + a long price history so the walk-forward backtest has data.
 
 from __future__ import annotations
 
+from typing import Any
+
 
 def _dedupe(seq: list[str]) -> list[str]:
     seen: dict[str, None] = {}
@@ -141,3 +143,82 @@ def members(name: str) -> list[str]:
 
 def names() -> list[str]:
     return list(_REGISTRY)
+
+
+# --- metadata ---------------------------------------------------------
+# What each pool is, the selection intent, and how it is (re)curated. The
+# member lists are hand-maintained today; the eligibility screen
+# (app.baskets.eligibility) is what turns "listed here" into "tradeable
+# right now".
+
+_META: dict[str, dict[str, str]] = {
+    "LARGE_CAP_CORE": {
+        "label": "Large-cap core",
+        "intent": "The ~30 most liquid NSE large-caps — the low-turnover spine of the core products.",
+        "curation": "Reviewed against NIFTY 50/NEXT 50 membership; changes are rare and deliberate.",
+    },
+    "LARGE_MID_ALPHA": {
+        "label": "Large + liquid mid",
+        "intent": "Large-cap core plus high-liquidity mid-caps — the hunting ground for the momentum / multi-factor alpha products.",
+        "curation": "Adds names with a multi-year history and consistent delivery volume; screened for eligibility each rebalance.",
+    },
+    "QUALITY": {
+        "label": "Quality compounders",
+        "intent": "High return-on-capital, low-leverage franchises with durable demand.",
+        "curation": "Fundamental quality is applied on the live signal only (not through history) per the fundamentals-latest rule.",
+    },
+    "LOW_VOL": {
+        "label": "Low volatility",
+        "intent": "Historically calm large-caps — staples, pharma, utilities, top private banks.",
+        "curation": "Trailing realised-volatility rank; refreshed with the member review.",
+    },
+    "MIDCAP_LIQUID": {
+        "label": "Liquid mid-caps",
+        "intent": "Mid-caps with enough traded value to size in and out without undue impact.",
+        "curation": "NIFTY Midcap 150 constituents filtered for turnover and history.",
+    },
+    "HIGH_YIELD": {
+        "label": "High dividend yield",
+        "intent": "Consistent, well-covered dividend payers for the income products.",
+        "curation": "Trailing yield plus a payout-consistency check; PSU-heavy by nature.",
+    },
+    "CONSUMPTION": {
+        "label": "India consumption",
+        "intent": "Staples, discretionary, autos, retail and QSR — the domestic consumption basket.",
+        "curation": "Thematic; mapped to the consumption value chain.",
+    },
+    "REITS_INVITS": {
+        "label": "REITs & InvITs",
+        "intent": "Listed real-estate and infrastructure trusts for the multi-asset income sleeve.",
+        "curation": "All liquid NSE-listed trusts; short history is expected and handled by the eligibility screen.",
+    },
+    "SECTOR_ALL": {
+        "label": "All sector leaders",
+        "intent": "The union of the nine sector books — the pool the sector-rotation product ranks.",
+        "curation": "Derived from the SECTOR:: books; not curated directly.",
+    },
+}
+
+for _k in SECTORS:
+    _META.setdefault(f"SECTOR::{_k}", {
+        "label": f"{_k} leaders",
+        "intent": f"The most liquid, representative names in the {_k} sector.",
+        "curation": "Sector book; reviewed with the member list.",
+    })
+
+
+def describe(name: str) -> dict[str, Any]:
+    """Metadata + current member count for a named universe."""
+    if name not in _REGISTRY:
+        raise KeyError(f"unknown universe {name!r}")
+    meta = _META.get(name, {"label": name, "intent": "", "curation": ""})
+    return {"name": name, **meta, "n_members": len(_REGISTRY[name]),
+            "members": list(_REGISTRY[name])}
+
+
+def catalog() -> list[dict[str, Any]]:
+    """All named universes with metadata (no member lists)."""
+    return [
+        {k: v for k, v in describe(n).items() if k != "members"}
+        for n in _REGISTRY
+    ]

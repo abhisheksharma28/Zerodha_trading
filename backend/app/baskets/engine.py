@@ -387,6 +387,17 @@ def _member_metric(
     if missing:
         notes.append(f"no price history for {', '.join(missing)}")
 
+    # data-quality visibility (no exclusion): flag members whose most recent
+    # bar is well before as_of — a delisted / halted / broken-feed name that
+    # is still nominally in the sleeve.
+    stale = []
+    for m in have:
+        dts = [_as_dt(b.timestamp) for b in bars_by_symbol[m] if _as_dt(b.timestamp) <= as_of]
+        if dts and (as_of - max(dts)).days > 30:
+            stale.append(f"{m} ({(as_of - max(dts)).days}d)")
+    if stale:
+        notes.append(f"stale data: {', '.join(stale[:6])}")
+
     if rule.type == "composite_score":
         scores, breakdown = _composite_scores(
             have, bars_by_symbol, as_of, rule, fundamentals_fn,

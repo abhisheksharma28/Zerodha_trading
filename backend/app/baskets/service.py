@@ -268,6 +268,64 @@ def run_backtest(
     return payload
 
 
+def screen_universe(
+    db: Session, settings: Settings, name: str, *,
+    gate_overrides: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Run the eligibility screen against *live* daily candles for every
+    member of a named universe: which names are tradeable right now and,
+    for the rest, why not. Read-only research / ops view — does not touch
+    the scoring path."""
+    from datetime import timedelta
+
+    from app.backtesting.adhoc import fetch_candles
+    from app.baskets import eligibility as elig
+    from app.baskets import universes as U
+
+    try:
+        meta = U.describe(name)
+    except KeyError as exc:
+        raise NotFoundError(str(exc)) from exc
+
+    members = meta["members"]
+    end_dt = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    start_dt = end_dt - timedelta(days=420)
+    candles, _skipped = fetch_candles(
+        db, settings, symbols=members, timeframe="1d",
+        start=start_dt.date().isoformat(), end=end_dt.date().isoformat(),
+    )
+    bars_by_symbol: dict[str, Any] = {}
+    for want in members:
+        for got, bars in candles.items():
+            if got.upper() == want.upper():
+                bars_by_symbol[want] = bars
+                break
+
+    gate = elig.DEFAULT_GATE
+    if gate_overrides:
+        base = gate.to_dict()
+        base.update({k: v for k, v in gate_overrides.items() if k in base})
+        gate = elig.EligibilityGate(**base)
+
+    eligible, assessed = elig.screen_members(members, bars_by_symbol, end_dt, gate=gate)
+    return {
+        "universe": {k: v for k, v in meta.items() if k != "members"},
+        "as_of": end_dt.date().isoformat(),
+        "gate": gate.to_dict(),
+        "n_members": len(members),
+        "n_eligible": len(eligible),
+        "eligible": eligible,
+        "ineligible": [a.to_dict() for a in assessed if not a.eligible],
+        "assessed": [a.to_dict() for a in assessed],
+    }
+
+
+def universe_catalog() -> dict[str, Any]:
+    from app.baskets import universes as U
+
+    return {"universes": U.catalog()}
+
+
 def _merge_backtests(items: list[dict[str, Any]], stored: dict[str, Any]) -> None:
     for t in items:
         b = stored.get(t["key"])

@@ -14,6 +14,8 @@
   GET    /baskets/{id}/preview    the rebalance diff, without placing anything
   GET    /baskets/{id}/status     live holdings, weights, drift, P&L
   GET    /baskets/{id}/events     rebalance history
+  GET    /baskets/universes       named universes + metadata
+  GET    /baskets/universes/{name}/screen  live eligibility screen for a universe
 """
 
 from __future__ import annotations
@@ -49,6 +51,20 @@ def create_basket(
 @router.get("/templates")
 def starter_templates(include_internal: bool = Query(False)) -> dict[str, Any]:
     return service.starter_templates(include_internal=include_internal)
+
+
+@router.get("/universes")
+def universes() -> dict[str, Any]:
+    return service.universe_catalog()
+
+
+@router.get("/universes/{name}/screen")
+def universe_screen(
+    name: str,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    return service.screen_universe(db, settings, name)
 
 
 @router.get("/{basket_id}")
