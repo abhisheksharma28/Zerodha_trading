@@ -24,6 +24,8 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
 
+import numpy as np
+
 from app.baskets import factors as _f
 from app.baskets.spec import _PRICE_FACTORS, BasketSpec, RuleSpec, SleeveSpec
 from app.regime import classify as _regime_classify
@@ -84,6 +86,136 @@ def _daily_vol(closes: list[float], window: int) -> float | None:
     mean = sum(rets) / len(rets)
     var = sum((r - mean) ** 2 for r in rets) / (len(rets) - 1)
     return math.sqrt(var)
+
+
+def _daily_returns_upto(bars: list[Any], as_of: datetime, window: int) -> list[float]:
+    seg = _closes_upto(bars, as_of)[-(window + 1):]
+    return [seg[i] / seg[i - 1] - 1.0 for i in range(1, len(seg)) if seg[i - 1] > 0]
+
+
+def _corr_clusters(
+    ret_by_symbol: dict[str, list[float]], threshold: float
+) -> tuple[list[list[str]], dict[str, dict[str, float]]]:
+    """Union-find on pairs whose return correlation exceeds ``threshold``.
+    Returns (clusters, corr_lookup). Only symbols with an aligned overlap of
+    >= 20 returns are compared; the rest come back as singletons."""
+    syms = [s for s, r in ret_by_symbol.items() if len(r) >= 20]
+    parent = {s: s for s in syms}
+
+    def find(x: str) -> str:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    corr: dict[str, dict[str, float]] = {}
+    for i, a in enumerate(syms):
+        for b in syms[i + 1:]:
+            ra, rb = ret_by_symbol[a], ret_by_symbol[b]
+            n = min(len(ra), len(rb))
+            if n < 20:
+                continue
+            va, vb = np.array(ra[-n:]), np.array(rb[-n:])
+            if va.std() < 1e-12 or vb.std() < 1e-12:
+                continue
+            c = float(np.corrcoef(va, vb)[0, 1])
+            corr.setdefault(a, {})[b] = c
+            corr.setdefault(b, {})[a] = c
+            if c >= threshold:
+                parent[find(a)] = find(b)
+
+    groups: dict[str, list[str]] = {}
+    for s in syms:
+        groups.setdefault(find(s), []).append(s)
+    return list(groups.values()), corr
+
+
+def _correlation_deconcentrate(
+    weights: dict[str, float],
+    bars_by_symbol: dict[str, list[Any]],
+    as_of: datetime,
+    *,
+    threshold: float,
+    lookback: int,
+    keep_frac: float = 0.5,
+) -> tuple[dict[str, float], list[str]]:
+    """Down-weight holdings that are "the same trade". Names whose pairwise
+    return correlation exceeds ``threshold`` form a cluster; the largest
+    position in each cluster is the representative and keeps its weight,
+    the rest are tapered to ``keep_frac`` of theirs. Freed weight is
+    redistributed to holdings outside any correlated cluster (genuine
+    diversifiers); whatever cannot be placed there stays in cash.
+    """
+    if not weights:
+        return weights, []
+    rets = {
+        s: _daily_returns_upto(bars_by_symbol[s], as_of, lookback)
+        for s in weights
+        if bars_by_symbol.get(s)
+    }
+    clusters, _corr = _corr_clusters(rets, threshold)
+    multi = [c for c in clusters if len(c) >= 2]
+    if not multi:
+        return weights, []
+
+    out = dict(weights)
+    notes: list[str] = []
+    freed = 0.0
+    clustered: set[str] = set()
+    for grp in multi:
+        rep = max(grp, key=lambda s: weights.get(s, 0.0))
+        clustered.update(grp)
+        trimmed = []
+        for s in grp:
+            if s == rep:
+                continue
+            cut = out[s] * (1.0 - keep_frac)
+            out[s] -= cut
+            freed += cut
+            trimmed.append(s)
+        if trimmed:
+            notes.append(
+                f"corr control: {', '.join(sorted(trimmed))} tapered "
+                f"(>{threshold:.2f} corr with {rep})"
+            )
+
+    diversifiers = {s: out[s] for s in out if s not in clustered and out[s] > 1e-9}
+    dtot = sum(diversifiers.values())
+    if dtot > 1e-9 and freed > 1e-12:
+        for s, wv in diversifiers.items():
+            out[s] += freed * (wv / dtot)
+        freed = 0.0
+    if freed > 1e-4:
+        notes.append(f"corr control: {freed:.0%} of the basket held in cash")
+    return out, notes
+
+
+def _risk_contribution(
+    weights: dict[str, float],
+    bars_by_symbol: dict[str, list[Any]],
+    as_of: datetime,
+    *,
+    lookback: int,
+) -> dict[str, float]:
+    """Each holding's share of portfolio variance (percent contribution to
+    risk, sums to ~100). Falls back to weight share when history is thin."""
+    syms = [s for s in weights if weights[s] > 1e-9]
+    if len(syms) < 2:
+        return dict.fromkeys(syms, 100.0)
+    rets = {s: _daily_returns_upto(bars_by_symbol.get(s, []), as_of, lookback) for s in syms}
+    n = min((len(r) for r in rets.values()), default=0)
+    if n < 20:
+        tot = sum(weights[s] for s in syms) or 1.0
+        return {s: round(100.0 * weights[s] / tot, 1) for s in syms}
+    m = np.array([rets[s][-n:] for s in syms])
+    cov = np.cov(m)
+    w = np.array([weights[s] for s in syms])
+    w = w / w.sum()
+    port_var = float(w @ cov @ w)
+    if port_var <= 1e-18:
+        return {s: round(100.0 * wi, 1) for s, wi in zip(syms, w, strict=True)}
+    rc = w * (cov @ w) / port_var
+    return {s: round(100.0 * float(x), 1) for s, x in zip(syms, rc, strict=True)}
 
 
 def _pct_ranks(raw: dict[str, float]) -> dict[str, float]:
@@ -227,6 +359,7 @@ class ResolveResult:
     per_sleeve: list[SleeveResolution]
     regime: str = "normal"             # "normal" | "risk_off"
     notes: list[str] = field(default_factory=list)
+    risk_contribution: dict[str, float] = field(default_factory=dict)  # sym -> % of portfolio variance
 
     @property
     def invested(self) -> float:
@@ -561,10 +694,25 @@ def resolve_targets(
         if cap > 0 and any(v > cap + 1e-9 for v in weights.values()):
             weights = _waterfill_cap(weights, cap)
 
+    # correlation control — don't hand "the same trade" several full slots
+    if spec.risk.max_pair_corr > 0 and len(weights) > 2:
+        weights, corr_notes = _correlation_deconcentrate(
+            weights, bars_by_symbol, as_of_dt,
+            threshold=spec.risk.max_pair_corr, lookback=spec.risk.corr_lookback,
+        )
+        notes.extend(corr_notes)
+        if cap > 0 and any(v > cap + 1e-9 for v in weights.values()):
+            weights = _waterfill_cap(weights, cap)
+
     invested = sum(weights.values())
+    risk_contribution = _risk_contribution(
+        weights, bars_by_symbol, as_of_dt,
+        lookback=spec.risk.corr_lookback if spec.risk.max_pair_corr > 0 else 126,
+    )
     return ResolveResult(
         weights=weights, cash_weight=max(1.0 - invested, 0.0),
         per_sleeve=per_sleeve, regime=regime, notes=notes,
+        risk_contribution=risk_contribution,
     )
 
 

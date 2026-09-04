@@ -155,16 +155,25 @@ class RegimeGate:
 class RiskLimits:
     max_position_pct: float = 0.0   # global single-name cap, fraction of basket (0 => off)
     max_sector_pct: float = 0.0     # cap per sector bucket (0 => off)
+    max_pair_corr: float = 0.0      # de-concentrate holdings whose return corr exceeds this (0 => off)
+    corr_lookback: int = 126        # trading days of daily returns for the correlation estimate
     regime: RegimeGate | None = None
 
     @property
     def active(self) -> bool:
-        return self.max_position_pct > 0 or self.max_sector_pct > 0 or self.regime is not None
+        return (
+            self.max_position_pct > 0
+            or self.max_sector_pct > 0
+            or self.max_pair_corr > 0
+            or self.regime is not None
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "max_position_pct": self.max_position_pct,
             "max_sector_pct": self.max_sector_pct,
+            "max_pair_corr": self.max_pair_corr,
+            "corr_lookback": self.corr_lookback,
             "regime": self.regime.to_dict() if self.regime else None,
         }
 
@@ -352,9 +361,21 @@ def _parse_risk(raw: Any) -> RiskLimits:
             benchmark=str(rg.get("benchmark") or "NIFTY 50"), ma=ma, risk_off_scale=scale,
             hard_cut=bool(rg.get("hard_cut", False)),
         )
+    try:
+        pair_corr = float(raw.get("max_pair_corr", 0.0) or 0.0)
+        corr_lb = int(raw.get("corr_lookback", 126) or 126)
+    except (TypeError, ValueError) as exc:
+        raise SpecError("spec.risk.max_pair_corr / corr_lookback must be numbers") from exc
+    if not 0.0 <= pair_corr <= 1.0:
+        raise SpecError("spec.risk.max_pair_corr must be in [0, 1]")
+    if not 20 <= corr_lb <= 504:
+        raise SpecError("spec.risk.corr_lookback must be in [20, 504]")
+
     return RiskLimits(
         max_position_pct=_pct("max_position_pct"),
         max_sector_pct=_pct("max_sector_pct"),
+        max_pair_corr=pair_corr,
+        corr_lookback=corr_lb,
         regime=regime,
     )
 

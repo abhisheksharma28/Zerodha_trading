@@ -241,7 +241,7 @@ CATALOG: list[dict[str, Any]] = [
                  "weighting": "score_weighted", "members": U.LARGE_MID_ALPHA, "max_weight_pct": 12.0,
                  "rule": _composite(126, 12, FW_MOMENTUM, hold_k=16, trend_ma=200)},
             ],
-            "risk": {"regime": _REGIME, "max_sector_pct": 30.0},
+            "risk": {"regime": _REGIME, "max_sector_pct": 30.0, "max_pair_corr": 0.9},
         },
     ),
     _p(
@@ -277,7 +277,8 @@ CATALOG: list[dict[str, Any]] = [
                  "weighting": "score_weighted", "members": U.LARGE_MID_ALPHA, "max_weight_pct": 10.0,
                  "rule": _composite(126, 12, FW_ADAPTIVE, hold_k=16, trend_ma=200)},
             ],
-            "risk": {"max_position_pct": 12.0, "max_sector_pct": 30.0, "regime": _REGIME},
+            "risk": {"max_position_pct": 12.0, "max_sector_pct": 30.0,
+                     "max_pair_corr": 0.9, "regime": _REGIME},
         },
     ),
     # =========================================================== GROWTH

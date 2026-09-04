@@ -371,6 +371,7 @@ def _do_rebalance_locked(
         "orders": ev.orders,
         "orders_placed": placed,
         "notes": targets.notes,
+        "risk_contribution": targets.risk_contribution,
         "skipped": skipped,
     }
 

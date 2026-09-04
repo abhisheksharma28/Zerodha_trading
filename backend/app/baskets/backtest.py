@@ -37,6 +37,7 @@ class RebalanceSnapshot:
     regime: str = "normal"
     changes: list[dict[str, Any]] = field(default_factory=list)  # per-name change log
     notes: list[str] = field(default_factory=list)
+    risk_contribution: dict[str, float] = field(default_factory=dict)  # sym -> % of variance
 
 
 @dataclass
@@ -74,6 +75,7 @@ class BasketBacktestResult:
                     "n_orders": r.n_orders, "turnover_pct": round(r.turnover_pct, 2),
                     "cash_pct": round(r.cash_pct, 2), "regime": r.regime,
                     "changes": r.changes, "notes": r.notes,
+                    "risk_contribution": r.risk_contribution,
                 }
                 for r in self.rebalances
             ],
@@ -453,6 +455,7 @@ def run_backtest(
                     regime=res.regime,
                     changes=changes[:24],
                     notes=res.notes[:6],
+                    risk_contribution=res.risk_contribution,
                 )
             )
 

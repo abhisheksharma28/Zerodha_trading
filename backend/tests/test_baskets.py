@@ -501,3 +501,99 @@ def test_basket_api_rejects_bad_spec():
             ]},
         })
         assert r.status_code in (400, 422)
+
+
+# --------------------------------------------------------------------------
+# correlation control + risk contribution
+# --------------------------------------------------------------------------
+
+def _corr_series(symbol: str, shared, own_scale: float, seed: int):
+    """A series driven mostly by a shared shock stream plus its own jitter."""
+    import random
+
+    rng = random.Random(seed)
+    return _series(
+        symbol, 100.0, 0.0004, len(shared),
+        noise=lambda i: shared[i] + own_scale * (rng.random() - 0.5) * 0.01,
+    )
+
+
+def test_correlation_control_tapers_a_redundant_holding():
+    import random
+
+    from app.baskets.engine import _correlation_deconcentrate
+
+    rng = random.Random(0)
+    shared = [(rng.random() - 0.5) * 0.03 for _ in range(200)]
+    bars = {
+        # A and B ride the same shock stream -> highly correlated
+        "A": _corr_series("A", shared, 0.2, 1),
+        "B": _corr_series("B", shared, 0.2, 2),
+        # C has its own independent path -> a genuine diversifier
+        "C": _series("C", 100.0, 0.0003, 200,
+                     noise=lambda i: (random.Random(i + 99).random() - 0.5) * 0.03),
+    }
+    w = {"A": 0.4, "B": 0.4, "C": 0.2}
+    out, notes = _correlation_deconcentrate(
+        w, bars, datetime(2020, 6, 1), threshold=0.8, lookback=126,
+    )
+    # the lower/equal-weight member of the correlated pair is tapered
+    assert min(out["A"], out["B"]) < 0.4 - 1e-6
+    # freed weight moves to the diversifier, total stays invested here
+    assert out["C"] > 0.2 + 1e-6
+    assert sum(out.values()) == pytest.approx(1.0, abs=1e-6)
+    assert any("corr control" in n for n in notes)
+
+
+def test_correlation_control_noop_when_all_holdings_are_distinct():
+    import random
+
+    from app.baskets.engine import _correlation_deconcentrate
+
+    bars = {}
+    for k, s in enumerate(("A", "B", "C", "D")):
+        rng = random.Random(1000 + k * 97)
+        bars[s] = _series(s, 100.0, 0.0003, 200,
+                          noise=lambda i, rng=rng: (rng.random() - 0.5) * 0.04)
+    w = {"A": 0.25, "B": 0.25, "C": 0.25, "D": 0.25}
+    out, notes = _correlation_deconcentrate(
+        w, bars, datetime(2020, 6, 1), threshold=0.85, lookback=126,
+    )
+    assert out == w
+    assert notes == []
+
+
+def test_resolve_targets_reports_risk_contribution():
+    spec = parse_spec({
+        "sleeves": [
+            {"id": "eq", "name": "Eq", "weight_pct": 100, "weighting": "equal",
+             "members": ["P", "Q", "R", "S"], "rule": {"type": "none"}},
+        ],
+    })
+    bars = {s: _series(s, 100, 0.0005, 180,
+                       noise=lambda i, s=s: (hash((s, i)) % 100 - 50) / 8000.0)
+            for s in ("P", "Q", "R", "S")}
+    res = resolve_targets(spec, bars, datetime(2020, 5, 1))
+    assert set(res.risk_contribution) == set(res.weights)
+    assert sum(res.risk_contribution.values()) == pytest.approx(100.0, abs=1.0)
+
+
+def test_spec_parses_and_round_trips_max_pair_corr():
+    spec = parse_spec({
+        "sleeves": [
+            {"id": "a", "name": "A", "weight_pct": 100, "weighting": "equal",
+             "members": ["X", "Y", "Z"], "rule": {"type": "none"}},
+        ],
+        "risk": {"max_pair_corr": 0.9, "corr_lookback": 90},
+    })
+    assert spec.risk.max_pair_corr == 0.9
+    assert spec.risk.corr_lookback == 90
+    assert spec.risk.active is True
+    assert spec.to_dict()["risk"]["max_pair_corr"] == 0.9
+
+    with pytest.raises(SpecError):
+        parse_spec({
+            "sleeves": [{"id": "a", "name": "A", "weight_pct": 100,
+                         "members": ["X"], "rule": {"type": "none"}}],
+            "risk": {"max_pair_corr": 1.5},
+        })
