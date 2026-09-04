@@ -8,14 +8,15 @@ up the cheap screen get a (daily-only) full evaluation.
 from __future__ import annotations
 
 import math
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import Settings
@@ -35,7 +36,39 @@ from app.models.market_scanner import ScannerAlert, ScanRecommendation, ScanRun
 
 logger = get_logger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
-_SCAN_RUN_LOCK = 776611  # serialize scans (scheduler loop vs a manual POST /scan)
+# both callers (the scheduler loop and POST /scan) run in the API process,
+# so an in-process lock is enough and — unlike a pooled-connection advisory
+# lock — can never be orphaned by a commit handing the connection back.
+_scan_gate = threading.Lock()
+# a ScanRun with no finished_at older than this is treated as crashed, not
+# "still running", so one wedged sweep can't block the feed forever.
+_STALE_RUN_AFTER = timedelta(minutes=8)
+
+
+def _aware(dt: datetime) -> datetime:
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+
+
+def _mark_stale_runs_finished(db: Session) -> None:
+    """Close out any ScanRun left with finished_at NULL past the stale
+    window — a crashed sweep must not read as 'in progress' forever."""
+    cutoff = datetime.now(UTC) - _STALE_RUN_AFTER
+    try:
+        rows = db.execute(
+            select(ScanRun).where(
+                ScanRun.finished_at.is_(None), ScanRun.started_at < cutoff
+            )
+        ).scalars().all()
+        for r in rows:
+            r.finished_at = datetime.now(UTC)
+            r.data_available = False
+            if not r.reason:
+                r.reason = "Scan did not finish (stale) — closed out automatically."
+        if rows:
+            db.commit()
+            logger.warning("market_scanner_closed_stale_runs", count=len(rows))
+    except Exception:  # noqa: BLE001 - housekeeping must not break a scan
+        db.rollback()
 
 
 @dataclass
@@ -251,17 +284,33 @@ def run_scan(
     started = datetime.now(UTC)
     t0 = time.monotonic()
 
-    # serialize: never let a manual scan and the scheduled loop run at once
-    got_lock = bool(db.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": _SCAN_RUN_LOCK}).scalar())
-    if not got_lock:
-        return ScanOutcome(None, False, "A scan is already in progress.", 0, 0, {}, ["scan already running"])
+    # serialize: never let a manual scan and the scheduled loop run at once.
+    # In-process only (both callers live here); no DB advisory lock, which
+    # could be stranded on a pooled connection by a mid-scan commit.
+    held = _scan_gate.acquire(blocking=False)
+    if not held:
+        stuck = db.execute(
+            select(ScanRun.started_at)
+            .where(ScanRun.finished_at.is_(None))
+            .order_by(ScanRun.started_at.desc())
+            .limit(1)
+        ).scalar()
+        if stuck is not None and datetime.now(UTC) - _aware(stuck) < _STALE_RUN_AFTER:
+            return ScanOutcome(
+                None, False, "A scan is already in progress.", 0, 0, {},
+                ["scan already running"],
+            )
+        # the running scan is wedged (or its thread died) — take over
+        logger.warning("market_scanner_stale_scan_override")
+        _mark_stale_runs_finished(db)
 
     try:
         return _run_scan_locked(db, settings, trigger=trigger, universe=universe,
                                 started=started, t0=t0)
     finally:
-        db.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _SCAN_RUN_LOCK})
-        db.commit()
+        _mark_stale_runs_finished(db)  # never leave a run with finished_at NULL
+        if held:
+            _scan_gate.release()
 
 
 def _run_scan_locked(

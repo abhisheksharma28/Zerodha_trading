@@ -176,7 +176,7 @@ def test_signal_returns_none_when_nothing_lines_up():
 # Phase 3-4: tracker lifecycle + service shape
 # --------------------------------------------------------------------------
 
-from datetime import UTC, datetime  # noqa: E402
+from datetime import UTC, datetime, timedelta  # noqa: E402
 
 from app.config import get_settings  # noqa: E402
 from app.market_scanner import service as scan_service  # noqa: E402
@@ -352,3 +352,32 @@ def test_protective_hedge_only_for_long_fno_and_fails_soft(db):
 
     # a LONG F&O name with no option rows in the test DB -> graceful None, no raise
     assert sc._protective_hedge(db, long_si, long_setup) is None
+
+
+def test_scan_gate_reports_in_progress_but_takes_over_a_stale_run(db, monkeypatch):
+    """The in-process gate serialises scans, but a run left unfinished past
+    the stale window must not block the feed forever."""
+    from app.market_scanner import scanner as sc
+
+    s = get_settings()
+    monkeypatch.setattr(sc.md, "get_client", lambda *a, **k: None)  # scan bails fast
+
+    # hold the gate as if another scan were mid-flight
+    assert sc._scan_gate.acquire(blocking=False)
+    try:
+        fresh = ScanRun(started_at=datetime.now(UTC), trigger="schedule")
+        db.add(fresh)
+        db.commit()
+        out = sc.run_scan(db, s, trigger="manual")
+        assert out.reason == "A scan is already in progress."
+
+        # now age the unfinished run past the stale window
+        fresh.started_at = datetime.now(UTC) - sc._STALE_RUN_AFTER - timedelta(minutes=1)
+        db.commit()
+        out2 = sc.run_scan(db, s, trigger="manual")
+        assert out2.reason != "A scan is already in progress."   # took over
+        db.refresh(fresh)
+        assert fresh.finished_at is not None                     # stale run was closed out
+    finally:
+        if sc._scan_gate.locked():
+            sc._scan_gate.release()
