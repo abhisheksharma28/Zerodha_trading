@@ -325,9 +325,20 @@ def _rank_members(
         market_bars=market_bars, regime=regime,
     )
 
-    # rank everything that cleared the hard screens, best first
-    ranked = sorted(metric.items(), key=lambda kv: kv[1], reverse=True)
-    order = [m for m, _ in ranked]
+    # rank by the raw metric, best first — but for a scored rule, give a
+    # currently-held name a replace-margin bump (in points on the 0-100
+    # composite score) so a new candidate only displaces it once it is
+    # meaningfully, not marginally, better
+    margin_pts = (
+        rule.replace_margin_pct * 100.0 if rule.type == "composite_score" else 0.0
+    )
+
+    def _eff(m: str) -> float:
+        return metric[m] + margin_pts if (margin_pts > 0 and m in held) else metric[m]
+
+    order = sorted(metric, key=_eff, reverse=True)
+    if margin_pts > 0 and held:
+        notes.append(f"replace margin +{margin_pts:.0f} pts applied to held names")
 
     top_k = rule.top_k
     hold_k = rule.effective_hold_k
@@ -588,15 +599,24 @@ def plan_orders(
     portfolio_value: float,
     *,
     drift_band_pct: float = 3.0,
+    full_band_mult: float = 1.5,
     reasons: dict[str, str] | None = None,
 ) -> list[OrderIntent]:
-    """Diff current holdings against ``targets`` (symbol -> weight). A name
-    only trades when |target − current| weight exceeds ``drift_band_pct``;
-    a name that fell out of ``targets`` is always fully sold. ``reasons``
-    maps a symbol to a human explanation for the change log."""
+    """Diff current holdings against ``targets`` (symbol -> weight), tiered
+    on how far a name has drifted:
+
+      |drift| < band                -> no trade
+      band <= |drift| < band * mult -> partial: move halfway to target
+      |drift| >= band * mult        -> full: trade to target
+
+    A name that fell out of ``targets`` (or is a brand-new position) is
+    always traded in full. ``reasons`` maps a symbol to a human
+    explanation for the change log.
+    """
     if portfolio_value <= 0:
         return []
     band = max(drift_band_pct, 0.0) / 100.0
+    full_band = band * max(full_band_mult, 1.0)
     reasons = reasons or {}
     symbols = set(targets) | set(holdings)
     intents: list[OrderIntent] = []
@@ -614,14 +634,25 @@ def plan_orders(
         if not dropped and abs(drift) < band:
             continue
 
-        tgt_qty = 0 if sym not in targets else int(math.floor(tgt_w * portfolio_value / px))
+        full_target = 0 if sym not in targets else int(math.floor(tgt_w * portfolio_value / px))
+        # partial step for a drift in the middle band (existing position only)
+        partial = (
+            not dropped and cur_qty > 0 and band <= abs(drift) < full_band
+        )
+        tgt_qty = (
+            cur_qty + int(round((full_target - cur_qty) * 0.5)) if partial else full_target
+        )
         delta = tgt_qty - cur_qty
         if delta == 0:
             continue
         default = (
             "exit — dropped from target"
             if dropped
-            else ("new position" if cur_qty == 0 else "rebalance to target weight")
+            else "new position"
+            if cur_qty == 0
+            else f"partial rebalance (drift {drift * 100:+.1f}%)"
+            if partial
+            else "rebalance to target weight"
         )
         intents.append(
             OrderIntent(
@@ -630,7 +661,7 @@ def plan_orders(
                 qty=abs(delta),
                 est_value=abs(delta) * px,
                 from_weight=cur_w,
-                to_weight=tgt_w,
+                to_weight=tgt_qty * px / portfolio_value,  # actual post-trade weight
                 reason=reasons.get(sym, default),
             )
         )

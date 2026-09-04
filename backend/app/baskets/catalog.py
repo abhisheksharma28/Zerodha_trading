@@ -76,11 +76,15 @@ def _mom(lookback: int, top_k: int, *, trend_ma: int = 200, hold_k: int = 0,
 
 
 def _composite(lookback: int, top_k: int, factor_weights: dict[str, float], *,
-               hold_k: int = 0, trend_ma: int = 200,
-               min_roc_pct: float = 0.0) -> dict[str, Any]:
+               hold_k: int = 0, trend_ma: int = 200, min_roc_pct: float = 0.0,
+               replace_margin_pct: float = 0.05) -> dict[str, Any]:
+    # replace_margin_pct: a new name must beat the held name it would
+    # displace by 5 points of composite score before the swap — a gentle
+    # damp on top of the rank buffer
     return {
         "type": "composite_score", "lookback": lookback, "top_k": top_k, "hold_k": hold_k,
         "trend_ma": trend_ma, "min_roc_pct": min_roc_pct, "factor_weights": factor_weights,
+        "replace_margin_pct": replace_margin_pct,
     }
 
 

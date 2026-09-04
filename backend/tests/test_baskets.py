@@ -308,6 +308,48 @@ def test_composite_score_uses_relative_strength_and_exposes_factor_ranks():
     assert set(res2.per_sleeve[0].factor_ranks.get("LEAD", {})) == {"momentum"}
 
 
+def test_replace_margin_keeps_a_held_name_over_a_marginally_better_newcomer():
+    # 5 members -> composite percentile scores land at 0 / 25 / 50 / 75 / 100
+    members = ["A", "B", "C", "D", "E"]
+    drifts = [0.005, 0.004, 0.003, 0.002, 0.001]  # A strongest -> E weakest
+    bars = {m: _series(m, 100, d, 120) for m, d in zip(members, drifts)}
+    base = {"sleeves": [{
+        "id": "eq", "name": "Eq", "weight_pct": 100, "weighting": "equal",
+        "members": members,
+        "rule": {"type": "composite_score", "lookback": 40, "top_k": 3, "trend_ma": 0,
+                 "factor_weights": {"momentum": 1.0}},
+    }]}
+    # no margin: top 3 by score are A, B, C; D (held, score ~25) is dropped
+    r0 = resolve_targets(parse_spec(base), bars, datetime(2020, 4, 1),
+                         current_holdings={"D": 10})
+    assert set(r0.weights) == {"A", "B", "C"}
+
+    # +40-point margin: D's effective score (~65) beats C (~50), so the held
+    # name D is kept and the marginally-better newcomer C is not swapped in
+    base["sleeves"][0]["rule"]["replace_margin_pct"] = 0.40
+    r1 = resolve_targets(parse_spec(base), bars, datetime(2020, 4, 1),
+                         current_holdings={"D": 10})
+    assert "D" in r1.weights and "C" not in r1.weights
+
+
+def test_plan_orders_tiers_drift_into_no_trade_partial_and_full():
+    prices = {"X": 100.0, "Y": 100.0, "Z": 100.0}
+    pv = 100_000.0
+    holdings = {"X": 300, "Y": 300, "Z": 300}  # each 30% of pv
+    targets = {
+        "X": 0.315,   # +1.5% drift  -> under a 3% band -> no trade
+        "Y": 0.34,    # +4.0% drift  -> band..2*band   -> partial (half step)
+        "Z": 0.40,    # +10% drift   -> >= 2*band       -> full
+    }
+    intents = {i.symbol: i for i in plan_orders(targets, holdings, prices, pv, drift_band_pct=3.0)}
+    assert "X" not in intents
+    # partial: move halfway from 300 to the full target of 340 -> +20
+    assert intents["Y"].side == "BUY" and intents["Y"].qty == 20
+    assert "partial" in intents["Y"].reason
+    # full: 300 -> 400 -> +100
+    assert intents["Z"].side == "BUY" and intents["Z"].qty == 100
+
+
 def test_plan_orders_always_exits_a_dropped_name():
     prices = {"A": 100.0, "B": 50.0}
     pv = 100_000.0

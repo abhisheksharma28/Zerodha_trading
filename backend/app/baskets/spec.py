@@ -66,6 +66,11 @@ class RuleSpec:
     # composite_score only: {factor: weight}, normalised. Empty => equal
     # weight across momentum/low_vol/trend.
     factor_weights: dict[str, float] = field(default_factory=dict)
+    # composite_score only: a new candidate must beat the score of the held
+    # name it would displace by this fraction before the swap is made
+    # (0.10 = "10% better"). 0 => rank-only hysteresis. Damps churn from
+    # names shuffling near the cutoff.
+    replace_margin_pct: float = 0.0
 
     @property
     def active(self) -> bool:
@@ -92,6 +97,7 @@ class RuleSpec:
             "hold_k": self.hold_k,
             "exit_roc_pct": self.exit_roc_pct,
             "factor_weights": dict(self.factor_weights),
+            "replace_margin_pct": self.replace_margin_pct,
         }
 
 
@@ -252,9 +258,17 @@ def _parse_rule(raw: Any, *, sleeve_id: str, n_members: int) -> RuleSpec:
     if rtype == "composite_score" and not factor_weights:
         factor_weights = {"momentum": 0.6, "trend": 0.2, "low_vol": 0.2}
 
+    try:
+        replace_margin = float(raw.get("replace_margin_pct", 0.0) or 0.0)
+    except (TypeError, ValueError) as exc:
+        raise SpecError(f"sleeve '{sleeve_id}': rule.replace_margin_pct must be a number") from exc
+    if not 0.0 <= replace_margin <= 1.0:
+        raise SpecError(f"sleeve '{sleeve_id}': rule.replace_margin_pct must be in [0, 1]")
+
     return RuleSpec(
         type=rtype, lookback=lookback, top_k=top_k, trend_ma=trend_ma, min_roc_pct=min_roc,
         hold_k=hold_k, exit_roc_pct=exit_roc, factor_weights=factor_weights,
+        replace_margin_pct=replace_margin,
     )
 
 
