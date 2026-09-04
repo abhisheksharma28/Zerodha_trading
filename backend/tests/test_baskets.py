@@ -312,7 +312,7 @@ def test_replace_margin_keeps_a_held_name_over_a_marginally_better_newcomer():
     # 5 members -> composite percentile scores land at 0 / 25 / 50 / 75 / 100
     members = ["A", "B", "C", "D", "E"]
     drifts = [0.005, 0.004, 0.003, 0.002, 0.001]  # A strongest -> E weakest
-    bars = {m: _series(m, 100, d, 120) for m, d in zip(members, drifts)}
+    bars = {m: _series(m, 100, d, 120) for m, d in zip(members, drifts, strict=True)}
     base = {"sleeves": [{
         "id": "eq", "name": "Eq", "weight_pct": 100, "weighting": "equal",
         "members": members,
