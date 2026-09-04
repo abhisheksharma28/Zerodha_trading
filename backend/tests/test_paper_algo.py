@@ -269,6 +269,42 @@ def test_take_idea_places_a_persistent_delivery_position(db):
     assert any(t == f"idea:{rec.id}" for t in tags)
 
 
+def test_take_idea_shorts_the_stock_future_for_an_equity_futures_idea(db, _fixed_prices):
+    from datetime import date, timedelta
+
+    s = get_settings()
+    _inst(db, instrument_token="408065", tradingsymbol="INFY", exchange="NSE")
+    # a listed near-month INFY future
+    _inst(db, instrument_token="990001", tradingsymbol="INFY25SEPFUT", name="INFY",
+          exchange="NFO", segment="NFO-FUT", instrument_type="FUT", lot_size=300,
+          expiry=date.today() + timedelta(days=20))
+    _fixed_prices["NFO:INFY25SEPFUT"] = 1502.0
+
+    rec = _rec(db, trade_style="EQUITY_FUTURES", direction="SHORT",
+               underlying="INFY", entry=1500.0, stop_loss=1560.0, target_1=1400.0)
+    db.flush()
+
+    res = algo.take_idea(db, s, str(rec.id), pct=10.0)
+    assert res["ok"] and res["trade_style"] == "EQUITY_FUTURES"
+    assert res["symbol"] == "INFY25SEPFUT" and res["product"] == "NRML" and res["qty"] % 300 == 0
+
+    from app.models.paper_account import PaperOrder
+
+    acct = get_or_create_account(db)
+    orders = db.query(PaperOrder).filter(PaperOrder.account_id == acct.id).all()
+    entry = next(o for o in orders if o.order_type == "MARKET")
+    assert entry.exchange == "NFO" and entry.side == "SELL"
+
+
+def test_take_idea_futures_needs_a_listed_contract(db):
+    s = get_settings()
+    _inst(db, instrument_token="408065", tradingsymbol="INFY", exchange="NSE")
+    rec = _rec(db, trade_style="EQUITY_FUTURES", direction="SHORT", underlying="INFY")
+    db.flush()
+    with pytest.raises(ValidationError, match="no listed future"):
+        algo.take_idea(db, s, str(rec.id), pct=10.0)
+
+
 def test_take_idea_respects_an_explicit_quantity(db):
     s = get_settings()
     _inst(db, instrument_token="408065", tradingsymbol="INFY", exchange="NSE")

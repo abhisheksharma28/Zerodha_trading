@@ -31,19 +31,29 @@ const dirTone = (d: string) => (d === "LONG" ? "text-pos" : "text-neg");
 const STYLE_LABEL: Record<ScanRecommendation["trade_style"], string> = {
   EQUITY_DELIVERY: "Delivery",
   EQUITY_INTRADAY: "Intraday",
+  EQUITY_FUTURES: "Futures",
   OPTION: "Options",
 };
 const STYLE_HINT: Record<ScanRecommendation["trade_style"], string> = {
   EQUITY_DELIVERY: "Buy/sell the stock · CNC · hold across days",
   EQUITY_INTRADAY: "Buy/sell the stock · MIS · square off by ~15:20",
+  EQUITY_FUTURES: "Short/long the near-month stock future · NFO · NRML · roll at expiry",
   OPTION: "Defined-risk option spread expressing the same view",
 };
 
-type FilterKey = "ALL" | "EQUITY_DELIVERY" | "EQUITY_INTRADAY" | "OPTION" | "LONG" | "SHORT";
+type FilterKey =
+  | "ALL"
+  | "EQUITY_DELIVERY"
+  | "EQUITY_INTRADAY"
+  | "EQUITY_FUTURES"
+  | "OPTION"
+  | "LONG"
+  | "SHORT";
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "ALL", label: "All" },
   { key: "EQUITY_DELIVERY", label: "Delivery" },
   { key: "EQUITY_INTRADAY", label: "Intraday" },
+  { key: "EQUITY_FUTURES", label: "Futures" },
   { key: "OPTION", label: "Options" },
   { key: "LONG", label: "Long" },
   { key: "SHORT", label: "Short" },
@@ -307,6 +317,26 @@ function HedgeNote({ rec }: { rec: ScanRecommendation }) {
   );
 }
 
+function FuturesNote({ rec }: { rec: ScanRecommendation }) {
+  const f = rec.context?.futures;
+  if (!f) return null;
+  const short = f.side === "SELL";
+  return (
+    <div className="mt-2 rounded-md border border-accent/30 bg-accent-soft/20 p-2 text-[11px]">
+      <p className="font-semibold text-accent">
+        {short ? "Short the stock future" : "Buy the stock future"} · NFO
+      </p>
+      <p className="mt-0.5 text-fg-muted">
+        {short ? "Sell" : "Buy"} 1 lot ({f.lot_size}) of{" "}
+        <span className="tabular-nums">{f.tradingsymbol}</span>
+        {f.expiry ? ` (exp ${f.expiry}${f.dte != null ? `, ${f.dte}d` : ""})` : ""} — est. margin{" "}
+        <span className="tabular-nums">~{inr(f.est_margin)}</span>. NSE cash has no delivery short;
+        roll to the next series before expiry. Manage against the stock&apos;s stop / target.
+      </p>
+    </div>
+  );
+}
+
 function EquityCard({
   rec,
   siblingStyle,
@@ -321,7 +351,10 @@ function EquityCard({
   streaming?: boolean;
 }) {
   const fund = rec.fundamentals as { bias?: string } | null;
-  const days = rec.trade_style === "EQUITY_DELIVERY" ? estDays(rec) : null;
+  const days =
+    rec.trade_style === "EQUITY_DELIVERY" || rec.trade_style === "EQUITY_FUTURES"
+      ? estDays(rec)
+      : null;
   const ltp = liveLtp ?? rec.last_ltp ?? null;
   return (
     <div className="rounded-lg border border-line bg-surface p-3">
@@ -387,6 +420,7 @@ function EquityCard({
         </div>
       )}
 
+      <FuturesNote rec={rec} />
       <HedgeNote rec={rec} />
       <PairNote rec={rec} siblingStyle={siblingStyle} />
       <Factors rec={rec} />

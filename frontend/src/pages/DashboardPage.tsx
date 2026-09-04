@@ -295,6 +295,7 @@ export default function DashboardPage() {
       ({
         EQUITY_DELIVERY: algo?.config.allow_delivery ?? true,
         EQUITY_INTRADAY: algo?.config.allow_intraday ?? true,
+        EQUITY_FUTURES: algo?.config.allow_delivery ?? true,
         OPTION: algo?.config.allow_options ?? true,
       })[r.trade_style] ?? true;
     return (recs?.live ?? [])

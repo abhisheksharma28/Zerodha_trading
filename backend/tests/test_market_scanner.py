@@ -262,8 +262,12 @@ def test_service_recommendations_and_logbook_shape(db):
 
 def test_trade_style_split_equity_vs_option():
     from app.market_scanner.signals import trade_style_for
-    assert trade_style_for("SWING", "EQUITY") == "EQUITY_DELIVERY"
-    assert trade_style_for("INTRADAY", "EQUITY") == "EQUITY_INTRADAY"
+    # swing long -> delivery; swing short -> future (F&O) / intraday (non-F&O)
+    assert trade_style_for("SWING", "EQUITY", direction="LONG") == "EQUITY_DELIVERY"
+    assert trade_style_for("SWING", "EQUITY", direction="SHORT", has_options=True) == "EQUITY_FUTURES"
+    assert trade_style_for("SWING", "EQUITY", direction="SHORT", has_options=False) == "EQUITY_INTRADAY"
+    # intraday: shorting is fine in MIS
+    assert trade_style_for("INTRADAY", "EQUITY", direction="SHORT") == "EQUITY_INTRADAY"
     assert trade_style_for("SWING", "INDEX") == "EQUITY_INTRADAY"
 
 

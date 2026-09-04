@@ -69,7 +69,7 @@ export interface ScanRecommendation {
   underlying: string | null;
   instrument_token: string;
   horizon: "INTRADAY" | "SWING";
-  trade_style: "EQUITY_DELIVERY" | "EQUITY_INTRADAY" | "OPTION";
+  trade_style: "EQUITY_DELIVERY" | "EQUITY_INTRADAY" | "EQUITY_FUTURES" | "OPTION";
   direction: "LONG" | "SHORT";
   setup_type: string;
   setup_tags: string[];
@@ -95,6 +95,18 @@ export interface ScanRecommendation {
     calendar?: { reason: string };
     news?: { score: number; note: string; headlines: { title?: string }[] };
     options?: { oi_pcr: number | null; max_pain: number | null; read: string };
+    futures?: {
+      tradingsymbol: string;
+      exchange: string;
+      expiry: string | null;
+      dte: number | null;
+      lot_size: number;
+      ref_price: number;
+      contract_value: number;
+      est_margin: number;
+      side: "BUY" | "SELL";
+      note: string;
+    };
   } | null;
   option_overlay: OptionOverlay | null;
   hedge: HedgeLeg | null;

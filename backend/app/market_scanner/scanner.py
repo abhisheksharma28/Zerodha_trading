@@ -25,6 +25,7 @@ from app.market_scanner import candles as candle_mod
 from app.market_scanner import chart_patterns as chart_mod
 from app.market_scanner import context as ctx_mod
 from app.market_scanner import fundamentals as fund_mod
+from app.market_scanner import futures as fut_mod
 from app.market_scanner import marketdata as md
 from app.market_scanner import options_overlay, signals
 from app.market_scanner import structure as st
@@ -67,7 +68,31 @@ def _mark_stale_runs_finished(db: Session) -> None:
         if rows:
             db.commit()
             logger.warning("market_scanner_closed_stale_runs", count=len(rows))
-    except Exception:  # noqa: BLE001 - housekeeping must not break a scan
+    except Exception as exc:  # noqa: BLE001 - housekeeping must not block a scan
+        logger.warning("market_scanner_stale_run_cleanup_failed", error=str(exc))
+        db.rollback()
+
+
+def _relabel_legacy_short_delivery(db: Session) -> None:
+    """NSE cash has no naked delivery short. Fix any LIVE row still tagged
+    EQUITY_DELIVERY + SHORT (from before the futures split) so it never
+    shows as an un-executable 'Delivery' sell; the next produce cycle emits
+    a proper EQUITY_FUTURES card."""
+    try:
+        rows = db.execute(
+            select(ScanRecommendation).where(
+                ScanRecommendation.status == "LIVE",
+                ScanRecommendation.direction == "SHORT",
+                ScanRecommendation.trade_style == "EQUITY_DELIVERY",
+            )
+        ).scalars().all()
+        for r in rows:
+            r.trade_style = "EQUITY_INTRADAY"
+        if rows:
+            db.commit()
+            logger.info("market_scanner_relabelled_short_delivery", count=len(rows))
+    except Exception as exc:  # noqa: BLE001 - housekeeping must not block a scan
+        logger.warning("market_scanner_relabel_failed", error=str(exc))
         db.rollback()
 
 
@@ -152,7 +177,8 @@ def _existing_open(db: Session, symbol: str, day: str) -> set[str]:
 
 
 _STYLE_LABEL = {
-    "EQUITY_DELIVERY": "Delivery", "EQUITY_INTRADAY": "Intraday", "OPTION": "Options",
+    "EQUITY_DELIVERY": "Delivery", "EQUITY_INTRADAY": "Intraday",
+    "EQUITY_FUTURES": "Futures", "OPTION": "Options",
 }
 
 
@@ -304,6 +330,7 @@ def run_scan(
         logger.warning("market_scanner_stale_scan_override")
         _mark_stale_runs_finished(db)
 
+    _relabel_legacy_short_delivery(db)
     try:
         return _run_scan_locked(db, settings, trigger=trigger, universe=universe,
                                 started=started, t0=t0)
@@ -406,10 +433,22 @@ def _run_scan_locked(
             except Exception as exc:  # noqa: BLE001 - news overlay is optional
                 logger.info("scanner_news_error", ref=si.ref, error=str(exc))
 
-        # 1. the equity idea (delivery / intraday) - the primary card.
-        #    Indices have no cash leg, so skip a bare equity card for them
-        #    unless there is no option overlay to carry the view.
-        style = signals.trade_style_for(setup.horizon, si.asset_class)
+        # 1. the equity idea (delivery / futures / intraday) - the primary
+        #    card. Indices have no cash leg, so skip a bare equity card for
+        #    them unless there is no option overlay to carry the view.
+        #    A swing SHORT can't be a delivery sell (NSE cash) -> route it to
+        #    the near-month single-stock future when one is listed.
+        style = signals.trade_style_for(
+            setup.horizon, si.asset_class,
+            direction=setup.direction, has_options=si.has_options,
+        )
+        fut_block: dict[str, Any] | None = None
+        if style == "EQUITY_FUTURES":
+            fut = fut_mod.near_month_future(db, si.underlying or si.tradingsymbol)
+            if fut is None:
+                style = "EQUITY_INTRADAY"  # no listed future -> intraday short only
+            else:
+                fut_block = fut_mod.futures_block(fut, setup.entry, setup.direction)
         overlay = None
         if si.has_options and si.underlying and setup.confidence >= settings.market_scanner_overlay_min_confidence:
             try:
@@ -422,6 +461,8 @@ def _run_scan_locked(
 
         pair_id = uuid.uuid4() if overlay is not None else None
         ctx_equity = _context_payload(ev, setup, news, overlay=None)
+        if fut_block is not None:
+            ctx_equity = {**(ctx_equity or {}), "futures": fut_block}
         ctx_option = _context_payload(ev, setup, news, overlay=overlay)
 
         if si.asset_class != "INDEX" or overlay is None:

@@ -358,12 +358,26 @@ def _context_factors(inp: SignalInput, side_sign: float) -> list[Factor]:
 # assembly
 # --------------------------------------------------------------------------
 
-def trade_style_for(horizon: str, asset_class: str) -> str:
-    """What the user actually trades. Indices have no cash-delivery leg, so
-    an index directional idea is always intraday (or the option overlay)."""
-    if asset_class == "EQUITY":
-        return "EQUITY_INTRADAY" if horizon == "INTRADAY" else "EQUITY_DELIVERY"
-    return "EQUITY_INTRADAY"  # INDEX / COMMODITY - no delivery
+def trade_style_for(
+    horizon: str, asset_class: str, *, direction: str = "LONG", has_options: bool = False
+) -> str:
+    """What the user can actually trade.
+
+    - Indices / commodities have no cash-delivery leg -> intraday (or the
+      option overlay).
+    - A swing LONG on a stock -> delivery (CNC, buy and hold).
+    - A swing SHORT on a stock -> NSE cash has no naked delivery short, so
+      express it via the near-month single-stock **future** when the stock
+      is in F&O; otherwise it can only be an intraday short.
+    - Any intraday idea -> intraday (shorting is fine in MIS, same day).
+    """
+    if asset_class != "EQUITY":
+        return "EQUITY_INTRADAY"
+    if horizon == "INTRADAY":
+        return "EQUITY_INTRADAY"
+    if direction == "SHORT":
+        return "EQUITY_FUTURES" if has_options else "EQUITY_INTRADAY"
+    return "EQUITY_DELIVERY"
 
 
 def _round_tick(v: float, tick: float) -> float:

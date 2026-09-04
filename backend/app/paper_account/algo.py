@@ -145,6 +145,9 @@ def _style_allowed(rec: ScanRecommendation, cfg: PaperAlgoConfig) -> bool:
     return {
         "EQUITY_DELIVERY": cfg.allow_delivery,
         "EQUITY_INTRADAY": cfg.allow_intraday,
+        # a stock-future short is the multi-day-hold expression of a bearish
+        # swing view — gate it on the same switch as delivery
+        "EQUITY_FUTURES": cfg.allow_delivery,
         "OPTION": cfg.allow_options,
     }.get(rec.trade_style, False)
 
@@ -269,6 +272,8 @@ def run_once(db: Session, settings: Settings, *, now: datetime | None = None) ->
         try:
             if rec.trade_style == "OPTION":
                 res = _take_option(db, settings, rec, alloc)
+            elif rec.trade_style == "EQUITY_FUTURES":
+                res = _take_futures(db, settings, rec, alloc, tag_prefix="algo")
             else:
                 res = _take_equity(db, settings, rec, alloc, cfg)
         except Exception as exc:  # noqa: BLE001 - one bad idea must not stop the rest
@@ -339,6 +344,60 @@ def _take_equity(
         "ok": True, "rec_id": str(rec.id), "symbol": rec.tradingsymbol,
         "trade_style": rec.trade_style, "direction": rec.direction,
         "qty": qty, "product": product, "fill": round(fill, 2),
+        "stop_child": sl_placed, "grade": (rec.score_detail or {}).get("grade"),
+    }
+
+
+def _take_futures(
+    db: Session, settings: Settings, rec: ScanRecommendation, alloc: float,
+    *, tag_prefix: str = "algo", lots_override: int | None = None, with_stop: bool = True,
+) -> dict[str, Any]:
+    """Short (or long) the near-month single-stock future — the executable
+    expression of a swing SHORT, since NSE cash has no delivery short."""
+    from app.market_scanner import futures as fut_mod
+
+    fut = fut_mod.near_month_future(db, rec.underlying or rec.tradingsymbol)
+    if fut is None:
+        return {"ok": False, "reason": f"no listed future for {rec.tradingsymbol}"}
+    lot = int(fut.lot_size or 0)
+    if lot < 1:
+        return {"ok": False, "reason": "future has no lot size"}
+
+    spot = float(rec.entry or 0.0)
+    per_lot = spot * lot * 0.20 or 1.0  # rough margin
+    lots = int(lots_override) if lots_override and lots_override > 0 else max(1, int(alloc // per_lot))
+    lots = max(1, min(lots, 5))
+    qty = lots * lot
+    long = rec.direction == "LONG"
+
+    order = engine.place_order(db, settings, OrderRequest(
+        exchange="NFO", tradingsymbol=fut.tradingsymbol,
+        side="BUY" if long else "SELL", quantity=qty,
+        order_type="MARKET", product="NRML", tag=f"{tag_prefix}:{rec.id}",
+    ))
+    if order.status != "COMPLETE":
+        return {"ok": False, "reason": order.status_message or order.status}
+
+    fill = float(order.avg_fill_price or spot)
+    sl = float(rec.stop_loss or 0.0)
+    sl_placed = False
+    # the stop is a spot level; the future tracks it with a small basis
+    if with_stop and sl > 0 and ((sl < fill) if long else (sl > fill)):
+        try:
+            engine.place_order(db, settings, OrderRequest(
+                exchange="NFO", tradingsymbol=fut.tradingsymbol,
+                side="SELL" if long else "BUY", quantity=qty,
+                order_type="SL-M", product="NRML", trigger_price=round(sl, 2),
+                tag=f"{tag_prefix}:{rec.id}:sl",
+            ))
+            sl_placed = True
+        except Exception as exc:  # noqa: BLE001 - entry still stands
+            logger.info("paper_take_fut_sl_failed", rec=str(rec.id), error=str(exc))
+
+    return {
+        "ok": True, "rec_id": str(rec.id), "symbol": fut.tradingsymbol,
+        "trade_style": "EQUITY_FUTURES", "direction": rec.direction,
+        "qty": qty, "lots": lots, "product": "NRML", "fill": round(fill, 2),
         "stop_child": sl_placed, "grade": (rec.score_detail or {}).get("grade"),
     }
 
@@ -465,6 +524,11 @@ def take_idea(
 
     if rec.trade_style == "OPTION":
         res = _take_option(db, settings, rec, alloc, tag_prefix="idea")
+    elif rec.trade_style == "EQUITY_FUTURES":
+        res = _take_futures(
+            db, settings, rec, alloc, tag_prefix="idea",
+            lots_override=quantity, with_stop=with_stop,
+        )
     else:
         # a hand-picked idea defaults to a *persistent* product: CNC for a
         # long delivery idea (sits in holdings across days), MIS otherwise.
