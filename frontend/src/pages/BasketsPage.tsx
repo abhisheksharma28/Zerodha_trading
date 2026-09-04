@@ -15,26 +15,21 @@ import { cn } from "@/lib/utils";
 
 const FREQS: Frequency[] = ["weekly", "monthly", "quarterly"];
 
-type SortKey =
-  | "created_desc"
-  | "created_asc"
-  | "name"
-  | "cagr"
-  | "excess"
-  | "sharpe"
-  | "maxdd"
-  | "capital";
+// sort/filter applies to the template catalog ("Start from a template")
+type SortKey = "default" | "name" | "cagr" | "excess" | "sharpe" | "maxdd" | "minfunds";
 
 const SORTS: { key: SortKey; label: string }[] = [
-  { key: "created_desc", label: "Newest first" },
-  { key: "created_asc", label: "Oldest first" },
-  { key: "name", label: "Name (A–Z)" },
+  { key: "default", label: "Grouped by category" },
   { key: "cagr", label: "CAGR (high → low)" },
   { key: "excess", label: "vs benchmark (high → low)" },
   { key: "sharpe", label: "Sharpe (high → low)" },
   { key: "maxdd", label: "Max drawdown (smallest)" },
-  { key: "capital", label: "Capital (high → low)" },
+  { key: "minfunds", label: "Min. funds (low → high)" },
+  { key: "name", label: "Name (A–Z)" },
 ];
+
+const num0 = (v: number | null | undefined) =>
+  v == null || !Number.isFinite(v) ? Number.NEGATIVE_INFINITY : v;
 
 function specForPayload(sleeves: Sleeve[]): BasketSpec {
   return {
@@ -47,14 +42,13 @@ function specForPayload(sleeves: Sleeve[]): BasketSpec {
 
 export default function BasketsPage() {
   const nav = useNavigate();
-  const { data: baskets, isLoading } = useBaskets(true);
+  const { data: baskets, isLoading } = useBaskets();
   const { data: catalog } = useBasketTemplates();
   const create = useCreateBasket();
 
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "draft" | "deployed" | "archived">("all");
   const [catFilter, setCatFilter] = useState("all");
-  const [sortKey, setSortKey] = useState<SortKey>("created_desc");
+  const [sortKey, setSortKey] = useState<SortKey>("default");
 
   const [open, setOpen] = useState(false);
   const [templateName, setTemplateName] = useState<string | null>(null);
@@ -135,55 +129,63 @@ export default function BasketsPage() {
     }
   };
 
-  const allRows = useMemo(() => baskets ?? [], [baskets]);
-  const usedCategories = useMemo(
-    () => [...new Set(allRows.map((b) => b.category).filter(Boolean) as string[])].sort(),
-    [allRows],
-  );
+  // "Your baskets" — just newest-first; the filter/sort controls belong to the
+  // template catalog below, which is the long list that needs them.
+  const myBaskets = useMemo(() => {
+    const list = [...(baskets ?? [])];
+    list.sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+    return list;
+  }, [baskets]);
 
-  const rows = useMemo(() => {
+  const grouped = sortKey === "default" && !query.trim() && catFilter === "all";
+
+  const templates = useMemo(() => {
+    const all = catalog?.templates ?? [];
     const q = query.trim().toLowerCase();
-    const num0 = (v: number | null | undefined) => (v == null ? Number.NEGATIVE_INFINITY : v);
-    const filtered = allRows.filter((b) => {
-      if (statusFilter !== "all" && b.status !== statusFilter) return false;
-      if (catFilter !== "all" && (b.category ?? "") !== catFilter) return false;
+    const filtered = all.filter((t) => {
+      if (catFilter !== "all" && t.category !== catFilter) return false;
       if (!q) return true;
       const hay = [
-        b.name,
-        b.category ?? "",
-        b.rebalance_frequency,
-        ...b.sleeves.map((s) => s.name),
-        ...b.sleeves.flatMap((s) => s.members),
+        t.name,
+        t.description,
+        t.category,
+        ...(t.tags ?? []),
+        ...t.spec.sleeves.flatMap((s) => s.members),
       ]
         .join(" ")
         .toLowerCase();
       return hay.includes(q);
     });
-    const s = (b: (typeof allRows)[number]) => b.backtest_summary;
-    const sorted = [...filtered];
-    sorted.sort((a, b) => {
+    if (sortKey === "default") return filtered;
+    const m = (t: BasketTemplate) => t.backtest?.metrics ?? {};
+    return [...filtered].sort((a, b) => {
       switch (sortKey) {
         case "name":
           return a.name.localeCompare(b.name);
-        case "created_asc":
-          return (a.created_at ?? "").localeCompare(b.created_at ?? "");
         case "cagr":
-          return num0(s(b)?.cagr_pct) - num0(s(a)?.cagr_pct);
+          return num0(m(b).cagr_pct) - num0(m(a).cagr_pct);
         case "excess":
-          return num0(s(b)?.excess_return_pct) - num0(s(a)?.excess_return_pct);
+          return num0(m(b).excess_return_pct) - num0(m(a).excess_return_pct);
         case "sharpe":
-          return num0(s(b)?.sharpe_ratio) - num0(s(a)?.sharpe_ratio);
-        case "maxdd":
-          // smallest drawdown magnitude first (values are negative %)
-          return num0(s(b)?.max_drawdown_pct) - num0(s(a)?.max_drawdown_pct);
-        case "capital":
-          return b.capital - a.capital;
-        default: // created_desc
-          return (b.created_at ?? "").localeCompare(a.created_at ?? "");
+          return num0(m(b).sharpe_ratio) - num0(m(a).sharpe_ratio);
+        case "maxdd": // smallest drawdown magnitude first (values are negative %)
+          return num0(m(b).max_drawdown_pct) - num0(m(a).max_drawdown_pct);
+        case "minfunds":
+          return (
+            (a.min_funds?.unit_cost ?? Number.POSITIVE_INFINITY) -
+            (b.min_funds?.unit_cost ?? Number.POSITIVE_INFINITY)
+          );
+        default:
+          return 0;
       }
     });
-    return sorted;
-  }, [allRows, query, statusFilter, catFilter, sortKey]);
+  }, [catalog, query, catFilter, sortKey]);
+
+  const clearTemplateFilters = () => {
+    setQuery("");
+    setCatFilter("all");
+    setSortKey("default");
+  };
 
   const closeForm = () => {
     resetForm();
@@ -332,123 +334,22 @@ export default function BasketsPage() {
         </div>
       )}
 
-      {catalog && catalog.templates.length > 0 && (
-        <section className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="text-sm font-semibold text-fg">Start from a template</h2>
-            {catalog.backtests_generated_at && (
-              <span className="text-[10px] text-fg-faint">
-                Backtested {new Date(catalog.backtests_generated_at).toLocaleDateString("en-IN")} ·
-                costs &amp; slippage included · past results don&apos;t predict the future
-              </span>
-            )}
-          </div>
-          {catalog.categories.map((cat) => {
-            const items = catalog.templates.filter((t) => t.category === cat);
-            if (items.length === 0) return null;
-            return (
-              <div key={cat}>
-                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-fg-faint">
-                  {cat}
-                </p>
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {items.map((t) => (
-                    <TemplateCard key={t.key} t={t} onUse={() => applyTemplate(t.key)} />
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </section>
-      )}
-
       <section>
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <h2 className="mr-auto text-sm font-semibold text-fg">
-            Your baskets
-            {allRows.length > 0 && (
-              <span className="ml-1.5 text-[11px] font-normal text-fg-faint">
-                {rows.length === allRows.length
-                  ? `(${allRows.length})`
-                  : `(${rows.length} of ${allRows.length})`}
-              </span>
-            )}
-          </h2>
-          {allRows.length > 0 && (
-            <>
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-faint" />
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Filter by name, sleeve, stock…"
-                  className="h-8 w-52 rounded-md border border-line bg-surface pl-7 pr-2 text-xs placeholder:text-fg-faint focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
-                />
-              </div>
-              <select
-                className="h-8 rounded-md border border-line bg-surface px-2 text-xs"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-              >
-                <option value="all">All statuses</option>
-                <option value="draft">Draft</option>
-                <option value="deployed">Deployed</option>
-                <option value="archived">Archived</option>
-              </select>
-              {usedCategories.length > 0 && (
-                <select
-                  className="h-8 rounded-md border border-line bg-surface px-2 text-xs"
-                  value={catFilter}
-                  onChange={(e) => setCatFilter(e.target.value)}
-                >
-                  <option value="all">All categories</option>
-                  {usedCategories.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              )}
-              <div className="flex items-center gap-1">
-                <ArrowDownUp className="h-3.5 w-3.5 text-fg-faint" />
-                <select
-                  className="h-8 rounded-md border border-line bg-surface px-2 text-xs"
-                  value={sortKey}
-                  onChange={(e) => setSortKey(e.target.value as SortKey)}
-                >
-                  {SORTS.map((s) => (
-                    <option key={s.key} value={s.key}>
-                      {s.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </>
+        <div className="mb-2 flex items-baseline gap-1.5">
+          <h2 className="text-sm font-semibold text-fg">Your baskets</h2>
+          {myBaskets.length > 0 && (
+            <span className="text-[11px] font-normal text-fg-faint">({myBaskets.length})</span>
           )}
         </div>
         {isLoading ? (
           <p className="py-8 text-center text-sm text-fg-faint">Loading…</p>
-        ) : allRows.length === 0 ? (
+        ) : myBaskets.length === 0 ? (
           <p className="rounded-lg border border-dashed border-line py-8 text-center text-sm text-fg-faint">
-            No baskets yet. Create one, or start from a template above.
-          </p>
-        ) : rows.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-line py-8 text-center text-sm text-fg-faint">
-            No baskets match the current filters.{" "}
-            <button
-              className="text-accent hover:underline"
-              onClick={() => {
-                setQuery("");
-                setStatusFilter("all");
-                setCatFilter("all");
-              }}
-            >
-              Clear filters
-            </button>
+            No baskets yet. Create one, or start from a template below.
           </p>
         ) : (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {rows.map((b) => {
+            {myBaskets.map((b) => {
               const s = b.backtest_summary;
               return (
                 <button
@@ -498,6 +399,106 @@ export default function BasketsPage() {
           </div>
         )}
       </section>
+
+      {catalog && catalog.templates.length > 0 && (
+        <section className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-sm font-semibold text-fg">
+                Start from a template
+                <span className="ml-1.5 text-[11px] font-normal text-fg-faint">
+                  {templates.length === catalog.templates.length
+                    ? `(${catalog.templates.length})`
+                    : `(${templates.length} of ${catalog.templates.length})`}
+                </span>
+              </h2>
+              {catalog.backtests_generated_at && (
+                <span className="text-[10px] text-fg-faint">
+                  Backtested {new Date(catalog.backtests_generated_at).toLocaleDateString("en-IN")} ·
+                  costs &amp; slippage included · past results don&apos;t predict the future
+                </span>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-faint" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Filter by name, tag, stock…"
+                  className="h-8 w-56 rounded-md border border-line bg-surface pl-7 pr-2 text-xs placeholder:text-fg-faint focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                />
+              </div>
+              <select
+                className="h-8 rounded-md border border-line bg-surface px-2 text-xs"
+                value={catFilter}
+                onChange={(e) => setCatFilter(e.target.value)}
+              >
+                <option value="all">All categories</option>
+                {catalog.categories.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+              <div className="flex items-center gap-1">
+                <ArrowDownUp className="h-3.5 w-3.5 text-fg-faint" />
+                <select
+                  className="h-8 rounded-md border border-line bg-surface px-2 text-xs"
+                  value={sortKey}
+                  onChange={(e) => setSortKey(e.target.value as SortKey)}
+                >
+                  {SORTS.map((s) => (
+                    <option key={s.key} value={s.key}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {(query.trim() || catFilter !== "all" || sortKey !== "default") && (
+                <button
+                  className="text-[11px] text-accent hover:underline"
+                  onClick={clearTemplateFilters}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+
+          {templates.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-line py-8 text-center text-sm text-fg-faint">
+              No templates match those filters.{" "}
+              <button className="text-accent hover:underline" onClick={clearTemplateFilters}>
+                Clear
+              </button>
+            </p>
+          ) : grouped ? (
+            catalog.categories.map((cat) => {
+              const items = templates.filter((t) => t.category === cat);
+              if (items.length === 0) return null;
+              return (
+                <div key={cat}>
+                  <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-fg-faint">
+                    {cat}
+                  </p>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {items.map((t) => (
+                      <TemplateCard key={t.key} t={t} onUse={() => applyTemplate(t.key)} />
+                    ))}
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {templates.map((t) => (
+                <TemplateCard key={t.key} t={t} onUse={() => applyTemplate(t.key)} />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }
