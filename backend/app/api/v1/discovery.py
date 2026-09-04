@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import get_db
 from app.discovery import normalize, screen as screen_mod
+from app.discovery import search as search_mod
 from app.discovery import service
 
 router = APIRouter(prefix="/discovery", tags=["discovery"])
@@ -77,3 +78,32 @@ def optimize(
         db, symbols=symbols, method=method, constraint_mode=constraint_mode,
         currency=currency, cost_bps=cost_bps,
     )
+
+
+@router.post("/search")
+def search(
+    payload: dict[str, Any] = Body(default={}),
+    method: str = Query("monte_carlo", pattern="^(monte_carlo|genetic)$"),
+    n_min: int = Query(5, ge=3, le=10),
+    n_max: int = Query(10, ge=4, le=15),
+    n_portfolios: int = Query(2000, ge=100, le=20000),
+    wmax: float = Query(0.35, ge=0.10, le=1.0),
+    currency: str = Query("USD"),
+    seed: int = Query(7),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Search the candidate universe for robust 5-10 asset portfolios.
+    ``payload['symbols']`` overrides the auto candidate set."""
+    symbols = [str(s) for s in (payload.get("symbols") or []) if s]
+    if not symbols:
+        symbols = screen_mod.candidates(db, k=16, currency=currency)["candidates"]
+    if len(symbols) < n_min:
+        return {"available": False, "reason": f"need >= {n_min} candidate instruments"}
+    fn = search_mod.genetic_search if method == "genetic" else search_mod.monte_carlo_search
+    kw: dict[str, Any] = {
+        "n_assets": (n_min, max(n_max, n_min + 1)), "wmax": wmax,
+        "currency": currency, "seed": seed,
+    }
+    if method == "monte_carlo":
+        kw["n_portfolios"] = n_portfolios
+    return fn(db, symbols, **kw)
