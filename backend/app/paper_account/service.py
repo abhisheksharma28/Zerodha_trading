@@ -82,7 +82,41 @@ def _hold_dict(h: PaperHolding, q: pricing.Quote | None) -> dict[str, Any]:
     }
 
 
-def _order_dict(o: PaperOrder) -> dict[str, Any]:
+def _classify_source(tag: str | None, is_squareoff: bool, names: dict[str, dict[str, str]]) -> dict[str, str]:
+    """Human-readable order source from the tag. ``names`` maps a uuid to
+    {"kind": ..., "name": ...} for baskets / strategy runs."""
+    if is_squareoff or (tag and ("squareoff" in tag or tag.endswith(":exit"))):
+        return {"source": "squareoff", "source_label": "Auto square-off"}
+    if not tag:
+        return {"source": "manual", "source_label": "Manual"}
+    head, _, rest = tag.partition(":")
+    ref_id = rest.split(":", 1)[0] if rest else ""
+    if head == "basket":
+        nm = names.get(ref_id, {}).get("name")
+        return {"source": "basket", "source_label": f"Basket · {nm}" if nm else "Basket",
+                "source_ref": ref_id}
+    if head == "strat":
+        nm = names.get(ref_id, {}).get("name")
+        return {"source": "strategy", "source_label": f"Strategy · {nm}" if nm else "Strategy",
+                "source_ref": ref_id}
+    if head == "algo":
+        return {"source": "algo", "source_label": "Auto-trade (Scanner idea)", "source_ref": ref_id}
+    return {"source": "manual", "source_label": "Manual"}
+
+
+def _source_names(db: Session) -> dict[str, dict[str, str]]:
+    from app.models.basket import Basket
+
+    out: dict[str, dict[str, str]] = {}
+    for b in db.execute(select(Basket.id, Basket.name)).all():
+        out[str(b.id)] = {"kind": "basket", "name": b.name}
+    for r in db.execute(select(PaperStrategyRun.id, PaperStrategyRun.name)).all():
+        out[str(r.id)] = {"kind": "strategy", "name": r.name}
+    return out
+
+
+def _order_dict(o: PaperOrder, names: dict[str, dict[str, str]] | None = None) -> dict[str, Any]:
+    src = _classify_source(o.tag, o.is_squareoff, names or {})
     return {
         "id": str(o.id),
         "created_at": o.created_at.isoformat() if o.created_at else None,
@@ -94,11 +128,11 @@ def _order_dict(o: PaperOrder) -> dict[str, Any]:
         "price": _f(o.price) or None, "trigger_price": _f(o.trigger_price) or None,
         "avg_fill_price": _f(o.avg_fill_price) or None,
         "status": o.status, "status_message": o.status_message,
-        "is_squareoff": o.is_squareoff, "tag": o.tag,
+        "is_squareoff": o.is_squareoff, "tag": o.tag, **src,
     }
 
 
-def _trade_dict(t: PaperTrade) -> dict[str, Any]:
+def _trade_dict(t: PaperTrade, src: dict[str, str] | None = None) -> dict[str, Any]:
     return {
         "id": str(t.id), "order_id": str(t.order_id),
         "traded_at": t.traded_at.isoformat() if t.traded_at else None,
@@ -107,6 +141,7 @@ def _trade_dict(t: PaperTrade) -> dict[str, Any]:
         "price": round(_f(t.price), 2), "value": round(_f(t.value), 2),
         "charges": round(_f(t.charges), 2), "charges_detail": t.charges_detail,
         "realized_pnl": round(_f(t.realized_pnl), 2),
+        **(src or {"source": "manual", "source_label": "Manual"}),
     }
 
 
@@ -210,7 +245,8 @@ def orders(db: Session, *, status: str | None = None, limit: int = 200) -> list[
     if status:
         stmt = stmt.where(PaperOrder.status == status.upper())
     rows = db.execute(stmt.order_by(PaperOrder.placed_at.desc()).limit(limit)).scalars().all()
-    return [_order_dict(o) for o in rows]
+    names = _source_names(db)
+    return [_order_dict(o, names) for o in rows]
 
 
 def trades(db: Session, *, limit: int = 300) -> list[dict[str, Any]]:
@@ -219,7 +255,20 @@ def trades(db: Session, *, limit: int = 300) -> list[dict[str, Any]]:
         select(PaperTrade).where(PaperTrade.account_id == acct.id)
         .order_by(PaperTrade.traded_at.desc()).limit(limit)
     ).scalars().all()
-    return [_trade_dict(t) for t in rows]
+    order_tags: dict[Any, tuple[str | None, bool]] = {}
+    if rows:
+        for oid, tag, sq in db.execute(
+            select(PaperOrder.id, PaperOrder.tag, PaperOrder.is_squareoff).where(
+                PaperOrder.id.in_([t.order_id for t in rows])
+            )
+        ).all():
+            order_tags[oid] = (tag, sq)
+    names = _source_names(db)
+    out = []
+    for t in rows:
+        tag, sq = order_tags.get(t.order_id, (None, False))
+        out.append(_trade_dict(t, _classify_source(tag, sq, names)))
+    return out
 
 
 def ledger(db: Session, *, limit: int = 300) -> list[dict[str, Any]]:

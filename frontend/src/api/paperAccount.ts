@@ -88,6 +88,9 @@ export interface PaperOrder {
   status_message: string | null;
   is_squareoff: boolean;
   tag: string | null;
+  source: "manual" | "algo" | "strategy" | "basket" | "squareoff";
+  source_label: string;
+  source_ref?: string;
 }
 
 export interface PaperTrade {
@@ -105,6 +108,9 @@ export interface PaperTrade {
   charges: number;
   charges_detail: Record<string, number>;
   realized_pnl: number;
+  source: "manual" | "algo" | "strategy" | "basket" | "squareoff";
+  source_label: string;
+  source_ref?: string;
 }
 
 export interface PaperLedgerRow {

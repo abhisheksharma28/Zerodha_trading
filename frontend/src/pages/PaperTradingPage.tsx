@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { PaperHolding, PaperOrder, PaperPosition, PaperStrategyRun } from "@/api/paperAccount";
 import { DataTable, type Column } from "@/components/DataTable";
 import { AlgoPanel, AlgoPill } from "@/components/paper/AlgoPanel";
+import { BasketGroupedHoldings } from "@/components/paper/BasketGroupedHoldings";
 import { DeployedBaskets } from "@/components/paper/DeployedBaskets";
 import { OrderPad, type OrderPadInit } from "@/components/paper/OrderPad";
 import { StrategyDeploy } from "@/components/paper/StrategyDeploy";
@@ -33,6 +34,28 @@ import { cn } from "@/lib/utils";
 const TABS = ["Holdings", "Positions", "Orders", "Algo", "Strategies", "Baskets", "Funds"] as const;
 const pnlTone = (v: number | null | undefined) =>
   (v ?? 0) > 0 ? "text-pos" : (v ?? 0) < 0 ? "text-neg" : "text-fg-muted";
+
+const SOURCE_CLS: Record<string, string> = {
+  manual: "bg-elevated text-fg-muted",
+  algo: "bg-amber-400/15 text-amber-500",
+  strategy: "bg-violet-500/15 text-violet-400",
+  basket: "bg-[#4184f3]/15 text-[#4184f3]",
+  squareoff: "bg-neg/10 text-neg",
+};
+
+function SourceBadge({ source, label }: { source: string; label: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-block max-w-[220px] truncate rounded px-1.5 py-0.5 text-[10px] font-semibold",
+        SOURCE_CLS[source] ?? SOURCE_CLS.manual,
+      )}
+      title={label}
+    >
+      {label}
+    </span>
+  );
+}
 
 function Stat({
   label,
@@ -171,14 +194,14 @@ export default function PaperTradingPage() {
     {
       key: "sym",
       header: "Instrument",
-      cell: (o) => (
-        <span className="flex items-center gap-1.5">
-          <span className="font-medium text-fg">{o.tradingsymbol}</span>
-          {o.tag?.startsWith("algo:") && <Badge variant="default" className="text-[9px]">AUTO</Badge>}
-          {o.tag?.startsWith("strat:") && <Badge variant="default" className="text-[9px]">STRAT</Badge>}
-        </span>
-      ),
+      cell: (o) => <span className="font-medium text-fg">{o.tradingsymbol}</span>,
       sortValue: (o) => o.tradingsymbol,
+    },
+    {
+      key: "source",
+      header: "Source",
+      cell: (o) => <SourceBadge source={o.source} label={o.source_label} />,
+      sortValue: (o) => o.source_label,
     },
     { key: "side", header: "Side", cell: (o) => <span className={cn("text-xs font-bold", o.side === "BUY" ? "text-[#4184f3]" : "text-[#ff5722]")}>{o.side}</span>, sortValue: (o) => o.side },
     { key: "type", header: "Type", cell: (o) => <span className="text-fg-muted">{o.order_type} · {o.product}</span>, sortValue: (o) => o.order_type },
@@ -301,11 +324,7 @@ export default function PaperTradingPage() {
         ))}
       </div>
 
-      {tab === "Holdings" && (
-        <SectionCard title="Holdings" bodyClassName="p-0">
-          <DataTable columns={holdCols} rows={holdings} rowKey={(h) => h.id} searchable searchPlaceholder="Filter holdings…" empty="No holdings. Buy a stock with product CNC to build your portfolio." />
-        </SectionCard>
-      )}
+      {tab === "Holdings" && <BasketGroupedHoldings holdings={holdings} columns={holdCols} />}
 
       {tab === "Positions" && (
         <SectionCard title="Positions" bodyClassName="p-0">
@@ -369,6 +388,7 @@ export default function PaperTradingPage() {
               columns={[
                 { key: "at", header: "Time", cell: (t) => <span className="tabular-nums text-fg-faint">{t.traded_at ? new Date(t.traded_at).toLocaleTimeString("en-IN") : "—"}</span>, sortValue: (t) => t.traded_at ?? "" },
                 { key: "sym", header: "Instrument", cell: (t) => <span className="font-medium text-fg">{t.tradingsymbol}</span>, sortValue: (t) => t.tradingsymbol },
+                { key: "source", header: "Source", cell: (t) => <SourceBadge source={t.source} label={t.source_label} />, sortValue: (t) => t.source_label },
                 { key: "side", header: "Side", cell: (t) => <span className={cn("text-xs font-bold", t.side === "BUY" ? "text-[#4184f3]" : "text-[#ff5722]")}>{t.side}</span>, sortValue: (t) => t.side },
                 { key: "qty", header: "Qty", align: "right", cell: (t) => <span className="tabular-nums">{t.quantity}</span>, sortValue: (t) => t.quantity },
                 { key: "px", header: "Price", align: "right", cell: (t) => <span className="tabular-nums">{num(t.price, 2)}</span>, sortValue: (t) => t.price },
