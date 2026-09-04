@@ -217,7 +217,7 @@ CATALOG: list[dict[str, Any]] = [
             "Trend filter keeps it out of names below their 200-day average",
         ],
         how_it_works=[
-            "Ranks a large + liquid-mid universe by a momentum composite (6-month lead, trend, with a low-vol and quality tilt on the live signal).",
+            "Ranks a large + liquid-mid universe by a multi-horizon momentum composite (12-1 month, 6 month and 3 month returns) plus a multi-MA trend check, with a low-vol and quality tilt on the live signal.",
             "Holds the top 12, score-weighted, single-name cap 12%.",
             "A held name is only dropped once it falls past rank 16 (hysteresis).",
             "Regime gate: equity is trimmed when the Nifty is below its 200-day average.",

@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
 
+from app.baskets import factors as _f
 from app.baskets.spec import _PRICE_FACTORS, BasketSpec, RegimeGate, RuleSpec, SleeveSpec
 
 
@@ -96,16 +97,14 @@ FundamentalsFn = Callable[[str], dict[str, float] | None]
 def _price_factor_raw(
     factor: str, closes: list[float], rule: RuleSpec
 ) -> float | None:
+    """Raw value for a price factor in the composite score. Higher = better.
+    Uses the multi-horizon factor library (app.baskets.factors)."""
     if factor == "momentum":
-        return _roc_pct(closes, rule.lookback)
+        return _f.momentum_composite(closes)
     if factor == "low_vol":
-        vol = _daily_vol(closes, min(rule.lookback, 90))
-        return None if not vol or vol <= 0 else -vol  # less vol -> higher rank
+        return _f.low_vol_score(closes, min(rule.lookback, 90))
     if factor == "trend":
-        ma = _sma(closes, rule.trend_ma or 200)
-        if ma is None or ma <= 0:
-            return None
-        return closes[-1] / ma - 1.0  # distance above the trend MA
+        return _f.trend_composite(closes, rule.trend_ma or 200)
     return None
 
 
