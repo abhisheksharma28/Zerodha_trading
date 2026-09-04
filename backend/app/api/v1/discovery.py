@@ -12,7 +12,8 @@ from fastapi import APIRouter, Body, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_db
-from app.discovery import normalize, service
+from app.discovery import normalize, screen as screen_mod
+from app.discovery import service
 
 router = APIRouter(prefix="/discovery", tags=["discovery"])
 
@@ -35,3 +36,24 @@ def returns(
     if not symbols:
         return {"dates": [], "returns": {}, "prices": {}, "missing": ["<no symbols>"]}
     return normalize.returns_frame(db, symbols, currency=currency, kind=kind)
+
+
+@router.get("/screen")
+def screen(
+    currency: str = Query("USD"),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Per-instrument return / risk / consistency metrics + a composite
+    screen_score and correlation cluster, over the ingested Tier A/B set."""
+    return screen_mod.screen(db, currency=currency)
+
+
+@router.get("/candidates")
+def candidates(
+    k: int = Query(12, ge=3, le=40),
+    per_cluster: int = Query(1, ge=1, le=4),
+    currency: str = Query("USD"),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """A low-correlation candidate set for the portfolio search."""
+    return screen_mod.candidates(db, k=k, per_cluster=per_cluster, currency=currency)

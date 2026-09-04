@@ -15,6 +15,17 @@ from app.models.discovery import (
 )
 
 
+def _ingested_symbols(db: Session, *, tiers: tuple[str, ...] = ("A", "B")) -> list[str]:
+    """Symbols with ingested bars, best tiers first — the default screening
+    universe (Tier A/B: >= 7 years of history)."""
+    rows = db.execute(
+        select(DiscoveryInstrument.symbol, DiscoveryInstrument.tier)
+        .where(DiscoveryInstrument.active.is_(True), DiscoveryInstrument.n_points > 0)
+        .order_by(DiscoveryInstrument.symbol)
+    ).all()
+    return [s for s, t in rows if t in tiers]
+
+
 def universe_status(db: Session) -> dict[str, Any]:
     rows = db.execute(
         select(DiscoveryInstrument).order_by(
