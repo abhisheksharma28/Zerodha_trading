@@ -111,6 +111,14 @@ def delete_order(order_id: str, db: Session = Depends(get_db)) -> dict[str, Any]
     return service._order_dict(engine.cancel_order(db, order_id))  # noqa: SLF001
 
 
+@router.post("/orders/{order_id}/retry", status_code=201)
+def post_retry_order(
+    order_id: str,
+    db: Session = Depends(get_db), settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    return service._order_dict(engine.retry_order(db, settings, order_id))  # noqa: SLF001
+
+
 @router.post("/positions/{position_id}/exit")
 def post_exit(
     position_id: str,

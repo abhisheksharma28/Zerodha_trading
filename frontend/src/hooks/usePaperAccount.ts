@@ -69,6 +69,11 @@ export function useCancelOrder() {
   return useMutation({ mutationFn: (id: string) => paperAccountApi.cancel(id), onSuccess: invalidate });
 }
 
+export function useRetryOrder() {
+  const invalidate = useInvalidateAll();
+  return useMutation({ mutationFn: (id: string) => paperAccountApi.retry(id), onSuccess: invalidate });
+}
+
 export function useExitPosition() {
   const invalidate = useInvalidateAll();
   return useMutation({ mutationFn: (id: string) => paperAccountApi.exit(id), onSuccess: invalidate });

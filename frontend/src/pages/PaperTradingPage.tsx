@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import {
   useAddFunds,
   useCancelOrder,
+  useRetryOrder,
   useDeletePaperStrategy,
   useExitPosition,
   usePaperAlgo,
@@ -42,6 +43,37 @@ const SOURCE_CLS: Record<string, string> = {
   basket: "bg-[#4184f3]/15 text-[#4184f3]",
   squareoff: "bg-neg/10 text-neg",
 };
+
+function errMsg(e: unknown, fallback: string): string {
+  const d = (e as { response?: { data?: { message?: string; detail?: string } } })?.response?.data;
+  return d?.message ?? d?.detail ?? fallback;
+}
+
+function RetryOrderButton({ orderId }: { orderId: string }) {
+  const retry = useRetryOrder();
+  const [msg, setMsg] = useState<string | null>(null);
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {msg && <span className="max-w-[220px] truncate text-[10px] text-neg" title={msg}>{msg}</span>}
+      <button
+        type="button"
+        disabled={retry.isPending}
+        onClick={() => {
+          setMsg(null);
+          retry.mutate(orderId, {
+            onSuccess: (o) => {
+              if (o.status === "REJECTED") setMsg(o.status_message ?? "Rejected again.");
+            },
+            onError: (e) => setMsg(errMsg(e, "Retry failed.")),
+          });
+        }}
+        className="rounded border border-accent/50 px-1.5 py-0.5 text-[11px] font-medium text-accent hover:bg-accent-soft disabled:opacity-50"
+      >
+        {retry.isPending ? "…" : "Retry"}
+      </button>
+    </span>
+  );
+}
 
 function SourceBadge({ source, label }: { source: string; label: string }) {
   return (
@@ -227,6 +259,8 @@ export default function PaperTradingPage() {
       cell: (o) =>
         o.status === "OPEN" ? (
           <button type="button" onClick={() => cancelOrder.mutate(o.id)} className="rounded px-1.5 py-0.5 text-[11px] font-medium text-[#ff5722] hover:bg-[#ff5722]/10">Cancel</button>
+        ) : o.status === "REJECTED" || o.status === "CANCELLED" ? (
+          <RetryOrderButton orderId={o.id} />
         ) : null,
     },
   ];

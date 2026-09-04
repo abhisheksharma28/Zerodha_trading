@@ -417,6 +417,26 @@ def cancel_order(db: Session, order_id: str) -> PaperOrder:
     return order
 
 
+def retry_order(db: Session, settings: Settings, order_id: str) -> PaperOrder:
+    """Re-submit a rejected / cancelled order as a fresh order with the
+    same parameters (a new row — the original stays as history)."""
+    old = db.get(PaperOrder, order_id)
+    if old is None:
+        raise ValidationError("order not found")
+    if old.status not in ("REJECTED", "CANCELLED"):
+        raise ValidationError(
+            f"only a rejected or cancelled order can be retried (this one is {old.status})"
+        )
+    return place_order(db, settings, OrderRequest(
+        exchange=old.exchange, tradingsymbol=old.tradingsymbol,
+        side=old.side, quantity=old.quantity, order_type=old.order_type,
+        product=old.product,
+        price=float(old.price) if old.price is not None else None,
+        trigger_price=float(old.trigger_price) if old.trigger_price is not None else None,
+        tag=old.tag,
+    ))
+
+
 def modify_order(db: Session, order_id: str, *, price: float | None = None,
                  trigger_price: float | None = None, quantity: int | None = None) -> PaperOrder:
     order = db.get(PaperOrder, order_id)

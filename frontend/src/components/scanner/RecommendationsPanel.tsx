@@ -210,9 +210,11 @@ function AddToPaper({ rec, taken }: { rec: ScanRecommendation; taken: boolean })
         {done ? "✓ In paper portfolio" : add.isPending ? "Adding…" : `＋ ${label}`}
       </button>
       {add.isError && (
-        <span className="text-[11px] text-neg">
-          {(add.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-            "Could not add — try again."}
+        <span className="max-w-[320px] text-[11px] text-neg">
+          {(add.error as { response?: { data?: { message?: string; detail?: string } } })?.response
+            ?.data?.message ??
+            (add.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+            "Could not add this idea to the paper portfolio."}
         </span>
       )}
     </div>

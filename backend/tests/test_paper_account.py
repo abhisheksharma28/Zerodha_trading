@@ -232,3 +232,34 @@ def test_reconcile_rebuilds_cash_and_holdings_from_trades(db, monkeypatch, _fixe
     # the duplicate RELIANCE holding is gone, qty is the true 10
     rel = db.execute(_sel(PaperHolding).where(PaperHolding.tradingsymbol == "RELIANCE")).scalars().all()
     assert len(rel) == 1 and int(rel[0].qty) == 10
+
+
+def test_retry_order_resubmits_a_rejected_order(db, monkeypatch, _fixed_prices):
+    from app.paper_account import engine as eng
+
+    _mk(db, instrument_token="738561", tradingsymbol="RELIANCE", exchange="NSE")
+    db.flush()
+    s = get_settings()
+    acct = eng.get_or_create_account(db)
+    acct.cash = 500.0                       # too little for 10 * 1300
+    db.flush()
+
+    rej = eng.place_order(db, s, OrderRequest(exchange="NSE", tradingsymbol="RELIANCE",
+                                              side="BUY", quantity=10, product="CNC"))
+    assert rej.status == "REJECTED"
+
+    # retry while still broke -> rejected again, with the funds message
+    r1 = eng.retry_order(db, s, str(rej.id))
+    assert r1.id != rej.id and r1.status == "REJECTED"
+    assert "Insufficient" in (r1.status_message or "")
+
+    # top up, retry -> fills
+    acct.cash = 5_000_000.0
+    db.flush()
+    r2 = eng.retry_order(db, s, str(rej.id))
+    assert r2.status == "COMPLETE"
+
+    # a completed order can't be retried
+    from app.core.exceptions import ValidationError as _VE
+    with pytest.raises(_VE):
+        eng.retry_order(db, s, str(r2.id))

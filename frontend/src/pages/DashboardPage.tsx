@@ -67,11 +67,13 @@ function IdeaRow({
   taken,
   onAdd,
   adding,
+  error,
 }: {
   rec: ScanRecommendation;
   taken: boolean;
   onAdd: () => void;
   adding: boolean;
+  error?: string | null;
 }) {
   const style =
     rec.trade_style === "OPTION"
@@ -80,7 +82,8 @@ function IdeaRow({
         ? "Intraday"
         : "Delivery";
   return (
-    <div className="flex items-center gap-3 border-b border-line/60 px-3 py-2 text-xs last:border-0">
+    <div className="flex flex-col border-b border-line/60 px-3 py-2 text-xs last:border-0">
+     <div className="flex items-center gap-3">
       <span className={cn("w-10 shrink-0 font-bold", rec.direction === "LONG" ? "text-pos" : "text-neg")}>
         {rec.direction === "LONG" ? "BUY" : "SELL"}
       </span>
@@ -122,6 +125,8 @@ function IdeaRow({
       >
         {taken ? "✓ in paper" : adding ? "…" : "＋ paper"}
       </button>
+     </div>
+      {error && <p className="mt-1 pl-10 text-[10px] text-neg">{error}</p>}
     </div>
   );
 }
@@ -556,6 +561,15 @@ export default function DashboardPage() {
                     rec={r}
                     taken={takenSet.has(r.id)}
                     adding={addIdea.isPending && addIdea.variables?.recommendation_id === r.id}
+                    error={
+                      addIdea.isError && addIdea.variables?.recommendation_id === r.id
+                        ? ((addIdea.error as { response?: { data?: { message?: string; detail?: string } } })
+                            ?.response?.data?.message ??
+                          (addIdea.error as { response?: { data?: { detail?: string } } })?.response?.data
+                            ?.detail ??
+                          "Could not add this idea to the paper portfolio.")
+                        : null
+                    }
                     onAdd={() => addIdea.mutate({ recommendation_id: r.id })}
                   />
                 ))}
