@@ -18,6 +18,7 @@ import {
   Plug,
   Radar,
   Settings as SettingsIcon,
+  Sparkles,
   Trophy,
   Wallet,
 } from "lucide-react";
@@ -37,6 +38,7 @@ type Item = { to: string; label: string; icon: typeof Gauge; desc?: string };
 // Trading, Charting, Dashboard, then the Backtest and System menus. Every
 // other route is still registered in App.tsx — just no longer in the nav.
 const PRIMARY: Item[] = [
+  { to: "/insights", label: "Insights", icon: Sparkles },
   { to: "/", label: "Trading Ideas", icon: Radar },
   { to: "/paper", label: "Paper Trading", icon: Wallet },
   { to: "/charting", label: "Charting", icon: CandlestickChart },
