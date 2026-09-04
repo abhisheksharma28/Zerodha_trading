@@ -182,10 +182,82 @@ market-bars / factor-ranks test. `ruff` clean.
 
 ---
 
+# Phase 3 — shared market regime engine (done)
+
+`backend/app/regime/` — one 5-state classifier, no longer a per-subsystem
+ad-hoc notion.
+
+**`classify(index_closes, vix_closes=, member_closes=)` → `RegimeState`**
+(`strong_bull` / `bull` / `neutral` / `caution` / `risk_off`). Signals,
+each 0–1, weighted trend .32 / momentum .24 / drawdown .20 / volatility
+.16 (+ breadth .08 when member series are supplied):
+
+| Signal | From |
+|---|---|
+| trend | px vs SMA50 / SMA200, SMA50 vs SMA200 |
+| momentum | 3-month and 6-month index return |
+| drawdown | distance below the trailing 1-year high |
+| volatility | 21-day realised vol vs its own 1-year range, or absolute India VIX |
+| breadth | share of members above their own SMA200 |
+
+Pure + causal — safe inside the walk-forward backtest.
+
+**Consumers:**
+- `exposure_scale(regime, floor, hard_cut)` — graduated risk-asset
+  exposure: bull 100 % / neutral 85 % / caution 55 % / risk_off = the
+  basket's own `risk_off_scale`. `hard_cut` (a new `RegimeGate` field)
+  collapses any non-bull regime straight to the floor — set on **Small &
+  Midcap Smart Alpha**, where a 1.5–2× beta basket riding pullbacks at
+  partial weight blew its drawdown out by 15 pts.
+- `factor_tilt(regime, weights)` — deliberately light regime-adaptive
+  reweighting, **only** in the extreme states (small momentum lean in
+  `strong_bull`; low-vol / quality lean in `risk_off`). An aggressive tilt
+  that collapsed the momentum weight in a drawdown was found to *deepen*
+  drawdowns on the aggressive equity baskets; the graduated exposure scale
+  does the heavy de-risking. This is the Phase 2 "regime-adaptive weights"
+  item, now unblocked.
+
+**Wiring:** `resolve_targets` runs the engine for any basket with a
+regime gate — graduated scale replaces the old binary below-200-DMA cut,
+and the regime tilts each composite sleeve's factor weights.
+`SleeveResolution` / rebalance events carry the 5-state label. Exposed at
+`GET /market/regime` (2-min cache) and folded into the insights briefing
+pulse + the Insights page.
+
+**8y catalog backtest, Phase 3 vs Phase 2** (baskets with a regime gate):
+
+| Product | CAGR Δ | Sharpe Δ | MaxDD Δ |
+|---|---|---|---|
+| Momentum Leaders | +4.1 | +0.18 | −6.1 (deeper — a return/risk trade) |
+| Growth Accelerators | +1.5 | +0.12 | −1.0 |
+| Adaptive Alpha | +1.1 | +0.04 | −5.2 (deeper) |
+| Core Growth | +0.9 | +0.15 | −1.2 |
+| Dynamic Sector Rotation | +0.9 | +0.04 | −3.6 |
+| Defensive Leaders | +0.9 | +0.13 | +1.5 (shallower) |
+| Small & Midcap Smart Alpha | +0.6 | +0.03 | +2.5 (shallower, via `hard_cut`) |
+
+Every regime-gated basket improved on CAGR and Sharpe. The deeper
+drawdowns on Momentum Leaders / Adaptive Alpha are a genuine return/risk
+trade — Sharpe still rises, so risk-adjusted it holds. Static ETF baskets
+(All Weather, Golden Wealth, Dividend, Quality, Consumption) unchanged.
+
+**Validation:** full suite **729 passed** (10 new `test_regime.py` tests +
+reworked basket regime test); ruff clean; frontend tsc/oxlint clean.
+
+**Still open in Phase 3's scope:** the scanner and seasonality still use
+their own regime notions — swapping them onto `app/regime/` is a
+follow-up (the shared engine + API are in place; the migration is
+mechanical but touches those subsystems' scoring).
+
+Current live read of `GET /market/regime`: **caution** (score ~40) —
+NIFTY 50 below all key averages, ~9 % off its 1-year high, but VIX calm.
+
+---
+
 ## Deferred (later phases)
 
-- **Phase 3** — shared 5-state regime engine (`app/regime/`) used by
-  baskets + scanner + seasonality.
+- **Phase 3 follow-up** — migrate the scanner + seasonality regime logic
+  onto the shared `app/regime/` engine.
 - **Phase 4** — portfolio construction: enforce sector caps (the
   `max_sector_pct` field is currently parsed but not applied), correlation
   control, risk-contribution, score-differential replacement, tiered drift.
