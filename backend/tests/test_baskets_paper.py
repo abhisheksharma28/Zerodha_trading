@@ -160,3 +160,30 @@ def test_tick_all_rebalances_only_due_deployed_baskets(db, _hist, monkeypatch):
 
     n = paper.tick_all(db, s)
     assert n == 1
+
+
+def test_deploy_stamps_cadence_clock_so_a_racing_tick_does_not_double_buy(db, _hist):
+    """deploy() must set last_rebalanced_at before committing 'deployed', so
+    a scheduler tick landing in the gap sees a not-due basket."""
+    s = get_settings()
+    _instrument(db, "1001", "AAA")
+    _instrument(db, "1002", "BBB")
+    db.flush()
+    b = _make_basket(db)
+    paper.deploy(db, s, str(b.id))
+
+    bb = db.get(Basket, b.id)
+    assert bb.last_rebalanced_at is not None
+    assert paper._is_due(bb, datetime.now(paper.IST)) is False
+
+    # a tick right now is a no-op, so holdings do not double
+    from app.paper_account.engine import get_or_create_account
+    acct = get_or_create_account(db)
+    net_before, _ = paper._tagged_state(db, acct.id, b.id)
+    paper.tick_all(db, s)
+    net_after, _ = paper._tagged_state(db, acct.id, b.id)
+    assert net_after == net_before
+
+    # a forced rebalance still runs (require_due is only for the auto path)
+    r = paper.rebalance(db, s, str(b.id), force=True)
+    assert r["applied"] is True

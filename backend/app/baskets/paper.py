@@ -15,6 +15,7 @@ Orders are CNC market orders routed through ``paper_account.engine``.
 
 from __future__ import annotations
 
+import threading
 import uuid
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
@@ -38,6 +39,11 @@ from app.paper_account.engine import OrderRequest, get_or_create_account
 logger = get_logger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
 _EXCHANGE = "NSE"
+
+# _do_rebalance places orders off the current drift and is NOT idempotent,
+# so serialise it: the deploy call and a racing scheduler tick must never
+# rebalance the same basket at the same time.
+_rebalance_gate = threading.Lock()
 
 
 def _tag(basket_id) -> str:
@@ -176,6 +182,22 @@ def _is_due(b: Basket, now_ist: datetime) -> bool:
 
 
 def _do_rebalance(
+    db: Session, settings: Settings, b: Basket, *, applied: bool, reason: str,
+    require_due: bool = False,
+) -> dict:
+    if not applied:
+        return _do_rebalance_locked(db, settings, b, applied=False, reason=reason)
+    with _rebalance_gate:
+        db.refresh(b)  # pick up a rebalance another thread just finished
+        if require_due and not _is_due(b, datetime.now(IST)):
+            return {
+                "basket_id": str(b.id), "applied": False, "skipped": True,
+                "reason": "not due (another rebalance just ran)",
+            }
+        return _do_rebalance_locked(db, settings, b, applied=True, reason=reason)
+
+
+def _do_rebalance_locked(
     db: Session, settings: Settings, b: Basket, *, applied: bool, reason: str
 ) -> dict:
     spec = _spec_of(b)
@@ -272,6 +294,10 @@ def deploy(db: Session, settings: Settings, basket_id: str) -> dict:
     acct = get_or_create_account(db)
     b.paper_account_id = acct.id
     b.status = "deployed"
+    # stamp the cadence clock BEFORE committing "deployed" so a scheduler
+    # tick that lands in the gap can't see a due basket and double-buy;
+    # the initial rebalance below stamps it again
+    b.last_rebalanced_at = datetime.now(UTC)
     db.commit()
     return _do_rebalance(db, settings, b, applied=True, reason="initial deployment")
 
@@ -323,7 +349,7 @@ def rebalance(db: Session, settings: Settings, basket_id: str, *, force: bool = 
             "last_rebalanced_at": b.last_rebalanced_at.isoformat() if b.last_rebalanced_at else None,
         }
     return _do_rebalance(
-        db, settings, b, applied=True,
+        db, settings, b, applied=True, require_due=not force,
         reason="forced rebalance" if force else f"{b.rebalance_frequency} rebalance",
     )
 
@@ -416,10 +442,12 @@ def tick_all(db: Session, settings: Settings) -> int:
         if not _is_due(b, now_ist):
             continue
         try:
-            _do_rebalance(
-                db, settings, b, applied=True, reason=f"{b.rebalance_frequency} auto-rebalance"
+            res = _do_rebalance(
+                db, settings, b, applied=True, require_due=True,
+                reason=f"{b.rebalance_frequency} auto-rebalance",
             )
-            done += 1
+            if not res.get("skipped"):
+                done += 1
         except Exception:  # noqa: BLE001 - one bad basket must not stall the loop
             logger.exception("basket_auto_rebalance_error", basket=str(b.id))
             db.rollback()

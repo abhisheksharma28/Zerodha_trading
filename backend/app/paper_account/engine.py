@@ -218,24 +218,52 @@ def _has_inventory_for(db: Session, acct: PaperAccount, order: PaperOrder) -> bo
 # --------------------------------------------------------------------------
 
 def _get_holding(db: Session, acct: PaperAccount, order: PaperOrder) -> PaperHolding | None:
-    return db.execute(
+    rows = db.execute(
         select(PaperHolding).where(
             PaperHolding.account_id == acct.id,
             PaperHolding.tradingsymbol == order.tradingsymbol,
             PaperHolding.exchange == order.exchange,
-        )
-    ).scalar_one_or_none()
+        ).order_by(PaperHolding.created_at.asc())
+    ).scalars().all()
+    if len(rows) <= 1:
+        return rows[0] if rows else None
+    return _merge_dupes(db, rows, "qty")  # heal a concurrent double-insert
 
 
 def _get_position(db: Session, acct: PaperAccount, order: PaperOrder) -> PaperPosition | None:
-    return db.execute(
+    rows = db.execute(
         select(PaperPosition).where(
             PaperPosition.account_id == acct.id,
             PaperPosition.tradingsymbol == order.tradingsymbol,
             PaperPosition.product == order.product,
             PaperPosition.status == "OPEN",
-        )
-    ).scalar_one_or_none()
+        ).order_by(PaperPosition.opened_at.asc())
+    ).scalars().all()
+    if len(rows) <= 1:
+        return rows[0] if rows else None
+    return _merge_dupes(db, rows, "net_qty")
+
+
+def _merge_dupes(db: Session, rows: list, qty_field: str):
+    """Fold concurrent duplicate holding/position rows for the same
+    instrument into the oldest, summing every numeric column."""
+    keep = rows[0]
+    numeric = (
+        "qty", "t1_qty", "net_qty", "buy_qty", "sell_qty", "buy_value", "sell_value",
+        "realized_pnl", "charges", "margin_blocked",
+    )
+    tot_qty = sum(int(getattr(r, qty_field) or 0) for r in rows)
+    cost = sum(float(getattr(r, "avg_price", 0) or 0) * int(getattr(r, qty_field) or 0) for r in rows)
+    for f in numeric:
+        if hasattr(keep, f):
+            setattr(keep, f, sum(float(getattr(r, f) or 0) for r in rows))
+    if hasattr(keep, "avg_price"):
+        keep.avg_price = round(cost / tot_qty, 4) if tot_qty else float(keep.avg_price)
+    for r in rows[1:]:
+        db.delete(r)
+    db.flush()
+    logger.warning("paper_dupe_rows_merged", symbol=keep.tradingsymbol, n=len(rows))
+    return keep
 
 
 def _fill(db: Session, acct: PaperAccount, order: PaperOrder, price: float,
