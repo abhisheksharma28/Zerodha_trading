@@ -106,6 +106,9 @@ def _warmup_bars(spec: BasketSpec) -> int:
     if spec.risk.regime is not None:
         # the 5-state regime engine wants ~1y for its trend / vol-percentile signals
         need = max(need, spec.risk.regime.ma + 5, 260)
+    if spec.tactical is not None and spec.tactical.active:
+        # the trend tilt reads a 200-day MA + 6m momentum of each asset
+        need = max(need, 210)
     return need
 
 

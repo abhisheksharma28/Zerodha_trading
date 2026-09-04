@@ -179,9 +179,34 @@ class RiskLimits:
 
 
 @dataclass(frozen=True)
+class TacticalSpec:
+    """Tactical allocation overlay for a strategic multi-asset basket: a
+    per-sleeve band the internal engine may tilt within each rebalance."""
+
+    model: str = "strategic"
+    max_step_pct: float = 8.0
+    bands: tuple[tuple[str, float, float, float], ...] = ()  # (sleeve_id, strategic, floor, ceiling)
+
+    @property
+    def active(self) -> bool:
+        return self.model != "strategic" and bool(self.bands)
+
+    def band_map(self) -> dict[str, tuple[float, float, float]]:
+        return {b[0]: (b[1], b[2], b[3]) for b in self.bands}
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "model": self.model,
+            "max_step_pct": self.max_step_pct,
+            "bands": {b[0]: [b[1], b[2], b[3]] for b in self.bands},
+        }
+
+
+@dataclass(frozen=True)
 class BasketSpec:
     sleeves: tuple[SleeveSpec, ...]
     risk: RiskLimits = field(default_factory=RiskLimits)
+    tactical: TacticalSpec | None = None
 
     @property
     def symbols(self) -> list[str]:
@@ -194,10 +219,13 @@ class BasketSpec:
         return list(seen)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "sleeves": [s.to_dict() for s in self.sleeves],
             "risk": self.risk.to_dict(),
         }
+        if self.tactical is not None:
+            out["tactical"] = self.tactical.to_dict()
+        return out
 
 
 def _clean_symbol(raw: Any) -> str:
@@ -402,4 +430,60 @@ def parse_spec(raw: Any) -> BasketSpec:
         raise SpecError(f"sleeve weights must sum to 100, got {total:.2f}")
 
     risk = _parse_risk(raw.get("risk"))
-    return BasketSpec(sleeves=tuple(sleeves), risk=risk)
+    tactical = _parse_tactical(raw.get("tactical"), sleeves=sleeves)
+    return BasketSpec(sleeves=tuple(sleeves), risk=risk, tactical=tactical)
+
+
+_TACTICAL_MODELS = frozenset({
+    "strategic", "trend_tilt", "risk_parity_lite", "permanent_portfolio", "sixty_forty",
+})
+
+
+def _parse_tactical(raw: Any, *, sleeves: list[SleeveSpec]) -> TacticalSpec | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise SpecError("spec.tactical must be an object")
+    model = str(raw.get("model", "strategic")).strip() or "strategic"
+    if model not in _TACTICAL_MODELS:
+        raise SpecError(f"spec.tactical.model must be one of {sorted(_TACTICAL_MODELS)}")
+    try:
+        max_step = float(raw.get("max_step_pct", 8.0) or 0.0)
+    except (TypeError, ValueError) as exc:
+        raise SpecError("spec.tactical.max_step_pct must be a number") from exc
+    if not 0.0 <= max_step <= 50.0:
+        raise SpecError("spec.tactical.max_step_pct must be in [0, 50]")
+
+    bands_raw = raw.get("bands") or {}
+    if not isinstance(bands_raw, dict) or not bands_raw:
+        raise SpecError("spec.tactical.bands must be a non-empty object keyed by sleeve id")
+    by_id = {s.id: s for s in sleeves}
+    bands: list[tuple[str, float, float, float]] = []
+    for sid, triple in bands_raw.items():
+        if sid not in by_id:
+            raise SpecError(f"spec.tactical.bands references unknown sleeve {sid!r}")
+        try:
+            strat, lo, hi = (float(x) for x in triple)
+        except (TypeError, ValueError) as exc:
+            raise SpecError(f"spec.tactical.bands[{sid}] must be [strategic, floor, ceiling]") from exc
+        if not 0.0 <= lo <= strat <= hi <= 100.0:
+            raise SpecError(
+                f"spec.tactical.bands[{sid}] must satisfy 0 <= floor <= strategic <= ceiling <= 100"
+            )
+        if abs(strat - by_id[sid].weight_pct) > 0.5:
+            raise SpecError(
+                f"spec.tactical.bands[{sid}] strategic {strat} must match the sleeve weight "
+                f"{by_id[sid].weight_pct}"
+            )
+        bands.append((sid, strat, lo, hi))
+
+    covered = {b[0] for b in bands}
+    missing = [s.id for s in sleeves if s.id not in covered]
+    if missing:
+        raise SpecError(f"spec.tactical.bands is missing sleeves: {', '.join(missing)}")
+    if sum(b[2] for b in bands) > 100.0 + 1e-6:
+        raise SpecError("spec.tactical band floors sum to more than 100")
+    if sum(b[3] for b in bands) < 100.0 - 1e-6:
+        raise SpecError("spec.tactical band ceilings sum to less than 100")
+
+    return TacticalSpec(model=model, max_step_pct=max_step, bands=tuple(bands))

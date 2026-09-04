@@ -565,7 +565,7 @@ CATALOG: list[dict[str, Any]] = [
         how_it_works=[
             "Strategic weights: 40% Indian equity, 10% midcap, 20% government bonds, 20% gold, 10% liquid.",
             "Held via broad ETFs and rebalanced quarterly or on drift.",
-            "The internal engine may tilt within ranges (equity 35-60, bonds 15-30, gold 10-30, liquid 5-20) — Phase 2.",
+            "The internal engine tilts within hard ranges (equity 35-60, midcap 5-20, bonds 15-30, gold 10-30, liquid 5-20) on a trend + 6-month-momentum read of each asset, no more than 8 points from strategic per rebalance, and never leans growth up in a risk-off tape.",
         ],
         spec={
             "sleeves": [
@@ -580,6 +580,17 @@ CATALOG: list[dict[str, Any]] = [
                 {"id": "cash", "name": "Liquid", "weight_pct": 10.0,
                  "weighting": "equal", "members": ["LIQUIDBEES"], "rule": _NONE, "risk_asset": False},
             ],
+            "tactical": {
+                "model": "trend_tilt",
+                "max_step_pct": 8.0,
+                "bands": {
+                    "equity": [40.0, 35.0, 60.0],
+                    "mid": [10.0, 5.0, 20.0],
+                    "gsec": [20.0, 15.0, 30.0],
+                    "gold": [20.0, 10.0, 30.0],
+                    "cash": [10.0, 5.0, 20.0],
+                },
+            },
         },
     ),
 ]

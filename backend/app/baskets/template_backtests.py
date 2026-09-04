@@ -47,6 +47,8 @@ def _summary(key: str, result_dict: dict[str, Any]) -> dict[str, Any]:
         "max_drawdown_pct", "beta", "alpha_pct", "information_ratio",
         "annual_turnover_pct", "monthly_win_rate_pct", "avg_holding_days",
         "best_year_pct", "worst_year_pct", "n_rebalances",
+        "up_capture_pct", "down_capture_pct",
+        "rolling_12m_min_pct", "rolling_12m_median_pct", "rolling_12m_max_pct",
     )
     return {
         "key": key,

@@ -697,10 +697,34 @@ def resolve_targets(
                 + (f"; {state.drivers[0]}" if state.drivers else "")
             )
 
+    # tactical allocation overlay — tilt strategic sleeve weights within
+    # their declared bands (multi-asset strategic baskets only)
+    tac_pct: dict[str, float] = {}
+    if spec.tactical is not None and spec.tactical.active:
+        from app.baskets import tactical as _tac
+
+        band_map = spec.tactical.band_map()
+        tac_sleeves = {
+            s.id: {"asset": s.members[0] if s.members else s.id,
+                   "band": band_map[s.id], "name": s.name}
+            for s in spec.sleeves if s.id in band_map
+        }
+        tac_closes = {
+            meta["asset"]: _closes_upto(bars_by_symbol.get(meta["asset"], []), as_of_dt)
+            for meta in tac_sleeves.values()
+        }
+        tac_pct, tac_notes = _tac.tilt(
+            spec.tactical.model, tac_sleeves, tac_closes,
+            regime=tilt_regime, max_step_pct=spec.tactical.max_step_pct,
+        )
+        notes.extend(tac_notes)
+
     weights: dict[str, float] = {}
     per_sleeve: list[SleeveResolution] = []
 
     for sleeve in spec.sleeves:
+        eff_weight_pct = tac_pct.get(sleeve.id, sleeve.weight_pct)
+        eff_weight = eff_weight_pct / 100.0
         selected, metric, s_notes, factor_ranks = _rank_members(
             sleeve, bars_by_symbol, as_of_dt, held=held,
             fundamentals_fn=fundamentals_fn, market_bars=market_bars,
@@ -708,15 +732,15 @@ def resolve_targets(
         )
         within = _weight_within_sleeve(sleeve, selected, metric, bars_by_symbol, as_of_dt)
         scale = risk_scale if sleeve.risk_asset else 1.0
-        sleeve_weights = {m: frac * sleeve.weight * scale for m, frac in within.items()}
+        sleeve_weights = {m: frac * eff_weight * scale for m, frac in within.items()}
         for m, wv in sleeve_weights.items():
             weights[m] = weights.get(m, 0.0) + wv
         filled = sum(sleeve_weights.values())
-        cash_pct = max(sleeve.weight_pct - filled * 100.0, 0.0)
+        cash_pct = max(eff_weight_pct - filled * 100.0, 0.0)
         scores = metric if sleeve.rule.type == "composite_score" else {}
         per_sleeve.append(
             SleeveResolution(
-                sleeve_id=sleeve.id, name=sleeve.name, target_pct=sleeve.weight_pct,
+                sleeve_id=sleeve.id, name=sleeve.name, target_pct=round(eff_weight_pct, 2),
                 selected=sleeve_weights, scores={k: round(v, 1) for k, v in scores.items()},
                 factor_ranks=factor_ranks, cash_pct=cash_pct, notes=s_notes,
             )
