@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Layers, Loader2, Plus, X } from "lucide-react";
+import { ArrowDownUp, Layers, Loader2, Plus, Search, X } from "lucide-react";
 
 import type { BasketSpec, BasketTemplate, Frequency, Sleeve } from "@/api/baskets";
 import { basketsApi } from "@/api/baskets";
@@ -15,6 +15,27 @@ import { cn } from "@/lib/utils";
 
 const FREQS: Frequency[] = ["weekly", "monthly", "quarterly"];
 
+type SortKey =
+  | "created_desc"
+  | "created_asc"
+  | "name"
+  | "cagr"
+  | "excess"
+  | "sharpe"
+  | "maxdd"
+  | "capital";
+
+const SORTS: { key: SortKey; label: string }[] = [
+  { key: "created_desc", label: "Newest first" },
+  { key: "created_asc", label: "Oldest first" },
+  { key: "name", label: "Name (A–Z)" },
+  { key: "cagr", label: "CAGR (high → low)" },
+  { key: "excess", label: "vs benchmark (high → low)" },
+  { key: "sharpe", label: "Sharpe (high → low)" },
+  { key: "maxdd", label: "Max drawdown (smallest)" },
+  { key: "capital", label: "Capital (high → low)" },
+];
+
 function specForPayload(sleeves: Sleeve[]): BasketSpec {
   return {
     sleeves: sleeves.map((sl) => ({
@@ -26,9 +47,14 @@ function specForPayload(sleeves: Sleeve[]): BasketSpec {
 
 export default function BasketsPage() {
   const nav = useNavigate();
-  const { data: baskets, isLoading } = useBaskets();
+  const { data: baskets, isLoading } = useBaskets(true);
   const { data: catalog } = useBasketTemplates();
   const create = useCreateBasket();
+
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "draft" | "deployed" | "archived">("all");
+  const [catFilter, setCatFilter] = useState("all");
+  const [sortKey, setSortKey] = useState<SortKey>("created_desc");
 
   const [open, setOpen] = useState(false);
   const [templateName, setTemplateName] = useState<string | null>(null);
@@ -109,7 +135,55 @@ export default function BasketsPage() {
     }
   };
 
-  const rows = useMemo(() => baskets ?? [], [baskets]);
+  const allRows = useMemo(() => baskets ?? [], [baskets]);
+  const usedCategories = useMemo(
+    () => [...new Set(allRows.map((b) => b.category).filter(Boolean) as string[])].sort(),
+    [allRows],
+  );
+
+  const rows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const num0 = (v: number | null | undefined) => (v == null ? Number.NEGATIVE_INFINITY : v);
+    const filtered = allRows.filter((b) => {
+      if (statusFilter !== "all" && b.status !== statusFilter) return false;
+      if (catFilter !== "all" && (b.category ?? "") !== catFilter) return false;
+      if (!q) return true;
+      const hay = [
+        b.name,
+        b.category ?? "",
+        b.rebalance_frequency,
+        ...b.sleeves.map((s) => s.name),
+        ...b.sleeves.flatMap((s) => s.members),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+    const s = (b: (typeof allRows)[number]) => b.backtest_summary;
+    const sorted = [...filtered];
+    sorted.sort((a, b) => {
+      switch (sortKey) {
+        case "name":
+          return a.name.localeCompare(b.name);
+        case "created_asc":
+          return (a.created_at ?? "").localeCompare(b.created_at ?? "");
+        case "cagr":
+          return num0(s(b)?.cagr_pct) - num0(s(a)?.cagr_pct);
+        case "excess":
+          return num0(s(b)?.excess_return_pct) - num0(s(a)?.excess_return_pct);
+        case "sharpe":
+          return num0(s(b)?.sharpe_ratio) - num0(s(a)?.sharpe_ratio);
+        case "maxdd":
+          // smallest drawdown magnitude first (values are negative %)
+          return num0(s(b)?.max_drawdown_pct) - num0(s(a)?.max_drawdown_pct);
+        case "capital":
+          return b.capital - a.capital;
+        default: // created_desc
+          return (b.created_at ?? "").localeCompare(a.created_at ?? "");
+      }
+    });
+    return sorted;
+  }, [allRows, query, statusFilter, catFilter, sortKey]);
 
   const closeForm = () => {
     resetForm();
@@ -289,12 +363,88 @@ export default function BasketsPage() {
       )}
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold text-fg">Your baskets</h2>
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <h2 className="mr-auto text-sm font-semibold text-fg">
+            Your baskets
+            {allRows.length > 0 && (
+              <span className="ml-1.5 text-[11px] font-normal text-fg-faint">
+                {rows.length === allRows.length
+                  ? `(${allRows.length})`
+                  : `(${rows.length} of ${allRows.length})`}
+              </span>
+            )}
+          </h2>
+          {allRows.length > 0 && (
+            <>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-faint" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Filter by name, sleeve, stock…"
+                  className="h-8 w-52 rounded-md border border-line bg-surface pl-7 pr-2 text-xs placeholder:text-fg-faint focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                />
+              </div>
+              <select
+                className="h-8 rounded-md border border-line bg-surface px-2 text-xs"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+              >
+                <option value="all">All statuses</option>
+                <option value="draft">Draft</option>
+                <option value="deployed">Deployed</option>
+                <option value="archived">Archived</option>
+              </select>
+              {usedCategories.length > 0 && (
+                <select
+                  className="h-8 rounded-md border border-line bg-surface px-2 text-xs"
+                  value={catFilter}
+                  onChange={(e) => setCatFilter(e.target.value)}
+                >
+                  <option value="all">All categories</option>
+                  {usedCategories.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <div className="flex items-center gap-1">
+                <ArrowDownUp className="h-3.5 w-3.5 text-fg-faint" />
+                <select
+                  className="h-8 rounded-md border border-line bg-surface px-2 text-xs"
+                  value={sortKey}
+                  onChange={(e) => setSortKey(e.target.value as SortKey)}
+                >
+                  {SORTS.map((s) => (
+                    <option key={s.key} value={s.key}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
+        </div>
         {isLoading ? (
           <p className="py-8 text-center text-sm text-fg-faint">Loading…</p>
-        ) : rows.length === 0 ? (
+        ) : allRows.length === 0 ? (
           <p className="rounded-lg border border-dashed border-line py-8 text-center text-sm text-fg-faint">
             No baskets yet. Create one, or start from a template above.
+          </p>
+        ) : rows.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-line py-8 text-center text-sm text-fg-faint">
+            No baskets match the current filters.{" "}
+            <button
+              className="text-accent hover:underline"
+              onClick={() => {
+                setQuery("");
+                setStatusFilter("all");
+                setCatFilter("all");
+              }}
+            >
+              Clear filters
+            </button>
           </p>
         ) : (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
