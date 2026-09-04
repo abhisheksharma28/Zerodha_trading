@@ -57,6 +57,19 @@ def test_journeys_reference_only_real_flagship_keys():
             assert k in EXPECTED_KEYS, (label, k)
 
 
+def test_broad_equity_products_carry_a_sector_cap():
+    caps = {}
+    for p in catalog.flagship():
+        spec = parse_spec(p["spec"])
+        caps[p["key"]] = spec.risk.max_sector_pct
+    for k in ("momentum-leaders", "adaptive-alpha", "growth-accelerators", "smallmid-smart-alpha"):
+        assert caps[k] == 30.0, k
+    assert caps["dynamic-sector-rotation"] == 40.0  # concentration is the point
+    # thematic / multi-asset products are not sector-capped
+    assert caps["quality-compounders"] == 0.0
+    assert caps["golden-wealth"] == 0.0
+
+
 def test_risk_levels_span_the_scale():
     levels = {p["risk_level"] for p in catalog.flagship()}
     assert levels == {1, 2, 3, 4, 5}

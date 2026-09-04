@@ -237,7 +237,7 @@ CATALOG: list[dict[str, Any]] = [
                  "weighting": "score_weighted", "members": U.LARGE_MID_ALPHA, "max_weight_pct": 12.0,
                  "rule": _composite(126, 12, FW_MOMENTUM, hold_k=16, trend_ma=200)},
             ],
-            "risk": {"regime": _REGIME},
+            "risk": {"regime": _REGIME, "max_sector_pct": 30.0},
         },
     ),
     _p(
@@ -273,7 +273,7 @@ CATALOG: list[dict[str, Any]] = [
                  "weighting": "score_weighted", "members": U.LARGE_MID_ALPHA, "max_weight_pct": 10.0,
                  "rule": _composite(126, 12, FW_ADAPTIVE, hold_k=16, trend_ma=200)},
             ],
-            "risk": {"max_position_pct": 12.0, "regime": _REGIME},
+            "risk": {"max_position_pct": 12.0, "max_sector_pct": 30.0, "regime": _REGIME},
         },
     ),
     # =========================================================== GROWTH
@@ -308,7 +308,7 @@ CATALOG: list[dict[str, Any]] = [
                  "weighting": "score_weighted", "members": U.LARGE_MID_ALPHA, "max_weight_pct": 14.0,
                  "rule": _composite(63, 12, FW_GROWTH, hold_k=16, trend_ma=200)},
             ],
-            "risk": {"regime": _REGIME},
+            "risk": {"regime": _REGIME, "max_sector_pct": 30.0},
         },
     ),
     _p(
@@ -345,7 +345,7 @@ CATALOG: list[dict[str, Any]] = [
                 {"id": "cash", "name": "Liquid / Defensive", "weight_pct": 10.0,
                  "weighting": "equal", "members": ["LIQUIDBEES"], "rule": _NONE, "risk_asset": False},
             ],
-            "risk": {"max_position_pct": 9.0, "regime": _REGIME_TIGHT},
+            "risk": {"max_position_pct": 9.0, "max_sector_pct": 30.0, "regime": _REGIME_TIGHT},
         },
     ),
     # ============================================== DEFENSIVE & QUALITY
@@ -459,7 +459,7 @@ CATALOG: list[dict[str, Any]] = [
                 {"id": "gold", "name": "Gold", "weight_pct": 10.0,
                  "weighting": "equal", "members": ["GOLDBEES"], "rule": _NONE, "risk_asset": False},
             ],
-            "risk": {"regime": _REGIME},
+            "risk": {"regime": _REGIME, "max_sector_pct": 40.0},
         },
     ),
     _p(

@@ -245,6 +245,44 @@ def test_composite_score_rule_ranks_and_exposes_scores():
     assert res.score_of("WIN") is not None and res.score_of("WIN") >= res.score_of("MID")
 
 
+def test_sector_concentration_cap_trims_an_over_weight_sector():
+    from app.baskets.engine import _sector_cap
+
+    # HDFCBANK / ICICIBANK / SBIN bucket as "Bank"; NIFTYBEES is an Index ETF
+    # bucket (not an equity sector); TCS/INFY are IT.
+    w = {
+        "HDFCBANK": 0.25, "ICICIBANK": 0.20, "SBIN": 0.15,   # 60% Bank
+        "TCS": 0.10, "INFY": 0.10,                            # 20% IT
+        "NIFTYBEES": 0.20,                                    # not a sector
+    }
+    out, notes = _sector_cap(w, 0.30)
+    bank = out["HDFCBANK"] + out["ICICIBANK"] + out["SBIN"]
+    assert bank == pytest.approx(0.30, abs=1e-6)              # capped
+    assert out["NIFTYBEES"] == pytest.approx(0.20, abs=1e-6)  # ETF untouched
+    assert out["TCS"] + out["INFY"] == pytest.approx(0.30, abs=1e-6)  # IT filled to its cap
+    # the rest of the freed weight (0.20) is no longer invested -> held in cash
+    assert sum(out.values()) == pytest.approx(0.80, abs=1e-6)
+    assert any("Bank" in n for n in notes)
+
+
+def test_resolve_targets_applies_the_spec_sector_cap():
+    spec = parse_spec({
+        "sleeves": [
+            {"id": "eq", "name": "Eq", "weight_pct": 100, "weighting": "equal",
+             "members": ["HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK", "TCS", "INFY"],
+             "rule": {"type": "none"}},
+        ],
+        "risk": {"max_sector_pct": 40.0},
+    })
+    bars = {s: _series(s, 100, 0.0, 60) for s in
+            ("HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK", "TCS", "INFY")}
+    res = resolve_targets(spec, bars, datetime(2020, 4, 1))
+    bank = sum(res.weights[s] for s in ("HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK"))
+    assert bank <= 0.40 + 1e-6
+    assert res.invested <= 1.0 + 1e-6
+    assert res.cash_weight == pytest.approx(1.0 - res.invested, abs=1e-6)
+
+
 def test_composite_score_uses_relative_strength_and_exposes_factor_ranks():
     spec = parse_spec({"sleeves": [
         {"id": "eq", "name": "Eq", "weight_pct": 100, "weighting": "score_weighted",

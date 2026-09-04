@@ -419,6 +419,53 @@ def _waterfill_cap(frac: dict[str, float], cap: float) -> dict[str, float]:
     return out
 
 
+def _sector_cap(
+    weights: dict[str, float], cap: float
+) -> tuple[dict[str, float], list[str]]:
+    """Hold any one equity sector to <= ``cap`` of the whole basket.
+
+    Over-cap sectors are scaled down proportionally in a single pass. The
+    freed weight is placed into the under-cap equity sectors up to their
+    remaining headroom; whatever does not fit stays in cash (the basket
+    holds less equity — the right response to "too concentrated in one
+    sector"). ETF / gold / bond / cash buckets are not equity sectors and
+    are left untouched.
+    """
+    from app.baskets.sectors import is_equity_sector, sector_of
+
+    buckets: dict[str, list[str]] = {}
+    for m in weights:
+        buckets.setdefault(sector_of(m), []).append(m)
+    eq_sectors = {b for b in buckets if is_equity_sector(b)}
+    totals = {b: sum(weights[m] for m in buckets[b]) for b in eq_sectors}
+    over = {b for b in eq_sectors if totals[b] > cap + 1e-9}
+    if not over:
+        return weights, []
+
+    out = dict(weights)
+    notes: list[str] = []
+    freed = 0.0
+    for b in over:
+        scale = cap / totals[b]
+        for m in buckets[b]:
+            freed += out[m] * (1.0 - scale)
+            out[m] *= scale
+        notes.append(f"sector cap: {b} trimmed {totals[b]:.0%} -> {cap:.0%}")
+
+    headroom = {b: cap - totals[b] for b in eq_sectors if b not in over and totals[b] < cap}
+    htot = sum(headroom.values())
+    placed = min(freed, htot)
+    if htot > 1e-9 and placed > 1e-12:
+        for b, hr in headroom.items():
+            add_b = placed * (hr / htot)
+            btot = sum(out[m] for m in buckets[b]) or 1.0
+            for m in buckets[b]:
+                out[m] += add_b * (out[m] / btot)
+    if freed - placed > 1e-4:
+        notes.append(f"sector cap: {(freed - placed):.0%} of the basket held in cash")
+    return out, notes
+
+
 def resolve_targets(
     spec: BasketSpec,
     bars_by_symbol: dict[str, list[Any]],
@@ -492,6 +539,16 @@ def resolve_targets(
     cap = spec.risk.max_position_pct / 100.0
     if cap > 0 and weights and any(v > cap + 1e-9 for v in weights.values()):
         weights = _waterfill_cap(weights, cap)
+
+    # sector concentration cap — hold any one equity sector to <= max_sector_pct
+    sec_cap = spec.risk.max_sector_pct / 100.0
+    if sec_cap > 0 and weights:
+        weights, sec_notes = _sector_cap(weights, sec_cap)
+        notes.extend(sec_notes)
+        # re-apply the single-name cap: the redistribution may have pushed a
+        # name back over it
+        if cap > 0 and any(v > cap + 1e-9 for v in weights.values()):
+            weights = _waterfill_cap(weights, cap)
 
     invested = sum(weights.values())
     return ResolveResult(
