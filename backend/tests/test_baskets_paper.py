@@ -10,9 +10,10 @@ import pytest
 from app.baskets import paper
 from app.baskets.spec import parse_spec
 from app.config import get_settings
+from app.core.exceptions import ValidationError
 from app.models.basket import Basket
 from app.models.instrument import Instrument
-from app.paper_account import pricing
+from app.paper_account import engine, pricing
 from app.strategies.base import Bar
 
 _PX = {"NSE:AAA": 100.0, "NSE:BBB": 50.0}
@@ -187,3 +188,18 @@ def test_deploy_stamps_cadence_clock_so_a_racing_tick_does_not_double_buy(db, _h
     # a forced rebalance still runs (require_due is only for the auto path)
     r = paper.rebalance(db, s, str(b.id), force=True)
     assert r["applied"] is True
+
+
+def test_deploy_refuses_when_the_basket_capital_exceeds_free_cash(db, _hist):
+    s = get_settings()
+    _instrument(db, "1001", "AAA")
+    _instrument(db, "1002", "BBB")
+    db.flush()
+    acct = engine.get_or_create_account(db)
+    acct.cash = 50_000.0                       # far less than the 200k basket capital
+    db.flush()
+
+    b = _make_basket(db, capital=200_000)
+    with pytest.raises(ValidationError, match="only"):
+        paper.deploy(db, s, str(b.id))
+    assert db.get(Basket, b.id).status == "draft"   # not left half-deployed

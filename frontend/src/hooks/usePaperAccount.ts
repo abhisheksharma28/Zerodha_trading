@@ -87,6 +87,11 @@ export function useResetPaper() {
   });
 }
 
+export function useReconcilePaper() {
+  const invalidate = useInvalidateAll();
+  return useMutation({ mutationFn: () => paperAccountApi.reconcile(), onSuccess: invalidate });
+}
+
 export function useAddIdeaToPaper() {
   const qc = useQueryClient();
   return useMutation({

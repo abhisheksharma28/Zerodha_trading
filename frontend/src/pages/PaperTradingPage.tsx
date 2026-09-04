@@ -23,6 +23,7 @@ import {
   usePaperStrategyRuns,
   usePaperSummary,
   usePaperTrades,
+  useReconcilePaper,
   useResetPaper,
   useSetPaperStrategyStatus,
 } from "@/hooks/usePaperAccount";
@@ -71,6 +72,7 @@ export default function PaperTradingPage() {
   const cancelOrder = useCancelOrder();
   const addFunds = useAddFunds();
   const reset = useResetPaper();
+  const reconcile = useReconcilePaper();
   const setStratStatus = useSetPaperStrategyStatus();
   const deleteStrat = useDeletePaperStrategy();
 
@@ -226,6 +228,24 @@ export default function PaperTradingPage() {
               }}
             >
               Add funds
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={reconcile.isPending}
+              title="Rebuild cash & holdings from the trade log (fixes drift, keeps history)"
+              onClick={() =>
+                reconcile.mutate(undefined, {
+                  onSuccess: (r) =>
+                    window.alert(
+                      `Reconciled. Cash ₹${Math.round(r.old_cash).toLocaleString("en-IN")} → ₹${Math.round(
+                        r.new_cash,
+                      ).toLocaleString("en-IN")} (Δ ₹${Math.round(r.delta).toLocaleString("en-IN")}).\n\n${r.note}`,
+                    ),
+                })
+              }
+            >
+              {reconcile.isPending ? "Reconciling…" : "Reconcile"}
             </Button>
             <Button
               size="sm"

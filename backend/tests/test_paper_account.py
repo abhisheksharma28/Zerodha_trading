@@ -197,3 +197,38 @@ def test_create_run_rejects_bad_input(db, _fixed_prices):
     with pytest.raises(ValidationError):
         strat.create_run(db, slug="does-not-exist", name="x", instruments=["NSE:INFY"],
                          timeframe="1d", product="CNC", params={})
+
+
+def test_reconcile_rebuilds_cash_and_holdings_from_trades(db, monkeypatch, _fixed_prices):
+    from app.paper_account import engine as eng
+    from app.paper_account.reconcile import reconcile
+
+    _mk(db, instrument_token="738561", tradingsymbol="RELIANCE", exchange="NSE")
+    _mk(db, instrument_token="895745", tradingsymbol="TCS", exchange="NSE")
+    db.flush()
+    s = get_settings()
+    acct = eng.get_or_create_account(db)
+    start_cash = float(acct.cash)
+
+    eng.place_order(db, s, OrderRequest(exchange="NSE", tradingsymbol="RELIANCE", side="BUY",
+                                       quantity=10, product="CNC"))
+    eng.place_order(db, s, OrderRequest(exchange="NSE", tradingsymbol="TCS", side="BUY",
+                                        quantity=5, product="CNC"))
+    # simulate the double-buy corruption: inflate cash + duplicate a holding row
+    acct.cash = float(acct.cash) + 50_000
+    from sqlalchemy import select as _sel
+
+    from app.models.paper_account import PaperHolding
+    db.add(PaperHolding(account_id=acct.id, exchange="NSE", tradingsymbol="RELIANCE",
+                        qty=999, t1_qty=0, avg_price=1300, realized_pnl=0))
+    db.commit()
+
+    out = reconcile(db)
+    assert out["reconciled"] is True
+    db.refresh(acct)
+    # cash back to: start − 10*1300 − 5*3800 − charges  (the +50k phantom is gone)
+    expected = start_cash - 10 * 1300 - 5 * 3800
+    assert abs(float(acct.cash) - expected) < 200  # within charges
+    # the duplicate RELIANCE holding is gone, qty is the true 10
+    rel = db.execute(_sel(PaperHolding).where(PaperHolding.tradingsymbol == "RELIANCE")).scalars().all()
+    assert len(rel) == 1 and int(rel[0].qty) == 10

@@ -235,6 +235,12 @@ export const paperAccountApi = {
     apiClient.post<PaperSummary>("/paper-account/funds", { amount }).then((r) => r.data),
   reset: (opening_balance?: number) =>
     apiClient.post<PaperSummary>("/paper-account/reset", { opening_balance }).then((r) => r.data),
+  reconcile: () =>
+    apiClient
+      .post<{ old_cash: number; new_cash: number; delta: number; note: string; summary: PaperSummary }>(
+        "/paper-account/reconcile",
+      )
+      .then((r) => r.data),
 
   algo: () => apiClient.get<AlgoStatus>("/paper-account/algo").then((r) => r.data),
   setAlgo: (patch: Partial<AlgoConfig>) =>

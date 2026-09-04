@@ -50,6 +50,15 @@ def _tag(basket_id) -> str:
     return f"basket:{basket_id}"
 
 
+def _inr(v: float) -> str:
+    a = abs(v)
+    if a >= 1e7:
+        return f"₹{v / 1e7:.2f} Cr"
+    if a >= 1e5:
+        return f"₹{v / 1e5:.2f} L"
+    return f"₹{v:,.0f}"
+
+
 def _get(db: Session, basket_id: str) -> Basket:
     try:
         bid = uuid.UUID(str(basket_id))
@@ -292,6 +301,19 @@ def deploy(db: Session, settings: Settings, basket_id: str) -> dict:
     if b.status == "deployed":
         raise ValidationError("basket is already deployed")
     acct = get_or_create_account(db)
+
+    # a deployed basket buys ~its `capital` worth of stock out of the paper
+    # account's REAL free cash. Refuse (don't half-fill) if it can't be
+    # funded, so the account can't silently over-commit across baskets.
+    want = float(b.capital)
+    have = float(acct.cash)
+    if want > have + 1.0:
+        raise ValidationError(
+            f"This basket allocates {_inr(want)} but the paper account has only "
+            f"{_inr(have)} free. Lower the basket's capital, undeploy another basket, "
+            f"or add funds first."
+        )
+
     b.paper_account_id = acct.id
     b.status = "deployed"
     # stamp the cadence clock BEFORE committing "deployed" so a scheduler

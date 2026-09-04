@@ -134,6 +134,19 @@ def post_reset(
     return service.summary(db, settings)
 
 
+@router.post("/reconcile")
+def post_reconcile(
+    db: Session = Depends(get_db), settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Rebuild cash + holdings from the trade log without wiping history —
+    fixes drift from the old basket-deploy race."""
+    from app.paper_account.reconcile import reconcile
+
+    result = reconcile(db)
+    result["summary"] = service.summary(db, settings)
+    return result
+
+
 # --- auto-trade bridge (algo toggle) ----------------------------------
 
 @router.get("/algo")
