@@ -4,7 +4,7 @@ import { marketApi } from "@/api/market";
 
 // Near-real-time: the backend hot-caches for ~1.5s so a 2s poll never
 // multiplies Kite quote calls. Only refetches while the tab is visible.
-export function useMarketOverview(universe = "nifty50") {
+export function useMarketOverview(universe = "nifty100") {
   return useQuery({
     queryKey: ["market", "overview", universe],
     queryFn: () => marketApi.overview(universe),

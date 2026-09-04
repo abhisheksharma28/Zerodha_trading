@@ -85,7 +85,8 @@ export default function BreadthPage() {
   const openStock = useSym();
   const navigate = useNavigate();
   const [tab, setTab] = useState<(typeof TABS)[number]>("Movers");
-  const { data, isFetching, refetch, dataUpdatedAt } = useMarketOverview("nifty50");
+  const [universe, setUniverse] = useState<"nifty50" | "nifty100" | "nifty200">("nifty200");
+  const { data, isFetching, refetch, dataUpdatedAt } = useMarketOverview(universe);
 
   const liveSymbols = useMemo(() => {
     if (!data?.available) return [];
@@ -179,6 +180,16 @@ export default function BreadthPage() {
         subtitle="Live NSE movers, sectors, heat-map and signals — real Zerodha quotes."
         actions={
           <div className="flex items-center gap-2">
+            <select
+              className="h-8 rounded-md border border-line bg-surface px-2 text-xs"
+              value={universe}
+              onChange={(e) => setUniverse(e.target.value as typeof universe)}
+              title="Which basket of stocks the movers / breadth are computed over"
+            >
+              <option value="nifty50">Nifty 50</option>
+              <option value="nifty100">Nifty 100</option>
+              <option value="nifty200">Nifty 200</option>
+            </select>
             {streamStatus === "open" && (
               <span className="hidden items-center gap-1 text-xs font-medium text-pos sm:flex">
                 <span className="h-1.5 w-1.5 rounded-full bg-pos" /> streaming

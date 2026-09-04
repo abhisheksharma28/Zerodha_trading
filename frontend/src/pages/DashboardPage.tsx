@@ -150,7 +150,7 @@ function WelcomeHero({
   algoOn: boolean;
   liveIdeas: number;
 }) {
-  const { data: ov } = useMarketOverview("nifty50");
+  const { data: ov } = useMarketOverview("nifty200");
   const b = ov?.available ? ov.breadth : null;
   const today = new Date().toLocaleDateString("en-IN", {
     weekday: "long",

@@ -123,6 +123,65 @@ NIFTY_200: list[str] = sorted(
     }
 )
 
+# Best-effort sector for the wider universes: reuse NIFTY 50's mapping, then
+# a small hand map for common Next-50 / midcap names, else "Other".
+_KNOWN_SECTOR: dict[str, str] = {sym: sec for sym, _n, sec in NIFTY_50}
+_KNOWN_SECTOR.update({
+    "BSE": "Financial Services", "CDSL": "Financial Services", "CAMS": "Financial Services",
+    "HDFCAMC": "Financial Services", "SBICARD": "Financial Services", "MUTHOOTFIN": "Financial Services",
+    "BAJAJHLDNG": "Financial Services", "CHOLAFIN": "Financial Services", "PFC": "Financial Services",
+    "RECLTD": "Financial Services", "IRFC": "Financial Services", "LICI": "Financial Services",
+    "ICICIGI": "Financial Services", "ICICIPRULI": "Financial Services", "SBILIFE": "Financial Services",
+    "HDFCLIFE": "Financial Services", "LICHSGFIN": "Financial Services", "IDFCFIRSTB": "Financial Services",
+    "AUBANK": "Financial Services", "BANDHANBNK": "Financial Services", "FEDERALBNK": "Financial Services",
+    "YESBANK": "Financial Services", "CANBK": "Financial Services", "PNB": "Financial Services",
+    "BANKBARODA": "Financial Services", "POLICYBZR": "Financial Services", "PAYTM": "Financial Services",
+    "PONAWALLA": "Financial Services", "POONAWALLA": "Financial Services",
+    "LTIM": "IT", "LTTS": "IT", "MPHASIS": "IT", "PERSISTENT": "IT", "COFORGE": "IT",
+    "KPITTECH": "IT", "OFSS": "IT", "TATAELXSI": "IT", "TATATECH": "IT", "NAUKRI": "IT",
+    "DIVISLAB": "Pharma", "LUPIN": "Pharma", "AUROPHARMA": "Pharma", "ALKEM": "Pharma",
+    "BIOCON": "Pharma", "GLENMARK": "Pharma", "IPCALAB": "Pharma", "LAURUSLABS": "Pharma",
+    "TORNTPHARM": "Pharma", "ZYDUSLIFE": "Pharma", "MANKIND": "Pharma", "SYNGENE": "Pharma",
+    "MAXHEALTH": "Healthcare", "FORTIS": "Healthcare", "APOLLOHOSP": "Healthcare",
+    "DABUR": "FMCG", "GODREJCP": "FMCG", "MARICO": "FMCG", "COLPAL": "FMCG", "PATANJALI": "FMCG",
+    "VBL": "FMCG", "UNITDSPR": "FMCG", "JUBLFOOD": "FMCG", "PGHH": "FMCG",
+    "TVSMOTOR": "Auto", "MOTHERSON": "Auto", "ASHOKLEY": "Auto", "BOSCHLTD": "Auto",
+    "MRF": "Auto", "APOLLOTYRE": "Auto", "BALKRISIND": "Auto", "EXIDEIND": "Auto",
+    "BHARATFORG": "Auto", "SONACOMS": "Auto", "TIINDIA": "Auto", "ESCORTS": "Auto",
+    "SAIL": "Metal", "NMDC": "Metal", "JINDALSTEL": "Metal", "NATIONALUM": "Metal",
+    "HINDZINC": "Metal", "APLAPOLLO": "Metal",
+    "BPCL": "Energy", "IOC": "Energy", "HINDPETRO": "Energy", "GAIL": "Energy",
+    "PETRONET": "Energy", "OIL": "Energy", "ADANIGREEN": "Energy", "ADANIPOWER": "Energy",
+    "TATAPOWER": "Energy", "JSWENERGY": "Energy", "NHPC": "Energy", "TORNTPOWER": "Energy",
+    "ADANIENSOL": "Energy", "IREDA": "Energy", "SOLARINDS": "Energy",
+    "DLF": "Realty", "GODREJPROP": "Realty", "OBEROIRLTY": "Realty", "PRESTIGE": "Realty",
+    "PHOENIXLTD": "Realty", "LODHA": "Realty",
+    "SIEMENS": "Capital Goods", "ABB": "Capital Goods", "BEL": "Capital Goods",
+    "HAL": "Capital Goods", "BHEL": "Capital Goods", "CGPOWER": "Capital Goods",
+    "CUMMINSIND": "Capital Goods", "THERMAX": "Capital Goods", "MAZDOCK": "Capital Goods",
+    "POLYCAB": "Capital Goods", "HAVELLS": "Capital Goods", "KEI": "Capital Goods",
+    "DIXON": "Consumer Durables", "KALYANKJIL": "Consumer Durables", "VOLTAS": "Consumer Durables",
+    "AMBUJACEM": "Cement", "ACC": "Cement", "SHREECEM": "Cement", "DALBHARAT": "Cement",
+    "PIIND": "Chemicals", "SRF": "Chemicals", "DEEPAKNTR": "Chemicals", "TATACHEM": "Chemicals",
+    "FLUOROCHEM": "Chemicals", "COROMANDEL": "Chemicals", "UPL": "Chemicals", "PIDILITIND": "Chemicals",
+    "INDIGO": "Services", "IRCTC": "Services", "INDHOTEL": "Services", "GMRAIRPORT": "Services",
+    "CONCOR": "Services", "DMART": "Retail", "TRENT": "Retail", "NYKAA": "Retail",
+    "IRB": "Infra", "RVNL": "Infra", "HUDCO": "Infra", "JSWINFRA": "Infra",
+    "TITAGARH": "Infra", "SUZLON": "Infra", "GUJGASLTD": "Energy", "IGL": "Energy",
+    "SUNTV": "Media", "PAGEIND": "Consumer", "ABBOTINDIA": "Pharma", "SCHAEFFLER": "Auto",
+    "SUNDARMFIN": "Financial Services", "MFSL": "Financial Services", "ABCAPITAL": "Financial Services",
+    "TATACOMM": "Telecom", "IDEA": "Telecom", "INDUSTOWER": "Telecom",
+})
+
+
+def _tuples(symbols: list[str]) -> list[tuple[str, str, str]]:
+    """(symbol, display name, sector) for a bare symbol list."""
+    name_by = {sym: name for sym, name, _s in NIFTY_50}
+    return [(s, name_by.get(s, s), _KNOWN_SECTOR.get(s, "Other")) for s in symbols]
+
+
 UNIVERSES: dict[str, list[tuple[str, str, str]]] = {
     "nifty50": NIFTY_50,
+    "nifty100": _tuples(sorted(NIFTY_100)),
+    "nifty200": _tuples(sorted(NIFTY_200)),
 }
