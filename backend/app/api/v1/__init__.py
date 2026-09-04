@@ -10,6 +10,7 @@ from app.api.v1 import (
     broker,
     chinese_transformer,
     deployments,
+    discovery,
     health,
     insights,
     instruments,
@@ -41,6 +42,7 @@ api_router.include_router(options_strategies.router)
 api_router.include_router(backtests.router)
 api_router.include_router(baskets.router)
 api_router.include_router(deployments.router)
+api_router.include_router(discovery.router)
 api_router.include_router(broker.router)
 api_router.include_router(insights.router)
 api_router.include_router(instruments.router)

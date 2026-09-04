@@ -12,6 +12,12 @@ from app.models.backtest import Backtest
 from app.models.basket import Basket, BasketRebalanceEvent
 from app.models.broker_session import BrokerSession
 from app.models.deployment import Deployment
+from app.models.discovery import (
+    DiscoveryBar,
+    DiscoveryFxRate,
+    DiscoveryIngestRun,
+    DiscoveryInstrument,
+)
 from app.models.instrument import Instrument
 from app.models.market_scanner import ScannerAlert, ScanRecommendation, ScanRun
 from app.models.options_strategy import OptionsStrategyInstance
@@ -41,6 +47,10 @@ __all__ = [
     "BasketRebalanceEvent",
     "BrokerSession",
     "Deployment",
+    "DiscoveryBar",
+    "DiscoveryFxRate",
+    "DiscoveryIngestRun",
+    "DiscoveryInstrument",
     "Instrument",
     "ScanRecommendation",
     "ScanRun",
