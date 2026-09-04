@@ -16,6 +16,7 @@ const SeasonalityPage = lazy(() => import("@/pages/SeasonalityPage"));
 const BasketsPage = lazy(() => import("@/pages/BasketsPage"));
 const BasketDetailPage = lazy(() => import("@/pages/BasketDetailPage"));
 const InsightsPage = lazy(() => import("@/pages/InsightsPage"));
+const DiscoveryPage = lazy(() => import("@/pages/DiscoveryPage"));
 const ArbitrageLibraryPage = lazy(() => import("@/pages/ArbitrageLabPages").then((m) => ({ default: m.ArbitrageLibraryPage })));
 const ArbScannerPage = lazy(() => import("@/pages/ArbitrageLabPages").then((m) => ({ default: m.ArbScannerPage })));
 const ArbPairDiscoveryPage = lazy(() => import("@/pages/ArbitrageLabPages").then((m) => ({ default: m.ArbPairDiscoveryPage })));
@@ -73,6 +74,7 @@ export default function App() {
         <Route path="baskets" element={<BasketsPage />} />
         <Route path="baskets/:id" element={<BasketDetailPage />} />
         <Route path="insights" element={<InsightsPage />} />
+        <Route path="discovery" element={<DiscoveryPage />} />
         <Route path="arbitrage" element={<ArbitrageLibraryPage />} />
         <Route path="arbitrage/scanner" element={<ArbScannerPage />} />
         <Route path="arbitrage/pair-discovery" element={<ArbPairDiscoveryPage />} />
