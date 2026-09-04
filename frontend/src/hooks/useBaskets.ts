@@ -19,10 +19,10 @@ export function useBasket(id: string | undefined) {
   });
 }
 
-export function useBasketTemplates() {
+export function useBasketTemplates(includeInternal = false) {
   return useQuery({
-    queryKey: [...KEY, "templates"],
-    queryFn: basketsApi.templates,
+    queryKey: [...KEY, "templates", { includeInternal }],
+    queryFn: () => basketsApi.templates(includeInternal),
     staleTime: 30 * 60_000,
   });
 }

@@ -43,6 +43,12 @@ export interface Basket {
   name: string;
   description: string | null;
   category: string | null;
+  risk_level: number | null;
+  objective: string | null;
+  horizon: string | null;
+  investment_style: string | null;
+  how_it_works: string[];
+  internal: boolean;
   benchmark: string;
   rebalance_frequency: Frequency;
   drift_band_pct: number;
@@ -125,6 +131,7 @@ export interface MinFunds {
   unit_cost: number;
   n_members: number;
   n_priced: number;
+  est_holdings?: number;
   as_of?: string;
 }
 
@@ -136,10 +143,19 @@ export interface BasketTemplate {
   tags: string[];
   benchmark: string;
   rebalance_frequency: Frequency;
-  drift_band_pct: number;
+  drift_band_pct?: number;
   spec: BasketSpec;
   backtest?: TemplateBacktest;
   min_funds?: MinFunds;
+  // flagship product metadata (present on the 12-basket catalog)
+  risk_level?: number;
+  objective?: string;
+  investor_profile?: string;
+  horizon?: string;
+  investment_style?: string;
+  holdings?: string;
+  how_it_works?: string[];
+  differentiators?: string[];
 }
 
 export interface DeployPreview {
@@ -159,8 +175,12 @@ export interface DeployPreview {
 
 export interface BasketTemplateCatalog {
   categories: string[];
+  journeys: Record<string, string[]>;
+  risk_labels: Record<string, string>;
   templates: BasketTemplate[];
   backtests_generated_at: string | null;
+  internal_models?: BasketTemplate[];
+  internal_categories?: string[];
 }
 
 export interface OrderIntent {
@@ -225,6 +245,11 @@ export interface CreateBasketBody {
   name: string;
   description?: string;
   category?: string;
+  risk_level?: number;
+  objective?: string;
+  horizon?: string;
+  investment_style?: string;
+  how_it_works?: string[];
   benchmark?: string;
   rebalance_frequency?: Frequency;
   drift_band_pct?: number;
@@ -240,8 +265,12 @@ export const basketsApi = {
 
   get: (id: string) => apiClient.get<Basket>(`/baskets/${id}`).then((r) => r.data),
 
-  templates: () =>
-    apiClient.get<BasketTemplateCatalog>("/baskets/templates").then((r) => r.data),
+  templates: (includeInternal = false) =>
+    apiClient
+      .get<BasketTemplateCatalog>("/baskets/templates", {
+        params: includeInternal ? { include_internal: true } : undefined,
+      })
+      .then((r) => r.data),
 
   create: (body: CreateBasketBody) =>
     apiClient.post<Basket>("/baskets", body).then((r) => r.data),

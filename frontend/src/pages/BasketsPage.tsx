@@ -15,21 +15,30 @@ import { cn } from "@/lib/utils";
 
 const FREQS: Frequency[] = ["weekly", "monthly", "quarterly"];
 
-// sort/filter applies to the template catalog ("Start from a template")
-type SortKey = "default" | "name" | "cagr" | "excess" | "sharpe" | "maxdd" | "minfunds";
+// sort/filter applies to the flagship product catalog
+type SortKey = "default" | "name" | "risk" | "cagr" | "excess" | "sharpe" | "maxdd" | "minfunds";
 
 const SORTS: { key: SortKey; label: string }[] = [
-  { key: "default", label: "Grouped by category" },
+  { key: "default", label: "By investing goal" },
+  { key: "risk", label: "Risk level (low → high)" },
   { key: "cagr", label: "CAGR (high → low)" },
   { key: "excess", label: "vs benchmark (high → low)" },
   { key: "sharpe", label: "Sharpe (high → low)" },
   { key: "maxdd", label: "Max drawdown (smallest)" },
-  { key: "minfunds", label: "Min. funds (low → high)" },
+  { key: "minfunds", label: "Min. investment (low → high)" },
   { key: "name", label: "Name (A–Z)" },
 ];
 
 const num0 = (v: number | null | undefined) =>
   v == null || !Number.isFinite(v) ? Number.NEGATIVE_INFINITY : v;
+
+const RISK_TONE: Record<number, string> = {
+  1: "border-emerald-500/40 bg-emerald-500/10 text-emerald-600",
+  2: "border-emerald-500/40 bg-emerald-500/10 text-emerald-600",
+  3: "border-amber-400/40 bg-amber-400/10 text-amber-600",
+  4: "border-orange-500/40 bg-orange-500/10 text-orange-600",
+  5: "border-rose-500/40 bg-rose-500/10 text-rose-600",
+};
 
 function specForPayload(sleeves: Sleeve[]): BasketSpec {
   return {
@@ -61,6 +70,14 @@ export default function BasketsPage() {
   const [capital, setCapital] = useState(500_000);
   const [sleeves, setSleeves] = useState<Sleeve[]>([emptySleeve(1)]);
   const [error, setError] = useState<string | null>(null);
+  // product metadata carried through from a cloned flagship (no form fields)
+  const [tplMeta, setTplMeta] = useState<{
+    risk_level?: number;
+    objective?: string;
+    horizon?: string;
+    investment_style?: string;
+    how_it_works?: string[];
+  }>({});
 
   const total = sleeves.reduce((s, sl) => s + (Number(sl.weight_pct) || 0), 0);
   const canSubmit =
@@ -78,26 +95,36 @@ export default function BasketsPage() {
     setDriftBand(3);
     setCapital(500_000);
     setSleeves([emptySleeve(1)]);
+    setTplMeta({});
     setError(null);
   };
 
   const applyTemplate = (key: string) => {
-    const t = catalog?.templates.find((x) => x.key === key);
+    const t =
+      catalog?.templates.find((x) => x.key === key) ??
+      catalog?.internal_models?.find((x) => x.key === key);
     if (!t) return;
     setOpen(true);
     setTemplateName(t.name);
     setName(t.name);
-    setDescription(t.description);
+    setDescription(t.objective ?? t.description);
     setCategory(t.category);
     setBenchmark(t.benchmark);
     setFrequency(t.rebalance_frequency);
-    setDriftBand(t.drift_band_pct);
+    setDriftBand(t.drift_band_pct ?? 3);
     setSleeves(
       t.spec.sleeves.map((sl) => ({
         ...sl,
         members: sl.members.map((m) => (m.includes(":") ? m : `NSE:${m}`)),
       })),
     );
+    setTplMeta({
+      risk_level: t.risk_level,
+      objective: t.objective,
+      horizon: t.horizon,
+      investment_style: t.investment_style,
+      how_it_works: t.how_it_works,
+    });
     setError(null);
   };
 
@@ -109,6 +136,11 @@ export default function BasketsPage() {
         name: name.trim(),
         description: description.trim() || undefined,
         category: category || undefined,
+        risk_level: tplMeta.risk_level,
+        objective: tplMeta.objective,
+        horizon: tplMeta.horizon,
+        investment_style: tplMeta.investment_style,
+        how_it_works: tplMeta.how_it_works,
         benchmark,
         rebalance_frequency: frequency,
         drift_band_pct: driftBand,
@@ -147,8 +179,9 @@ export default function BasketsPage() {
       if (!q) return true;
       const hay = [
         t.name,
-        t.description,
+        t.objective ?? t.description,
         t.category,
+        t.investment_style ?? "",
         ...(t.tags ?? []),
         ...t.spec.sleeves.flatMap((s) => s.members),
       ]
@@ -162,6 +195,8 @@ export default function BasketsPage() {
       switch (sortKey) {
         case "name":
           return a.name.localeCompare(b.name);
+        case "risk":
+          return (a.risk_level ?? 9) - (b.risk_level ?? 9) || a.name.localeCompare(b.name);
         case "cagr":
           return num0(m(b).cagr_pct) - num0(m(a).cagr_pct);
         case "excess":
@@ -180,6 +215,17 @@ export default function BasketsPage() {
       }
     });
   }, [catalog, query, catFilter, sortKey]);
+
+  const journeyGroups = useMemo(() => {
+    const byKey = new Map(templates.map((t) => [t.key, t]));
+    const j = catalog?.journeys ?? {};
+    return Object.entries(j)
+      .map(([label, keys]) => ({
+        label,
+        items: keys.map((k) => byKey.get(k)).filter(Boolean) as BasketTemplate[],
+      }))
+      .filter((g) => g.items.length > 0);
+  }, [catalog, templates]);
 
   const clearTemplateFilters = () => {
     setQuery("");
@@ -405,7 +451,7 @@ export default function BasketsPage() {
           <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <h2 className="text-sm font-semibold text-fg">
-                Start from a template
+                Choose an investment product
                 <span className="ml-1.5 text-[11px] font-normal text-fg-faint">
                   {templates.length === catalog.templates.length
                     ? `(${catalog.templates.length})`
@@ -425,7 +471,7 @@ export default function BasketsPage() {
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Filter by name, tag, stock…"
+                  placeholder="Filter by name, style, stock…"
                   className="h-8 w-56 rounded-md border border-line bg-surface pl-7 pr-2 text-xs placeholder:text-fg-faint focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
                 />
               </div>
@@ -468,32 +514,38 @@ export default function BasketsPage() {
 
           {templates.length === 0 ? (
             <p className="rounded-lg border border-dashed border-line py-8 text-center text-sm text-fg-faint">
-              No templates match those filters.{" "}
+              No products match those filters.{" "}
               <button className="text-accent hover:underline" onClick={clearTemplateFilters}>
                 Clear
               </button>
             </p>
           ) : grouped ? (
-            catalog.categories.map((cat) => {
-              const items = templates.filter((t) => t.category === cat);
-              if (items.length === 0) return null;
-              return (
-                <div key={cat}>
-                  <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-fg-faint">
-                    {cat}
-                  </p>
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                    {items.map((t) => (
-                      <TemplateCard key={t.key} t={t} onUse={() => applyTemplate(t.key)} />
-                    ))}
-                  </div>
+            journeyGroups.map((g) => (
+              <div key={g.label}>
+                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-fg-faint">
+                  {g.label}
+                </p>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {g.items.map((t) => (
+                    <TemplateCard
+                      key={t.key}
+                      t={t}
+                      riskLabel={catalog.risk_labels[String(t.risk_level ?? "")]}
+                      onUse={() => applyTemplate(t.key)}
+                    />
+                  ))}
                 </div>
-              );
-            })
+              </div>
+            ))
           ) : (
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
               {templates.map((t) => (
-                <TemplateCard key={t.key} t={t} onUse={() => applyTemplate(t.key)} />
+                <TemplateCard
+                  key={t.key}
+                  t={t}
+                  riskLabel={catalog.risk_labels[String(t.risk_level ?? "")]}
+                  onUse={() => applyTemplate(t.key)}
+                />
               ))}
             </div>
           )}
@@ -503,26 +555,52 @@ export default function BasketsPage() {
   );
 }
 
-function TemplateCard({ t, onUse }: { t: BasketTemplate; onUse: () => void }) {
+function TemplateCard({
+  t,
+  riskLabel,
+  onUse,
+}: {
+  t: BasketTemplate;
+  riskLabel?: string;
+  onUse: () => void;
+}) {
+  const [showHow, setShowHow] = useState(false);
   const bt = t.backtest;
   const m = bt?.metrics ?? {};
   const oos = bt?.oos?.out_of_sample ?? {};
   const sgn = (v: number | null | undefined, d = 1) =>
     v == null ? "–" : `${v >= 0 ? "+" : ""}${num(v, d)}`;
+  const meta = [t.horizon, t.investment_style, t.holdings, `${t.rebalance_frequency} rebalance`].filter(
+    Boolean,
+  );
 
   return (
     <div className="flex flex-col rounded-lg border border-line bg-surface p-3">
-      <p className="text-sm font-semibold text-fg">{t.name}</p>
-      <p className="mt-1 flex-1 text-[11px] leading-snug text-fg-muted">{t.description}</p>
-
-      {t.tags?.length > 0 && (
-        <div className="mt-1.5 flex flex-wrap gap-1">
-          {t.tags.slice(0, 4).map((tag) => (
-            <span key={tag} className="rounded bg-elevated px-1.5 py-0.5 text-[9px] text-fg-faint">
-              {tag}
-            </span>
-          ))}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-fg">{t.name}</p>
+          <p className="text-[10px] uppercase tracking-wide text-fg-faint">{t.category}</p>
         </div>
+        {t.risk_level != null && (
+          <span
+            className={cn(
+              "shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold",
+              RISK_TONE[t.risk_level] ?? "border-line text-fg-muted",
+            )}
+            title={`Risk level ${t.risk_level} of 5`}
+          >
+            L{t.risk_level}
+            {riskLabel ? ` · ${riskLabel}` : ""}
+          </span>
+        )}
+      </div>
+
+      <p className="mt-1.5 flex-1 text-[11px] leading-snug text-fg-muted">
+        {t.objective ?? t.description}
+      </p>
+
+      {meta.length > 0 && (
+        <p className="mt-1.5 text-[10px] text-fg-faint">{meta.join(" · ")}</p>
       )}
 
       {bt && (
@@ -558,17 +636,51 @@ function TemplateCard({ t, onUse }: { t: BasketTemplate; onUse: () => void }) {
         </div>
       )}
 
+      {(t.how_it_works?.length || t.differentiators?.length) && (
+        <div className="mt-2">
+          <button
+            type="button"
+            onClick={() => setShowHow((v) => !v)}
+            className="text-[11px] font-medium text-accent hover:underline"
+          >
+            {showHow ? "Hide" : "How it works"}
+          </button>
+          {showHow && (
+            <div className="mt-1 space-y-1.5">
+              {t.differentiators && t.differentiators.length > 0 && (
+                <ul className="space-y-0.5 text-[11px] text-fg-muted">
+                  {t.differentiators.map((d, i) => (
+                    <li key={i} className="flex gap-1.5">
+                      <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-accent" />
+                      {d}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {t.how_it_works && t.how_it_works.length > 0 && (
+                <ul className="space-y-0.5 text-[10px] text-fg-faint">
+                  {t.how_it_works.map((d, i) => (
+                    <li key={i}>{d}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {t.min_funds && t.min_funds.unit_cost > 0 && (
         <p className="mt-2 text-[10px] text-fg-faint">
-          Min. funds{" "}
-          <span className="font-semibold text-fg-muted">{inrCompact(t.min_funds.unit_cost)}</span>{" "}
-          — 1 share × {t.min_funds.n_members} names. Deploy in multiples of this.
+          Min. investment{" "}
+          <span className="font-semibold text-fg-muted">{inrCompact(t.min_funds.unit_cost)}</span>
+          {t.min_funds.est_holdings ? ` — ~${t.min_funds.est_holdings} holdings` : ""}. Size up in
+          multiples when deploying.
         </p>
       )}
 
       <div className="mt-2 flex items-center justify-between">
         <span className="text-[10px] text-fg-faint">
-          {t.spec.sleeves.length} sleeves · {t.rebalance_frequency}
+          {t.spec.sleeves.length} sleeve{t.spec.sleeves.length === 1 ? "" : "s"} · vs {t.benchmark}
         </span>
         <Button size="sm" variant="outline" onClick={onUse}>
           Use
