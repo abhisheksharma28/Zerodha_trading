@@ -57,3 +57,23 @@ def candidates(
 ) -> dict[str, Any]:
     """A low-correlation candidate set for the portfolio search."""
     return screen_mod.candidates(db, k=k, per_cluster=per_cluster, currency=currency)
+
+
+@router.post("/optimize")
+def optimize(
+    payload: dict[str, Any] = Body(...),
+    method: str = Query("max_sharpe"),
+    constraint_mode: str = Query("balanced", pattern="^(conservative|balanced|aggressive|unrestricted)$"),
+    currency: str = Query("USD"),
+    cost_bps: float = Query(10.0, ge=0.0, le=200.0),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Optimize weights for ``payload['symbols']`` by ``method`` and
+    evaluate the portfolio (metrics + IS/OOS + regime breakdown)."""
+    symbols = [str(s) for s in (payload.get("symbols") or []) if s]
+    if len(symbols) < 3:
+        return {"available": False, "reason": "provide >= 3 symbols"}
+    return service.optimize_and_evaluate(
+        db, symbols=symbols, method=method, constraint_mode=constraint_mode,
+        currency=currency, cost_bps=cost_bps,
+    )

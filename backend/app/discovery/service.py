@@ -15,6 +15,30 @@ from app.models.discovery import (
 )
 
 
+def optimize_and_evaluate(
+    db: Session, *, symbols: list[str], method: str,
+    constraint_mode: str = "balanced", currency: str = "USD", cost_bps: float = 10.0,
+) -> dict[str, Any]:
+    """Run one optimizer over ``symbols`` and evaluate the resulting
+    fixed-weight portfolio (metrics + IS/OOS + regime breakdown)."""
+    from app.discovery import normalize, optimizers, portfolio
+
+    syms = [s.strip().upper() for s in symbols if s]
+    fr = normalize.returns_frame(db, syms, currency=currency)
+    usable = [s for s in syms if s in fr["returns"]]
+    if len(usable) < 3:
+        return {"available": False,
+                "reason": f"need >= 3 instruments with common history, have {len(usable)}"}
+    try:
+        weights = optimizers.optimize(method, usable, fr["returns"],
+                                      constraint_mode=constraint_mode)
+    except ValueError as exc:
+        return {"available": False, "reason": str(exc)}
+    ev = portfolio.evaluate(db, weights, currency=currency, cost_bps=cost_bps)
+    return {"method": method, "constraint_mode": constraint_mode,
+            "dropped": [s for s in syms if s not in usable], **ev}
+
+
 def _ingested_symbols(db: Session, *, tiers: tuple[str, ...] = ("A", "B")) -> list[str]:
     """Symbols with ingested bars, best tiers first — the default screening
     universe (Tier A/B: >= 7 years of history)."""
