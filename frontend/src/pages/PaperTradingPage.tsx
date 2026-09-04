@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { PaperHolding, PaperOrder, PaperPosition, PaperStrategyRun } from "@/api/paperAccount";
 import { DataTable, type Column } from "@/components/DataTable";
 import { AlgoPanel, AlgoPill } from "@/components/paper/AlgoPanel";
+import { DeployedBaskets } from "@/components/paper/DeployedBaskets";
 import { OrderPad, type OrderPadInit } from "@/components/paper/OrderPad";
 import { StrategyDeploy } from "@/components/paper/StrategyDeploy";
 import { PageHeader } from "@/components/PageHeader";
@@ -28,7 +29,7 @@ import {
 import { inr, num, pctSigned } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-const TABS = ["Holdings", "Positions", "Orders", "Algo", "Strategies", "Funds"] as const;
+const TABS = ["Holdings", "Positions", "Orders", "Algo", "Strategies", "Baskets", "Funds"] as const;
 const pnlTone = (v: number | null | undefined) =>
   (v ?? 0) > 0 ? "text-pos" : (v ?? 0) < 0 ? "text-neg" : "text-fg-muted";
 
@@ -318,6 +319,8 @@ export default function PaperTradingPage() {
           </SectionCard>
         </div>
       )}
+
+      {tab === "Baskets" && <DeployedBaskets />}
 
       {tab === "Funds" && (
         <div className="flex flex-col gap-4">
