@@ -23,7 +23,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -97,4 +97,32 @@ class DiscoveryIngestRun(Base, UUIDPrimaryKeyMixin):
     bar_interval: Mapped[str] = mapped_column(String(8), nullable=False, default="1month")
     n_instruments: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     n_bars: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    note: Mapped[str | None] = mapped_column(String(400))
+
+
+class DiscoverySearchRun(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """One portfolio-search experiment: its universe, window, method,
+    constraints, seed, and the survivors + rejects it produced. Enough to
+    reproduce and to audit for overfitting later (spec Part 32)."""
+
+    __tablename__ = "discovery_search_runs"
+
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    method: Mapped[str] = mapped_column(String(16), nullable=False)  # monte_carlo | genetic
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
+    seed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    n_tested: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    n_kept: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    n_survivors: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    universe: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    params: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    period_start: Mapped[date | None] = mapped_column(Date)
+    period_end: Mapped[date | None] = mapped_column(Date)
+
+    survivors: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    top: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    pareto_frontier: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     note: Mapped[str | None] = mapped_column(String(400))

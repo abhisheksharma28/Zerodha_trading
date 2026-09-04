@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import func, select
@@ -12,7 +13,87 @@ from app.models.discovery import (
     DiscoveryFxRate,
     DiscoveryIngestRun,
     DiscoveryInstrument,
+    DiscoverySearchRun,
 )
+
+
+def record_search_run(
+    db: Session, *, result: dict[str, Any], method: str, currency: str,
+    seed: int, universe_syms: list[str], params: dict[str, Any],
+    started_at: datetime, note: str | None = None,
+) -> str | None:
+    """Persist a search experiment for reproducibility / overfitting audit."""
+    if not result.get("available"):
+        return None
+    surv = result.get("survivors", [])
+    run = DiscoverySearchRun(
+        started_at=started_at,
+        finished_at=datetime.now(UTC),
+        method=method,
+        currency=currency,
+        seed=seed,
+        n_tested=int(result.get("tested", 0)),
+        n_kept=int(result.get("kept", 0)),
+        n_survivors=len(surv),
+        universe=list(universe_syms),
+        params=params,
+        survivors=surv,
+        top=result.get("top", []),
+        pareto_frontier=result.get("pareto_frontier", []),
+        note=note,
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    return str(run.id)
+
+
+def recent_search_runs(db: Session, *, limit: int = 20) -> list[dict[str, Any]]:
+    rows = db.execute(
+        select(DiscoverySearchRun)
+        .order_by(DiscoverySearchRun.started_at.desc())
+        .limit(limit)
+    ).scalars().all()
+    return [
+        {
+            "id": str(r.id),
+            "started_at": r.started_at.isoformat(),
+            "method": r.method,
+            "currency": r.currency,
+            "seed": r.seed,
+            "n_tested": r.n_tested,
+            "n_kept": r.n_kept,
+            "n_survivors": r.n_survivors,
+            "universe": r.universe,
+            "params": r.params,
+            "top_alpha": (r.top[0]["alpha_score"] if r.top else None),
+            "best_survivor": (r.survivors[0] if r.survivors else None),
+        }
+        for r in rows
+    ]
+
+
+def get_search_run(db: Session, run_id: str) -> dict[str, Any] | None:
+    r = db.get(DiscoverySearchRun, run_id)
+    if r is None:
+        return None
+    return {
+        "id": str(r.id),
+        "started_at": r.started_at.isoformat(),
+        "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+        "method": r.method,
+        "currency": r.currency,
+        "seed": r.seed,
+        "n_tested": r.n_tested,
+        "n_kept": r.n_kept,
+        "n_survivors": r.n_survivors,
+        "universe": r.universe,
+        "params": r.params,
+        "survivors": r.survivors,
+        "top": r.top,
+        "pareto_frontier": r.pareto_frontier,
+        "note": r.note,
+    }
 
 
 def optimize_and_evaluate(

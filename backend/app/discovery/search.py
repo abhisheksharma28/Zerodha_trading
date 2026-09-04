@@ -56,6 +56,7 @@ def _random_portfolio(rng, syms: list[str], n_lo: int, n_hi: int, wmax: float) -
 def monte_carlo_search(
     db: Session, symbols: list[str], *, n_assets=(5, 10), n_portfolios: int = 2000,
     wmax: float = 0.35, currency: str = "USD", cost_bps: float = 10.0, seed: int = 7,
+    validate_top: int = 0,
 ) -> dict[str, Any]:
     t0 = time.time()
     syms, _rets = _prep(db, symbols, currency)
@@ -71,13 +72,14 @@ def monte_carlo_search(
         ev = _evaluate(db, wts, currency, cost_bps, cache)
         if ev:
             evals.append(ev)
-    return _finalise(evals, tested, "monte_carlo", seed, time.time() - t0)
+    return _finalise(evals, tested, "monte_carlo", seed, time.time() - t0,
+                     db=db, currency=currency, cost_bps=cost_bps, validate_top=validate_top)
 
 
 def genetic_search(
     db: Session, symbols: list[str], *, n_assets=(5, 10), generations: int = 25,
     population: int = 40, wmax: float = 0.35, currency: str = "USD",
-    cost_bps: float = 10.0, seed: int = 7,
+    cost_bps: float = 10.0, seed: int = 7, validate_top: int = 0,
 ) -> dict[str, Any]:
     t0 = time.time()
     syms, _rets = _prep(db, symbols, currency)
@@ -117,7 +119,8 @@ def genetic_search(
     for _f, ev, w in scored[:10]:
         if ev:
             best_evals[frozenset(w.items())] = ev
-    return _finalise(list(best_evals.values()), tested, "genetic", seed, time.time() - t0)
+    return _finalise(list(best_evals.values()), tested, "genetic", seed, time.time() - t0,
+                     db=db, currency=currency, cost_bps=cost_bps, validate_top=validate_top)
 
 
 def _crossover(rng, a: dict[str, float], b: dict[str, float], wmax: float) -> dict[str, float]:
@@ -147,7 +150,8 @@ def _mutate(rng, p: dict[str, float], syms: list[str], n_assets, wmax: float) ->
     return dict(zip(names, (round(float(x), 6) for x in w), strict=True))
 
 
-def _finalise(evals, tested, method, seed, secs) -> dict[str, Any]:
+def _finalise(evals, tested, method, seed, secs, *, db=None, currency="USD",
+              cost_bps=10.0, validate_top=0) -> dict[str, Any]:
     if not evals:
         return {"available": False, "reason": "no valid portfolio found",
                 "tested": tested}
@@ -161,6 +165,52 @@ def _finalise(evals, tested, method, seed, secs) -> dict[str, Any]:
     top = evals[:10]
     logger.info("discovery_search", method=method, tested=tested,
                 kept=len(evals), secs=round(secs, 1))
+
+    top_rows = [
+        {
+            "rank": i + 1,
+            "weights": e["weights"],
+            "alpha_score": e["fitness"]["alpha_score"],
+            "on_pareto_frontier": i in front,  # front indexes the sorted list
+            "metrics": e["metrics"],
+            "category_scores": e["fitness"]["category_scores"],
+            "out_of_sample": e.get("out_of_sample", {}),
+            "by_regime": e.get("by_regime", {}),
+        }
+        for i, e in enumerate(top)
+    ]
+
+    survivors: list[dict[str, Any]] = []
+    if validate_top and db is not None:
+        from app.discovery import validate as validate_mod
+
+        for row in top_rows[: int(validate_top)]:
+            vr = validate_mod.validate_portfolio(
+                db, row["weights"], n_trials=max(tested, 2),
+                currency=currency, cost_bps=cost_bps, bootstrap_sims=2000,
+            )
+            if not vr.get("available"):
+                continue
+            v = vr["validation"]
+            row["validation"] = {
+                "verdict": v["verdict"],
+                "stability_score": v["stability_score"],
+                "label": v["label"],
+                "rejections": v["rejections"],
+                "deflated_sharpe": v["deflated_sharpe"].get("deflated_sharpe"),
+                "psr": v["deflated_sharpe"].get("psr"),
+                "block_bootstrap": v["block_bootstrap"],
+                "perturbation": v["perturbation"],
+                "start_date_sensitivity": v["start_date_sensitivity"],
+                "stability_components": v["components"],
+            }
+            row["final_score"] = round(
+                0.6 * row["alpha_score"] + 0.4 * v["stability_score"], 2
+            )
+            if v["verdict"] != "reject":
+                survivors.append(row)
+        survivors.sort(key=lambda r: r["final_score"], reverse=True)
+
     return {
         "available": True,
         "method": method,
@@ -168,19 +218,8 @@ def _finalise(evals, tested, method, seed, secs) -> dict[str, Any]:
         "tested": tested,
         "kept": len(evals),
         "elapsed_s": round(secs, 1),
-        "top": [
-            {
-                "rank": i + 1,
-                "weights": e["weights"],
-                "alpha_score": e["fitness"]["alpha_score"],
-                "on_pareto_frontier": i in front,  # front indexes the sorted list
-                "metrics": e["metrics"],
-                "category_scores": e["fitness"]["category_scores"],
-                "out_of_sample": e.get("out_of_sample", {}),
-                "by_regime": e.get("by_regime", {}),
-            }
-            for i, e in enumerate(top)
-        ],
+        "top": top_rows,
+        "survivors": survivors,
         "pareto_frontier": [
             {"weights": evals[i]["weights"], "alpha_score": evals[i]["fitness"]["alpha_score"],
              "cagr_pct": evals[i]["metrics"].get("cagr_pct"),

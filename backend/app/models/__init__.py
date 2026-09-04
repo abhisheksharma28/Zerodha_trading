@@ -17,6 +17,7 @@ from app.models.discovery import (
     DiscoveryFxRate,
     DiscoveryIngestRun,
     DiscoveryInstrument,
+    DiscoverySearchRun,
 )
 from app.models.instrument import Instrument
 from app.models.market_scanner import ScannerAlert, ScanRecommendation, ScanRun
@@ -51,6 +52,7 @@ __all__ = [
     "DiscoveryFxRate",
     "DiscoveryIngestRun",
     "DiscoveryInstrument",
+    "DiscoverySearchRun",
     "Instrument",
     "ScanRecommendation",
     "ScanRun",
