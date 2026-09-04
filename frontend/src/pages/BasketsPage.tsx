@@ -258,18 +258,23 @@ export default function BasketsPage() {
         title="Baskets"
         subtitle="Smallcase-style portfolios — fixed-weight sleeves with an optional rotation rule, rebalanced on a schedule and deployable to the paper account."
         actions={
-          <Button
-            size="sm"
-            onClick={() => {
-              if (open) closeForm();
-              else {
-                resetForm();
-                setOpen(true);
-              }
-            }}
-          >
-            <Plus className="mr-1 h-4 w-4" /> New basket
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => nav("/baskets/universes")}>
+              Universes
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                if (open) closeForm();
+                else {
+                  resetForm();
+                  setOpen(true);
+                }
+              }}
+            >
+              <Plus className="mr-1 h-4 w-4" /> New basket
+            </Button>
+          </div>
         }
       />
 

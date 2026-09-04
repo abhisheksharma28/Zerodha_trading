@@ -75,6 +75,31 @@ export interface RebalanceSnapshot {
   regime?: string;
   changes?: OrderIntent[];
   notes: string[];
+  risk_contribution?: Record<string, number>;
+}
+
+export interface AttributionHolding {
+  symbol: string;
+  weight_pct: number;
+  score: number | null;
+  factor_ranks: Record<string, number>;
+  status: "held" | "new";
+}
+
+export interface AttributionSleeve {
+  sleeve_id: string;
+  name: string;
+  target_pct: number;
+  cash_pct: number;
+  holdings: AttributionHolding[];
+}
+
+export interface Attribution {
+  regime: string;
+  sleeves: AttributionSleeve[];
+  dropped: string[];
+  risk_contribution: Record<string, number>;
+  notes: string[];
 }
 
 export interface OosSegment {
@@ -106,6 +131,7 @@ export interface BasketBacktest {
   regime_breakdown?: { bull_tape?: RegimeSegment; bear_tape?: RegimeSegment };
   rebalances: RebalanceSnapshot[];
   final_holdings: Record<string, number>;
+  final_attribution?: Attribution;
   skipped: { symbol: string; reason: string }[];
   caveats: string[];
   generated_at?: string;
@@ -239,6 +265,7 @@ export interface BasketEvent {
   target_weights: Record<string, number>;
   orders: OrderIntent[];
   note: string | null;
+  attribution?: Attribution | null;
 }
 
 export interface CreateBasketBody {
@@ -318,4 +345,36 @@ export const basketsApi = {
 
   events: (id: string, limit = 50) =>
     apiClient.get<BasketEvent[]>(`/baskets/${id}/events`, { params: { limit } }).then((r) => r.data),
+
+  universes: () =>
+    apiClient.get<{ universes: UniverseMeta[] }>("/baskets/universes").then((r) => r.data.universes),
+
+  universeScreen: (name: string) =>
+    apiClient.get<UniverseScreen>(`/baskets/universes/${name}/screen`).then((r) => r.data),
 };
+
+export interface UniverseMeta {
+  name: string;
+  label: string;
+  intent: string;
+  curation: string;
+  n_members: number;
+}
+
+export interface MemberEligibility {
+  symbol: string;
+  eligible: boolean;
+  reasons: string[];
+  stats: Record<string, number>;
+}
+
+export interface UniverseScreen {
+  universe: UniverseMeta;
+  as_of: string;
+  gate: Record<string, number>;
+  n_members: number;
+  n_eligible: number;
+  eligible: string[];
+  ineligible: MemberEligibility[];
+  assessed: MemberEligibility[];
+}

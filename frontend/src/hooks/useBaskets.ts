@@ -44,6 +44,23 @@ export function useBasketEvents(id: string | undefined) {
   });
 }
 
+export function useBasketUniverses() {
+  return useQuery({
+    queryKey: [...KEY, "universes"],
+    queryFn: () => basketsApi.universes(),
+    staleTime: 30 * 60_000,
+  });
+}
+
+export function useUniverseScreen(name: string | undefined) {
+  return useQuery({
+    queryKey: [...KEY, "universe-screen", name],
+    queryFn: () => basketsApi.universeScreen(name as string),
+    enabled: !!name,
+    staleTime: 5 * 60_000,
+  });
+}
+
 function useInvalidate() {
   const qc = useQueryClient();
   return (id?: string) => {

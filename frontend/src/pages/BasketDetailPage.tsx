@@ -12,7 +12,7 @@ import {
 } from "recharts";
 import { ArrowLeft, Loader2, Pencil, Play, Rocket, RotateCw, Trash2 } from "lucide-react";
 
-import type { Frequency, Sleeve } from "@/api/baskets";
+import type { Attribution, BasketEvent, Frequency, Sleeve } from "@/api/baskets";
 import { BasketDeployDialog } from "@/components/baskets/BasketDeployDialog";
 import { SleeveEditor } from "@/components/baskets/SleeveEditor";
 import { PageHeader } from "@/components/PageHeader";
@@ -361,6 +361,12 @@ export default function BasketDetailPage() {
                 </div>
               )}
               {bt.rebalances.length > 0 && <RebalanceTable rows={bt.rebalances} />}
+              {bt.final_attribution && bt.final_attribution.sleeves.length > 0 && (
+                <AttributionPanel
+                  a={bt.final_attribution}
+                  title="Latest rebalance — why these holdings"
+                />
+              )}
               {bt.caveats.length > 0 && (
                 <ul className="list-disc space-y-0.5 pl-4 text-[11px] text-fg-faint">
                   {bt.caveats.map((c, i) => (
@@ -399,25 +405,7 @@ export default function BasketDetailPage() {
         <SectionCard title="Rebalance history" index={deployed ? 4 : 3}>
           <div className="divide-y divide-line text-sm">
             {events.map((e) => (
-              <div key={e.id} className="flex flex-wrap items-center gap-x-3 px-4 py-2">
-                <span className="tabular-nums text-xs text-fg-faint">
-                  {new Date(e.as_of).toLocaleString("en-IN")}
-                </span>
-                <span
-                  className={cn(
-                    "rounded px-1.5 py-0.5 text-[10px] font-semibold",
-                    e.mode === "paper"
-                      ? "bg-pos/10 text-pos"
-                      : e.mode === "backtest"
-                        ? "bg-accent-soft text-accent"
-                        : "bg-elevated text-fg-muted",
-                  )}
-                >
-                  {e.mode}
-                </span>
-                <span className="text-xs text-fg-muted">{e.orders.length} orders</span>
-                <span className="text-xs text-fg-faint">{e.note}</span>
-              </div>
+              <EventRow key={e.id} e={e} />
             ))}
           </div>
         </SectionCard>
@@ -444,6 +432,20 @@ function MetricsRow({ m }: { m: Record<string, number | null> }) {
     ["Avg hold", m.avg_holding_days == null ? "–" : `${num(m.avg_holding_days, 0)}d`, false],
     ["Best / worst yr", `${pctSigned(m.best_year_pct ?? null, 0)} / ${pctSigned(m.worst_year_pct ?? null, 0)}`, false],
     ["Ann. turnover", `${num(m.annual_turnover_pct, 0)}%`, false],
+    ...(m.up_capture_pct != null || m.down_capture_pct != null
+      ? ([
+          ["Up / down capture", `${num(m.up_capture_pct, 0)}% / ${num(m.down_capture_pct, 0)}%`, false],
+        ] as [string, string, boolean][])
+      : []),
+    ...(m.rolling_12m_median_pct != null
+      ? ([
+          [
+            "Rolling 12m (min/med/max)",
+            `${num(m.rolling_12m_min_pct, 0)} / ${num(m.rolling_12m_median_pct, 0)} / ${num(m.rolling_12m_max_pct, 0)}%`,
+            false,
+          ],
+        ] as [string, string, boolean][])
+      : []),
   ];
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -546,6 +548,151 @@ function RebalanceTable({ rows }: { rows: import("@/api/baskets").RebalanceSnaps
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function EventRow({ e }: { e: BasketEvent }) {
+  const [open, setOpen] = useState(false);
+  const hasAttr = !!e.attribution && e.attribution.sleeves.length > 0;
+  return (
+    <div className="px-4 py-2">
+      <button
+        type="button"
+        disabled={!hasAttr}
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          "flex w-full flex-wrap items-center gap-x-3 text-left",
+          hasAttr && "cursor-pointer",
+        )}
+      >
+        <span className="tabular-nums text-xs text-fg-faint">
+          {new Date(e.as_of).toLocaleString("en-IN")}
+        </span>
+        <span
+          className={cn(
+            "rounded px-1.5 py-0.5 text-[10px] font-semibold",
+            e.mode === "paper"
+              ? "bg-pos/10 text-pos"
+              : e.mode === "backtest"
+                ? "bg-accent-soft text-accent"
+                : "bg-elevated text-fg-muted",
+          )}
+        >
+          {e.mode}
+        </span>
+        <span className="text-xs text-fg-muted">{e.orders.length} orders</span>
+        <span className="text-xs text-fg-faint">{e.note}</span>
+        {hasAttr && (
+          <span className="ml-auto text-[11px] text-accent">{open ? "Hide" : "Why"}</span>
+        )}
+      </button>
+      {open && e.attribution && <AttributionPanel a={e.attribution} />}
+    </div>
+  );
+}
+
+function factorBadge(k: string) {
+  return k.replace(/_/g, " ");
+}
+
+function AttributionPanel({ a, title }: { a: Attribution; title?: string }) {
+  const rc = Object.entries(a.risk_contribution).sort((x, y) => y[1] - x[1]);
+  return (
+    <div className="mt-2 flex flex-col gap-3 rounded-md border border-line/70 bg-bg/40 p-3">
+      {title && (
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-fg-faint">{title}</p>
+      )}
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-fg-muted">
+        <span>
+          Regime <b className="text-fg">{a.regime}</b>
+        </span>
+        {a.dropped.length > 0 && (
+          <span>
+            Dropped <b className="text-neg">{a.dropped.join(", ")}</b>
+          </span>
+        )}
+      </div>
+      {a.notes.length > 0 && (
+        <ul className="list-disc space-y-0.5 pl-4 text-[11px] text-fg-faint">
+          {a.notes.map((n, i) => (
+            <li key={i}>{n}</li>
+          ))}
+        </ul>
+      )}
+      {a.sleeves.map((sl) => (
+        <div key={sl.sleeve_id} className="flex flex-col gap-1">
+          <p className="text-[11px] font-semibold text-fg-muted">
+            {sl.name} · <span className="tabular-nums">{num(sl.target_pct, 1)}%</span>
+            {sl.cash_pct > 0.1 && (
+              <span className="text-fg-faint"> · {num(sl.cash_pct, 1)}% cash</span>
+            )}
+          </p>
+          {sl.holdings.length > 0 && (
+            <div className="overflow-x-auto rounded border border-line/60">
+              <table className="w-full min-w-[360px] text-[11px] tabular-nums">
+                <thead>
+                  <tr className="border-b border-line/60 bg-surface text-fg-faint">
+                    <th className="px-2 py-1 text-left">Name</th>
+                    <th className="px-2 py-1 text-right">Weight</th>
+                    <th className="px-2 py-1 text-right">Score</th>
+                    <th className="px-2 py-1 text-left">Top factors</th>
+                    <th className="px-2 py-1 text-center">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sl.holdings.map((h) => {
+                    const factors = Object.entries(h.factor_ranks)
+                      .sort((x, y) => y[1] - x[1])
+                      .slice(0, 3)
+                      .map(([k, v]) => `${factorBadge(k)} ${Math.round(v)}`)
+                      .join(" · ");
+                    return (
+                      <tr key={h.symbol} className="border-b border-line/40 last:border-0">
+                        <td className="px-2 py-1 text-left font-medium text-fg">{h.symbol}</td>
+                        <td className="px-2 py-1 text-right">{num(h.weight_pct, 1)}%</td>
+                        <td className="px-2 py-1 text-right">
+                          {h.score == null ? "–" : num(h.score, 0)}
+                        </td>
+                        <td className="px-2 py-1 text-left text-fg-muted">{factors || "–"}</td>
+                        <td className="px-2 py-1 text-center">
+                          <span
+                            className={cn(
+                              "rounded px-1 py-0.5 text-[10px]",
+                              h.status === "held"
+                                ? "bg-elevated text-fg-muted"
+                                : "bg-accent-soft text-accent",
+                            )}
+                          >
+                            {h.status}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ))}
+      {rc.length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-fg-faint">
+            Risk contribution (% of portfolio variance)
+          </p>
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            {rc.map(([s, v]) => (
+              <span
+                key={s}
+                className="rounded bg-surface px-1.5 py-0.5 text-[11px] tabular-nums text-fg-muted"
+              >
+                {s} <b className="text-fg">{num(v, 0)}%</b>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
