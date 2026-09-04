@@ -13,6 +13,7 @@ import {
 import { ArrowLeft, Loader2, Pencil, Play, Rocket, RotateCw, Trash2 } from "lucide-react";
 
 import type { Frequency, Sleeve } from "@/api/baskets";
+import { BasketDeployDialog } from "@/components/baskets/BasketDeployDialog";
 import { SleeveEditor } from "@/components/baskets/SleeveEditor";
 import { PageHeader } from "@/components/PageHeader";
 import { SectionCard } from "@/components/SectionCard";
@@ -23,7 +24,6 @@ import {
   useBasketEvents,
   useBasketStatus,
   useDeleteBasket,
-  useDeployBasket,
   useRebalanceBasket,
   useRunBasketBacktest,
   useUndeployBasket,
@@ -45,7 +45,6 @@ export default function BasketDetailPage() {
   const { data: events } = useBasketEvents(id);
 
   const runBacktest = useRunBasketBacktest(id ?? "");
-  const deploy = useDeployBasket(id ?? "");
   const undeploy = useUndeployBasket(id ?? "");
   const rebalance = useRebalanceBasket(id ?? "");
   const del = useDeleteBasket();
@@ -53,6 +52,7 @@ export default function BasketDetailPage() {
 
   const [years, setYears] = useState(5);
   const [editing, setEditing] = useState(false);
+  const [deployOpen, setDeployOpen] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
   const bt = basket?.last_backtest ?? null;
@@ -115,16 +115,8 @@ export default function BasketDetailPage() {
               <Pencil className="mr-1 h-3.5 w-3.5" /> Edit
             </Button>
             {!deployed ? (
-              <Button
-                size="sm"
-                disabled={deploy.isPending}
-                onClick={() => act(() => deploy.mutateAsync(), "Deployed to the paper account")}
-              >
-                {deploy.isPending ? (
-                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Rocket className="mr-1 h-3.5 w-3.5" />
-                )}
+              <Button size="sm" onClick={() => setDeployOpen(true)}>
+                <Rocket className="mr-1 h-3.5 w-3.5" />
                 Deploy to paper
               </Button>
             ) : (
@@ -174,6 +166,20 @@ export default function BasketDetailPage() {
         <div className="rounded-md border border-line bg-surface px-3 py-2 text-sm text-fg-muted">
           {msg}
         </div>
+      )}
+
+      {deployOpen && (
+        <BasketDeployDialog
+          basketId={basket.id}
+          basketName={basket.name}
+          onClose={() => setDeployOpen(false)}
+          onDeployed={(r) =>
+            setMsg(
+              "Deployed to the paper account" +
+                (r?.orders_placed != null ? ` — ${r.orders_placed} orders placed` : ""),
+            )
+          }
+        />
       )}
 
       <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-fg-muted">

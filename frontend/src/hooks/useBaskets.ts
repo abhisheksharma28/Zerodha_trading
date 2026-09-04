@@ -84,10 +84,19 @@ export function useRunBasketBacktest(id: string) {
   });
 }
 
+export function useDeployPreview(id: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: [...KEY, id, "deploy-preview"],
+    queryFn: () => basketsApi.deployPreview(id as string),
+    enabled: !!id && enabled,
+    staleTime: 20_000,
+  });
+}
+
 export function useDeployBasket(id: string) {
   const invalidate = useInvalidate();
   return useMutation({
-    mutationFn: () => basketsApi.deploy(id),
+    mutationFn: (capital?: number) => basketsApi.deploy(id, capital),
     onSuccess: () => invalidate(id),
   });
 }

@@ -62,6 +62,50 @@ def _summary(key: str, result_dict: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _min_funds(db: Any, settings: Any, spec: Any) -> dict[str, Any] | None:
+    """Cost to hold one share of every member — shown on the template card so
+    a user knows the floor before deploying."""
+    from app.baskets.paper import unit_cost_for_spec
+
+    try:
+        uc = unit_cost_for_spec(db, settings, spec)
+    except Exception as exc:  # noqa: BLE001 - a missing price must not stop the batch
+        logger.warning("basket_template_min_funds_failed", err=str(exc))
+        return None
+    return {
+        "unit_cost": uc["unit_cost"],
+        "n_members": uc["n_members"],
+        "n_priced": uc["n_priced"],
+        "as_of": uc["as_of"],
+    }
+
+
+def backfill_min_funds(db: Any, settings: Any) -> dict[str, Any]:
+    """Patch ``min_funds`` into the existing store without re-running the
+    (expensive) backtests. ``python -m app.baskets.template_backtests min-funds``."""
+    if not STORE_PATH.exists():
+        raise FileNotFoundError(STORE_PATH)
+    data = json.loads(STORE_PATH.read_text())
+    tpls = data.get("templates", {})
+    by_key = {t["key"]: t for t in _templates()}
+    for key, entry in tpls.items():
+        t = by_key.get(key)
+        if not t:
+            continue
+        try:
+            spec = parse_spec(t["spec"])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("basket_template_min_funds_spec_bad", key=key, err=str(exc))
+            continue
+        entry["min_funds"] = _min_funds(db, settings, spec)
+        logger.info(
+            "basket_template_min_funds", key=key,
+            unit_cost=(entry["min_funds"] or {}).get("unit_cost"),
+        )
+    STORE_PATH.write_text(json.dumps(data, indent=1))
+    return tpls
+
+
 def run_all(db: Any, settings: Any, *, years: float = _DEFAULT_YEARS) -> dict[str, Any]:
     out: dict[str, Any] = {}
     tpls = _templates()
@@ -79,6 +123,7 @@ def run_all(db: Any, settings: Any, *, years: float = _DEFAULT_YEARS) -> dict[st
                 drift_band_pct=float(t.get("drift_band_pct", 3.0)),
             )
             out[key] = _summary(key, res.to_dict())
+            out[key]["min_funds"] = _min_funds(db, settings, spec)
             m = out[key]["metrics"]
             logger.info(
                 "basket_template_backtest", key=key, i=i, n=len(tpls),
@@ -108,6 +153,15 @@ def load() -> dict[str, Any]:
 if __name__ == "__main__":
     from app.config import get_settings
     from app.db.session import SessionLocal
+
+    if len(sys.argv) > 1 and sys.argv[1] == "min-funds":
+        _db = SessionLocal()
+        try:
+            backfill_min_funds(_db, get_settings())
+        finally:
+            _db.close()
+        print(f"patched min_funds into {STORE_PATH}")
+        raise SystemExit(0)
 
     yrs = float(sys.argv[1]) if len(sys.argv) > 1 else _DEFAULT_YEARS
     _db = SessionLocal()

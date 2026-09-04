@@ -1,14 +1,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2 } from "lucide-react";
 
 import type { Basket } from "@/api/baskets";
+import { BasketDeployDialog } from "@/components/baskets/BasketDeployDialog";
 import { SectionCard } from "@/components/SectionCard";
 import { Button } from "@/components/ui/button";
 import {
   useBasketStatus,
   useBaskets,
-  useDeployBasket,
   useRebalanceBasket,
   useUndeployBasket,
 } from "@/hooks/useBaskets";
@@ -23,25 +22,7 @@ export function DeployedBaskets() {
 
   const [picking, setPicking] = useState(false);
   const [pick, setPick] = useState("");
-  const [err, setErr] = useState<string | null>(null);
-  const deploy = useDeployBasket(pick);
-
-  const onDeploy = async () => {
-    if (!pick) return;
-    setErr(null);
-    try {
-      await deploy.mutateAsync();
-      setPicking(false);
-      setPick("");
-    } catch (e) {
-      setErr(
-        (e as { response?: { data?: { message?: string; detail?: string } } })?.response?.data
-          ?.message ??
-          (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-          "Deploy failed.",
-      );
-    }
-  };
+  const [deployFor, setDeployFor] = useState<Basket | null>(null);
 
   return (
     <div className="flex flex-col gap-4">
@@ -86,11 +67,12 @@ export function DeployedBaskets() {
                     ))}
                   </select>
                 </label>
-                {err && <p className="text-sm text-neg">{err}</p>}
                 <div className="flex items-center gap-2">
-                  <Button disabled={!pick || deploy.isPending} onClick={onDeploy}>
-                    {deploy.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
-                    Deploy &amp; buy the basket
+                  <Button
+                    disabled={!pick}
+                    onClick={() => setDeployFor(draft.find((b) => b.id === pick) ?? null)}
+                  >
+                    Choose size &amp; deploy…
                   </Button>
                   <Button variant="ghost" onClick={() => setPicking(false)}>
                     Cancel
@@ -100,6 +82,19 @@ export function DeployedBaskets() {
             )}
           </div>
         </SectionCard>
+      )}
+
+      {deployFor && (
+        <BasketDeployDialog
+          basketId={deployFor.id}
+          basketName={deployFor.name}
+          onClose={() => setDeployFor(null)}
+          onDeployed={() => {
+            setDeployFor(null);
+            setPicking(false);
+            setPick("");
+          }}
+        />
       )}
 
       <SectionCard title="Deployed baskets" bodyClassName="p-0">

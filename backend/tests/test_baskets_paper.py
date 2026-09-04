@@ -190,6 +190,44 @@ def test_deploy_stamps_cadence_clock_so_a_racing_tick_does_not_double_buy(db, _h
     assert r["applied"] is True
 
 
+def test_deploy_preview_reports_unit_cost_and_affordable_units(db, _hist):
+    s = get_settings()
+    _instrument(db, "1001", "AAA")
+    _instrument(db, "1002", "BBB")
+    db.flush()
+    acct = engine.get_or_create_account(db)
+    acct.cash = 1_500.0
+    db.flush()
+    b = _make_basket(db, capital=200_000)
+
+    prev = paper.deploy_preview(db, s, str(b.id))
+    assert prev["unit_cost"] == pytest.approx(150.0)   # AAA 100 + BBB 50
+    assert prev["n_members"] == 2 and prev["n_priced"] == 2
+    assert prev["max_units"] == 10                      # 1500 / 150
+    assert prev["available_cash"] == pytest.approx(1_500.0)
+
+
+def test_deploy_with_capital_override_persists_and_is_funded_checked(db, _hist):
+    s = get_settings()
+    _instrument(db, "1001", "AAA")
+    _instrument(db, "1002", "BBB")
+    db.flush()
+    acct = engine.get_or_create_account(db)
+    acct.cash = 1_000.0
+    db.flush()
+    b = _make_basket(db, capital=200_000)
+
+    # 4 units * 150 = 600 -> affordable, overrides the 200k stored capital
+    out = paper.deploy(db, s, str(b.id), capital=600.0)
+    assert out["applied"] is True
+    assert db.get(Basket, b.id).capital == pytest.approx(600.0)
+
+    # a size the account can't fund is refused
+    b2 = _make_basket(db, name="too big", capital=200_000)
+    with pytest.raises(ValidationError, match="only"):
+        paper.deploy(db, s, str(b2.id), capital=5_000.0)
+
+
 def test_deploy_refuses_when_the_basket_capital_exceeds_free_cash(db, _hist):
     s = get_settings()
     _instrument(db, "1001", "AAA")

@@ -7,6 +7,7 @@
   PUT    /baskets/{id}            edit name / weights / spec
   DELETE /baskets/{id}            delete (draft) or archive (deployed)
   POST   /baskets/{id}/backtest   walk-forward backtest, cached on the row
+  GET    /baskets/{id}/deploy-preview  unit cost + affordable units
   POST   /baskets/{id}/deploy     deploy to the paper account + initial buy
   POST   /baskets/{id}/undeploy   stop (optionally liquidate)
   POST   /baskets/{id}/rebalance  rebalance now (cadence-gated unless force)
@@ -79,13 +80,27 @@ def backtest_basket(
     return service.run_backtest(db, settings, basket_id, years=years)
 
 
-@router.post("/{basket_id}/deploy")
-def deploy_basket(
+@router.get("/{basket_id}/deploy-preview")
+def deploy_preview(
     basket_id: str,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    return paper.deploy(db, settings, basket_id)
+    return paper.deploy_preview(db, settings, basket_id)
+
+
+@router.post("/{basket_id}/deploy")
+def deploy_basket(
+    basket_id: str,
+    payload: dict[str, Any] = Body(default={}),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    cap = payload.get("capital")
+    if cap is None and payload.get("units") is not None:
+        prev = paper.deploy_preview(db, settings, basket_id)
+        cap = float(prev["unit_cost"]) * float(payload["units"])
+    return paper.deploy(db, settings, basket_id, capital=cap)
 
 
 @router.post("/{basket_id}/undeploy")

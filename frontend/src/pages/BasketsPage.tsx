@@ -557,6 +557,14 @@ function TemplateCard({ t, onUse }: { t: BasketTemplate; onUse: () => void }) {
         </div>
       )}
 
+      {t.min_funds && t.min_funds.unit_cost > 0 && (
+        <p className="mt-2 text-[10px] text-fg-faint">
+          Min. funds{" "}
+          <span className="font-semibold text-fg-muted">{inrCompact(t.min_funds.unit_cost)}</span>{" "}
+          — 1 share × {t.min_funds.n_members} names. Deploy in multiples of this.
+        </p>
+      )}
+
       <div className="mt-2 flex items-center justify-between">
         <span className="text-[10px] text-fg-faint">
           {t.spec.sleeves.length} sleeves · {t.rebalance_frequency}

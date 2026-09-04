@@ -143,6 +143,60 @@ def _prices(db: Session, settings: Settings, refs: list[str], hist: dict[str, li
     return out
 
 
+def unit_cost_for_spec(db: Session, settings: Settings, spec) -> dict:
+    """Cost to hold exactly one share of every basket member, priced at the
+    latest LTP (or the last daily close when the market is shut). This is the
+    floor to hold the basket at all; deploying N "units" allocates
+    ``unit_cost * N`` across the sleeves by their weights."""
+    try:
+        hist, _ = _history(db, settings, spec)
+    except Exception:  # noqa: BLE001 - a price lookup must not hard-fail the caller
+        hist = {}
+    refs = list(spec.symbols)
+    prices = _prices(db, settings, refs, hist)
+    per = {s: round(prices[s], 2) for s in refs if s in prices}
+    missing = [s for s in refs if s not in per]
+    return {
+        "unit_cost": round(sum(per.values()), 2),
+        "per_symbol": per,
+        "missing": missing,
+        "n_members": len(refs),
+        "n_priced": len(per),
+        "as_of": datetime.now(UTC).isoformat(),
+    }
+
+
+def deploy_preview(db: Session, settings: Settings, basket_id: str) -> dict:
+    """What a deploy would cost right now, and how many "units" the paper
+    account can currently afford. Drives the units stepper in the deploy UI."""
+    b = _get(db, basket_id)
+    spec = _spec_of(b)
+    acct = get_or_create_account(db)
+    uc = unit_cost_for_spec(db, settings, spec)
+    unit = float(uc["unit_cost"])
+    have = float(acct.cash)
+    max_units = int(have // unit) if unit > 0 else 0
+    cur = float(b.capital)
+    want_units = max(1, round(cur / unit)) if unit > 0 else 1
+    # clamp the stepper's opening value to what the account can actually fund;
+    # if it can't afford even one unit, start at the minimum and let the UI warn
+    suggested = min(want_units, max_units) if max_units > 0 else 1
+    return {
+        "basket_id": str(b.id),
+        "name": b.name,
+        "status": b.status,
+        "unit_cost": round(unit, 2),
+        "per_symbol": uc["per_symbol"],
+        "missing": uc["missing"],
+        "n_members": uc["n_members"],
+        "n_priced": uc["n_priced"],
+        "available_cash": round(have, 2),
+        "max_units": max_units,
+        "current_capital": round(cur, 2),
+        "suggested_units": suggested,
+    }
+
+
 def _fundamentals_fn(settings: Settings):
     """symbol -> {value, quality, growth} in 0..100, from the scanner's
     present-day fundamentals view. Cached per call so a rebalance hits each
@@ -295,12 +349,23 @@ def _do_rebalance_locked(
     }
 
 
-def deploy(db: Session, settings: Settings, basket_id: str) -> dict:
+def deploy(
+    db: Session, settings: Settings, basket_id: str, *, capital: float | None = None
+) -> dict:
     b = _get(db, basket_id)
     _spec_of(b)  # validate
     if b.status == "deployed":
         raise ValidationError("basket is already deployed")
     acct = get_or_create_account(db)
+
+    # an optional deploy size (e.g. N "units" = N * one-share-of-each) overrides
+    # the basket's stored capital and is persisted so status / rebalance / P&L
+    # all measure against what was actually deployed.
+    if capital is not None:
+        capital = float(capital)
+        if capital < 500.0:
+            raise ValidationError("deploy size must be at least ₹500")
+        b.capital = capital
 
     # a deployed basket buys ~its `capital` worth of stock out of the paper
     # account's REAL free cash. Refuse (don't half-fill) if it can't be
@@ -309,9 +374,9 @@ def deploy(db: Session, settings: Settings, basket_id: str) -> dict:
     have = float(acct.cash)
     if want > have + 1.0:
         raise ValidationError(
-            f"This basket allocates {_inr(want)} but the paper account has only "
-            f"{_inr(have)} free. Lower the basket's capital, undeploy another basket, "
-            f"or add funds first."
+            f"This basket needs {_inr(want)} but the paper account has only "
+            f"{_inr(have)} free. Lower the deploy size (fewer units), undeploy "
+            f"another basket, or reset the paper account first."
         )
 
     b.paper_account_id = acct.id

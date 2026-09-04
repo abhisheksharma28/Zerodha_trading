@@ -121,6 +121,13 @@ export interface TemplateBacktest {
   spark: number[];
 }
 
+export interface MinFunds {
+  unit_cost: number;
+  n_members: number;
+  n_priced: number;
+  as_of?: string;
+}
+
 export interface BasketTemplate {
   key: string;
   name: string;
@@ -132,6 +139,22 @@ export interface BasketTemplate {
   drift_band_pct: number;
   spec: BasketSpec;
   backtest?: TemplateBacktest;
+  min_funds?: MinFunds;
+}
+
+export interface DeployPreview {
+  basket_id: string;
+  name: string;
+  status: BasketStatus;
+  unit_cost: number;
+  per_symbol: Record<string, number>;
+  missing: string[];
+  n_members: number;
+  n_priced: number;
+  available_cash: number;
+  max_units: number;
+  current_capital: number;
+  suggested_units: number;
 }
 
 export interface BasketTemplateCatalog {
@@ -234,8 +257,16 @@ export const basketsApi = {
       .post<BasketBacktest>(`/baskets/${id}/backtest`, null, { params: { years } })
       .then((r) => r.data),
 
-  deploy: (id: string) =>
-    apiClient.post<RebalanceResult>(`/baskets/${id}/deploy`).then((r) => r.data),
+  deployPreview: (id: string) =>
+    apiClient.get<DeployPreview>(`/baskets/${id}/deploy-preview`).then((r) => r.data),
+
+  deploy: (id: string, capital?: number) =>
+    apiClient
+      .post<RebalanceResult>(
+        `/baskets/${id}/deploy`,
+        capital != null ? { capital } : {},
+      )
+      .then((r) => r.data),
 
   undeploy: (id: string, liquidate: boolean) =>
     apiClient

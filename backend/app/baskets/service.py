@@ -96,8 +96,8 @@ def _validate_common(
         raise ValidationError(f"rebalance_frequency must be one of {FREQUENCIES}")
     if not 0.0 <= drift_band_pct <= 25.0:
         raise ValidationError("drift_band_pct must be in [0, 25]")
-    if capital < 50_000:
-        raise ValidationError("capital must be at least 50,000")
+    if capital < 10_000:
+        raise ValidationError("capital must be at least 10,000")
     if not benchmark.strip():
         raise ValidationError("benchmark is required")
 
@@ -237,8 +237,12 @@ def starter_templates() -> dict[str, Any]:
     tpls = _starter_templates()
     for t in tpls:
         bt_summary = stored.get(t["key"])
-        if bt_summary and "error" not in bt_summary:
+        if not bt_summary:
+            continue
+        if "error" not in bt_summary:
             t["backtest"] = bt_summary
+        if bt_summary.get("min_funds"):
+            t["min_funds"] = bt_summary["min_funds"]
     return {
         "categories": _template_categories(),
         "templates": tpls,
