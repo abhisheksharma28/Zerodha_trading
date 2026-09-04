@@ -144,10 +144,19 @@ def _prices(db: Session, settings: Settings, refs: list[str], hist: dict[str, li
 
 
 def unit_cost_for_spec(db: Session, settings: Settings, spec) -> dict:
-    """Cost to hold exactly one share of every basket member, priced at the
-    latest LTP (or the last daily close when the market is shut). This is the
-    floor to hold the basket at all; deploying N "units" allocates
-    ``unit_cost * N`` across the sleeves by their weights."""
+    """Minimum capital to actually hold the basket at its target weights,
+    with integer-share constraints — NOT one share of the whole research
+    universe.
+
+    For each sleeve we take the number of names it will actually hold
+    (``top_k`` / hold buffer for a ruled sleeve, all members for a static
+    one), estimate each held name's weight as ``sleeve_weight / k``, and
+    require enough capital that every held name can afford >= 1 share at
+    that weight. The constraining name is the priciest one that could be
+    picked, so this is a safe upper bound on the true minimum.
+
+    Deploying N "units" allocates ``unit_cost * N`` across the sleeves.
+    """
     try:
         hist, _ = _history(db, settings, spec)
     except Exception:  # noqa: BLE001 - a price lookup must not hard-fail the caller
@@ -156,12 +165,31 @@ def unit_cost_for_spec(db: Session, settings: Settings, spec) -> dict:
     prices = _prices(db, settings, refs, hist)
     per = {s: round(prices[s], 2) for s in refs if s in prices}
     missing = [s for s in refs if s not in per]
+
+    need = 0.0
+    est_holdings = 0
+    for sl in spec.sleeves:
+        priced = [per[m] for m in sl.members if m in per]
+        if not priced or sl.weight <= 0:
+            continue
+        rule = sl.rule
+        k = rule.effective_hold_k if getattr(rule, "active", False) else len(sl.members)
+        k = max(1, min(k, len(priced)))
+        est_holdings += k
+        per_name_w = sl.weight / k  # fraction of the whole basket
+        # priciest k names are the worst case for "can I afford 1 share each"
+        constraining = sorted(priced, reverse=True)[:k]
+        for px in constraining:
+            need = max(need, px / per_name_w)
+
+    unit_cost = round(need / 100.0) * 100.0 if need > 0 else round(sum(per.values()), 2)
     return {
-        "unit_cost": round(sum(per.values()), 2),
+        "unit_cost": round(unit_cost, 2),
         "per_symbol": per,
         "missing": missing,
         "n_members": len(refs),
         "n_priced": len(per),
+        "est_holdings": est_holdings,
         "as_of": datetime.now(UTC).isoformat(),
     }
 
@@ -190,6 +218,7 @@ def deploy_preview(db: Session, settings: Settings, basket_id: str) -> dict:
         "missing": uc["missing"],
         "n_members": uc["n_members"],
         "n_priced": uc["n_priced"],
+        "est_holdings": uc.get("est_holdings"),
         "available_cash": round(have, 2),
         "max_units": max_units,
         "current_capital": round(cur, 2),

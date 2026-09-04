@@ -52,6 +52,12 @@ def serialize(b: Basket, *, full: bool = False) -> dict[str, Any]:
         "name": b.name,
         "description": b.description,
         "category": b.category,
+        "risk_level": b.risk_level,
+        "objective": b.objective,
+        "horizon": b.horizon,
+        "investment_style": b.investment_style,
+        "how_it_works": b.how_it_works or [],
+        "internal": bool(b.internal),
         "benchmark": b.benchmark,
         "rebalance_frequency": b.rebalance_frequency,
         "drift_band_pct": float(b.drift_band_pct),
@@ -119,14 +125,30 @@ def create_basket(db: Session, payload: dict[str, Any]) -> dict[str, Any]:
         frequency=frequency, drift_band_pct=drift, capital=capital, benchmark=benchmark
     )
 
+    def _s(key: str) -> str | None:
+        v = payload.get(key)
+        return (str(v).strip() or None) if v else None
+
+    risk_level = payload.get("risk_level")
+    try:
+        risk_level = int(risk_level) if risk_level is not None else None
+    except (TypeError, ValueError):
+        risk_level = None
+    if risk_level is not None and not 1 <= risk_level <= 5:
+        risk_level = None
+    how = payload.get("how_it_works")
+    how = [str(x) for x in how] if isinstance(how, list) else None
+
     b = Basket(
         name=name,
-        description=(str(payload.get("description")).strip() or None)
-        if payload.get("description")
-        else None,
-        category=(str(payload.get("category")).strip() or None)
-        if payload.get("category")
-        else None,
+        description=_s("description"),
+        category=_s("category"),
+        risk_level=risk_level,
+        objective=_s("objective"),
+        horizon=_s("horizon"),
+        investment_style=_s("investment_style"),
+        how_it_works=how,
+        internal=bool(payload.get("internal", False)),
         benchmark=benchmark,
         rebalance_frequency=frequency,
         drift_band_pct=drift,
@@ -154,6 +176,22 @@ def update_basket(db: Session, basket_id: str, payload: dict[str, Any]) -> dict[
     if "category" in payload:
         cat = payload["category"]
         b.category = str(cat).strip() or None if cat else None
+    for f in ("objective", "horizon", "investment_style"):
+        if f in payload:
+            v = payload[f]
+            setattr(b, f, str(v).strip() or None if v else None)
+    if "risk_level" in payload:
+        rl = payload["risk_level"]
+        try:
+            rl = int(rl) if rl is not None else None
+        except (TypeError, ValueError):
+            rl = None
+        b.risk_level = rl if (rl is None or 1 <= rl <= 5) else b.risk_level
+    if "how_it_works" in payload:
+        how = payload["how_it_works"]
+        b.how_it_works = [str(x) for x in how] if isinstance(how, list) else None
+    if "internal" in payload:
+        b.internal = bool(payload["internal"])
     if "benchmark" in payload and payload["benchmark"]:
         b.benchmark = str(payload["benchmark"])
     if "rebalance_frequency" in payload and payload["rebalance_frequency"]:
@@ -230,23 +268,40 @@ def run_backtest(
     return payload
 
 
-def starter_templates() -> dict[str, Any]:
-    from app.baskets.template_backtests import load as _load_template_backtests
-
-    stored = _load_template_backtests()
-    tpls = _starter_templates()
-    for t in tpls:
-        bt_summary = stored.get(t["key"])
-        if not bt_summary:
+def _merge_backtests(items: list[dict[str, Any]], stored: dict[str, Any]) -> None:
+    for t in items:
+        b = stored.get(t["key"])
+        if not b:
             continue
-        if "error" not in bt_summary:
-            t["backtest"] = bt_summary
-        if bt_summary.get("min_funds"):
-            t["min_funds"] = bt_summary["min_funds"]
-    return {
-        "categories": _template_categories(),
-        "templates": tpls,
+        if "error" not in b:
+            t["backtest"] = b
+        if b.get("min_funds"):
+            t["min_funds"] = b["min_funds"]
+
+
+def starter_templates(*, include_internal: bool = False) -> dict[str, Any]:
+    """The 12 flagship products the catalog shows. ``include_internal`` also
+    returns the ~14 back-pocket template models under ``internal_models``."""
+    from app.baskets import catalog as _catalog
+    from app.baskets.template_backtests import load as _load_template_backtests
+    from app.baskets.template_backtests import load_catalog as _load_catalog_backtests
+
+    cat_stored = _load_catalog_backtests()
+    products = _catalog.flagship()
+    _merge_backtests(products, cat_stored)
+
+    out: dict[str, Any] = {
+        "categories": _catalog.categories(),
+        "journeys": _catalog.journeys(),
+        "risk_labels": {str(k): v for k, v in _catalog.risk_labels().items()},
+        "templates": products,
         "backtests_generated_at": (
-            next(iter(stored.values()), {}).get("generated_at") if stored else None
+            next(iter(cat_stored.values()), {}).get("generated_at") if cat_stored else None
         ),
     }
+    if include_internal:
+        internal = _starter_templates()
+        _merge_backtests(internal, _load_template_backtests())
+        out["internal_models"] = internal
+        out["internal_categories"] = _template_categories()
+    return out

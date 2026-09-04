@@ -47,8 +47,8 @@ def create_basket(
 
 
 @router.get("/templates")
-def starter_templates() -> dict[str, Any]:
-    return service.starter_templates()
+def starter_templates(include_internal: bool = Query(False)) -> dict[str, Any]:
+    return service.starter_templates(include_internal=include_internal)
 
 
 @router.get("/{basket_id}")

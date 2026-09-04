@@ -17,7 +17,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Numeric, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Numeric, SmallInteger, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,7 +31,17 @@ class Basket(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str | None] = mapped_column(String(500))
-    category: Mapped[str | None] = mapped_column(String(40))  # e.g. "Multi-asset"
+    category: Mapped[str | None] = mapped_column(String(40))  # new taxonomy, e.g. "Smart Alpha"
+
+    # product-layer presentation metadata (carried from the flagship catalog
+    # when a user clones a product; free-form for hand-built baskets)
+    risk_level: Mapped[int | None] = mapped_column(SmallInteger)  # 1..5
+    objective: Mapped[str | None] = mapped_column(String(400))
+    horizon: Mapped[str | None] = mapped_column(String(40))
+    investment_style: Mapped[str | None] = mapped_column(String(60))
+    how_it_works: Mapped[list | None] = mapped_column(JSONB)  # list[str]
+    internal: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     benchmark: Mapped[str] = mapped_column(String(32), nullable=False, default="NIFTY 50")
     rebalance_frequency: Mapped[str] = mapped_column(
         String(12), nullable=False, default="monthly"

@@ -308,28 +308,43 @@ def test_basket_api_crud_roundtrip():
         tpls = client.get("/api/v1/baskets/templates")
         assert tpls.status_code == 200
         body = tpls.json()
-        assert "Multi-asset" in body["categories"]
+        assert "Multi-Asset" in body["categories"]
+        assert body["journeys"] and body["risk_labels"]
         tlist = body["templates"]
-        assert any(t["key"] == "all-weather" for t in tlist)
+        assert len(tlist) == 12  # the flagship catalog, not the internal library
+        assert any(t["key"] == "all-weather-wealth" for t in tlist)
         assert all(t.get("category") in body["categories"] for t in tlist)
+        aww = next(t for t in tlist if t["key"] == "all-weather-wealth")
+        assert 1 <= aww["risk_level"] <= 5
+        assert aww["objective"] and aww["how_it_works"]
+
+        # the ~14 back-pocket models only appear with include_internal
+        assert "internal_models" not in body
+        internal = client.get("/api/v1/baskets/templates?include_internal=true").json()
+        assert len(internal["internal_models"]) >= 15
 
         payload = {
             "name": "pytest basket",
             "description": "temp",
-            "category": "Multi-asset",
+            "category": "Multi-Asset",
+            "risk_level": aww["risk_level"],
+            "objective": aww["objective"],
+            "how_it_works": aww["how_it_works"],
             "rebalance_frequency": "monthly",
             "drift_band_pct": 3.0,
             "capital": 300_000,
-            "spec": next(t["spec"] for t in tlist if t["key"] == "all-weather"),
+            "spec": aww["spec"],
         }
         created = client.post("/api/v1/baskets", json=payload)
         assert created.status_code == 200, created.text
         bid = created.json()["id"]
-        assert created.json()["n_sleeves"] == 3
+        assert created.json()["n_sleeves"] == 6
+        assert created.json()["risk_level"] == aww["risk_level"]
+        assert created.json()["how_it_works"] == aww["how_it_works"]
 
         got = client.get(f"/api/v1/baskets/{bid}")
         assert got.status_code == 200
-        assert got.json()["spec"]["sleeves"][0]["weight_pct"] == 50.0
+        assert got.json()["spec"]["sleeves"][0]["weight_pct"] == 33.0
 
         upd = client.put(f"/api/v1/baskets/{bid}", json={"drift_band_pct": 5.0})
         assert upd.status_code == 200

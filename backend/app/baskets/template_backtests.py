@@ -23,6 +23,9 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 STORE_PATH = Path(__file__).resolve().parents[2] / "data" / "basket_template_backtests.json"
+CATALOG_STORE_PATH = (
+    Path(__file__).resolve().parents[2] / "data" / "basket_catalog_backtests.json"
+)
 _DEFAULT_YEARS = 8.0
 _SPARK_POINTS = 60
 
@@ -76,6 +79,7 @@ def _min_funds(db: Any, settings: Any, spec: Any) -> dict[str, Any] | None:
         "unit_cost": uc["unit_cost"],
         "n_members": uc["n_members"],
         "n_priced": uc["n_priced"],
+        "est_holdings": uc.get("est_holdings"),
         "as_of": uc["as_of"],
     }
 
@@ -140,14 +144,60 @@ def run_all(db: Any, settings: Any, *, years: float = _DEFAULT_YEARS) -> dict[st
     return out
 
 
-def load() -> dict[str, Any]:
-    if not STORE_PATH.exists():
+def _load(path: Path) -> dict[str, Any]:
+    if not path.exists():
         return {}
     try:
-        data = json.loads(STORE_PATH.read_text())
+        data = json.loads(path.read_text())
     except (json.JSONDecodeError, OSError):
         return {}
     return data.get("templates", {}) if isinstance(data, dict) else {}
+
+
+def load() -> dict[str, Any]:
+    return _load(STORE_PATH)
+
+
+def load_catalog() -> dict[str, Any]:
+    return _load(CATALOG_STORE_PATH)
+
+
+def run_catalog(db: Any, settings: Any, *, years: float = _DEFAULT_YEARS) -> dict[str, Any]:
+    """Backtest the 12 flagship products into ``basket_catalog_backtests.json``.
+    ``python -m app.baskets.template_backtests catalog [years]``."""
+    from app.baskets.catalog import flagship
+
+    out: dict[str, Any] = {}
+    products = flagship()
+    for i, p in enumerate(products, 1):
+        key = p["key"]
+        t0 = time.time()
+        try:
+            spec = parse_spec(p["spec"])
+            res = bt.run_backtest(
+                db, settings, spec, years=years, capital=500_000.0,
+                benchmark=p.get("benchmark", "NIFTY 50"),
+                frequency=p.get("rebalance_frequency", "monthly"),
+                drift_band_pct=float(p.get("drift_band_pct", 3.0)),
+            )
+            out[key] = _summary(key, res.to_dict())
+            out[key]["min_funds"] = _min_funds(db, settings, spec)
+            m = out[key]["metrics"]
+            logger.info(
+                "basket_catalog_backtest", key=key, i=i, n=len(products),
+                cagr=m.get("cagr_pct"), excess=m.get("excess_return_pct"),
+                sharpe=m.get("sharpe_ratio"), secs=round(time.time() - t0, 1),
+            )
+        except Exception as exc:  # noqa: BLE001 - one bad product must not stop the batch
+            out[key] = {"key": key, "error": str(exc),
+                        "generated_at": datetime.now(UTC).isoformat()}
+            logger.warning("basket_catalog_backtest_failed", key=key, err=str(exc))
+    CATALOG_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CATALOG_STORE_PATH.write_text(json.dumps(
+        {"generated_at": datetime.now(UTC).isoformat(), "years": years, "templates": out},
+        indent=1,
+    ))
+    return out
 
 
 if __name__ == "__main__":
@@ -161,6 +211,16 @@ if __name__ == "__main__":
         finally:
             _db.close()
         print(f"patched min_funds into {STORE_PATH}")
+        raise SystemExit(0)
+
+    if len(sys.argv) > 1 and sys.argv[1] == "catalog":
+        yrs2 = float(sys.argv[2]) if len(sys.argv) > 2 else _DEFAULT_YEARS
+        _db = SessionLocal()
+        try:
+            run_catalog(_db, get_settings(), years=yrs2)
+        finally:
+            _db.close()
+        print(f"wrote {CATALOG_STORE_PATH}")
         raise SystemExit(0)
 
     yrs = float(sys.argv[1]) if len(sys.argv) > 1 else _DEFAULT_YEARS

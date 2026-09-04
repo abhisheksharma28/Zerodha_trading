@@ -24,6 +24,15 @@ from __future__ import annotations
 
 from typing import Any
 
+
+def _uniq(*lists: list[str]) -> list[str]:
+    seen: dict[str, None] = {}
+    for lst in lists:
+        for s in lst:
+            seen.setdefault(s, None)
+    return list(seen)
+
+
 # --- stock pools (NSE, liquid, long history) -----------------------------
 
 _LARGE_CAPS = [
@@ -683,7 +692,7 @@ TEMPLATES: list[dict[str, Any]] = [
         "spec": {
             "sleeves": [
                 {"id": "def", "name": "Defensive leaders", "weight_pct": 80.0,
-                 "weighting": "score_weighted", "members": _LOW_VOL + _QUALITY,
+                 "weighting": "score_weighted", "members": _uniq(_LOW_VOL, _QUALITY),
                  "max_weight_pct": 12.0,
                  "rule": _composite(126, 12, _FW_DEFENSIVE, hold_k=18, trend_ma=0)},
                 {"id": "gold", "name": "Gold ballast", "weight_pct": 20.0, "weighting": "equal",

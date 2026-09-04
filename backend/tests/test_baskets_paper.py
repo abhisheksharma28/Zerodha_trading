@@ -201,9 +201,12 @@ def test_deploy_preview_reports_unit_cost_and_affordable_units(db, _hist):
     b = _make_basket(db, capital=200_000)
 
     prev = paper.deploy_preview(db, s, str(b.id))
-    assert prev["unit_cost"] == pytest.approx(150.0)   # AAA 100 + BBB 50
+    # min capital to hold at target weights: AAA at 60% needs 100/0.60 = 166.7,
+    # rounded up to the nearest 100 -> 200 (NOT the 150 sum of one share each)
+    assert prev["unit_cost"] == pytest.approx(200.0)
     assert prev["n_members"] == 2 and prev["n_priced"] == 2
-    assert prev["max_units"] == 10                      # 1500 / 150
+    assert prev["est_holdings"] == 2
+    assert prev["max_units"] == 7                       # 1500 // 200
     assert prev["available_cash"] == pytest.approx(1_500.0)
 
 
