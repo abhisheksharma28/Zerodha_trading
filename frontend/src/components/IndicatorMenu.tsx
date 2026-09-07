@@ -3,13 +3,18 @@ import { Plus, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-export type IndicatorKind = "sma" | "ema" | "vwap" | "bbands" | "rsi" | "macd" | "atr";
+import type { PivotBasis } from "@/lib/indicators";
+
+export type IndicatorKind =
+  | "sma" | "ema" | "vwap" | "bbands" | "rsi" | "macd" | "atr" | "pivots";
 
 export interface Indicator {
   uid: string;
   kind: IndicatorKind;
   period: number;
   color: string;
+  /** pivot points only: derive levels per trading day / week / month */
+  basis?: PivotBasis;
 }
 
 const CATALOG: { kind: IndicatorKind; label: string; group: string; period: number; hasPeriod: boolean }[] = [
@@ -20,6 +25,13 @@ const CATALOG: { kind: IndicatorKind; label: string; group: string; period: numb
   { kind: "atr", label: "ATR", group: "Volatility", period: 14, hasPeriod: true },
   { kind: "rsi", label: "RSI", group: "Momentum", period: 14, hasPeriod: true },
   { kind: "macd", label: "MACD", group: "Momentum", period: 12, hasPeriod: false },
+  { kind: "pivots", label: "Pivot Points (Standard)", group: "Levels", period: 0, hasPeriod: false },
+];
+
+const PIVOT_BASES: { value: PivotBasis; label: string }[] = [
+  { value: "D", label: "Daily" },
+  { value: "W", label: "Weekly" },
+  { value: "M", label: "Monthly" },
 ];
 
 const PALETTE = ["#7c5cff", "#22b8cf", "#ffa94d", "#e64980", "#51cf66", "#fcc419"];
@@ -46,11 +58,16 @@ export function IndicatorMenu({
   const add = (kind: IndicatorKind, period: number) => {
     const color = PALETTE[value.length % PALETTE.length];
     seq.current += 1;
-    onChange([...value, { uid: `${kind}-${seq.current}`, kind, period, color }]);
+    onChange([
+      ...value,
+      { uid: `${kind}-${seq.current}`, kind, period, color, ...(kind === "pivots" ? { basis: "D" as const } : {}) },
+    ]);
   };
   const remove = (uid: string) => onChange(value.filter((i) => i.uid !== uid));
   const setPeriod = (uid: string, period: number) =>
     onChange(value.map((i) => (i.uid === uid ? { ...i, period } : i)));
+  const setBasis = (uid: string, basis: PivotBasis) =>
+    onChange(value.map((i) => (i.uid === uid ? { ...i, basis } : i)));
 
   const groups = [...new Set(CATALOG.map((c) => c.group))];
 
@@ -80,6 +97,19 @@ export function IndicatorMenu({
                   onChange={(e) => setPeriod(ind.uid, Math.max(1, Number(e.target.value)))}
                   className="w-10 bg-transparent text-center text-fg-muted outline-none"
                 />
+              )}
+              {ind.kind === "pivots" && (
+                <select
+                  value={ind.basis ?? "D"}
+                  onChange={(e) => setBasis(ind.uid, e.target.value as PivotBasis)}
+                  className="bg-transparent text-fg-muted outline-none"
+                >
+                  {PIVOT_BASES.map((b) => (
+                    <option key={b.value} value={b.value}>
+                      {b.label}
+                    </option>
+                  ))}
+                </select>
               )}
               <button type="button" onClick={() => remove(ind.uid)} className="text-fg-faint hover:text-fg">
                 <X className="h-3 w-3" />

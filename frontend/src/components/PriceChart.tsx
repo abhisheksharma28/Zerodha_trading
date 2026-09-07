@@ -15,6 +15,10 @@ export interface Overlay {
   data: LinePoint[];
   color: string;
   lineWidth?: 1 | 2 | 3 | 4;
+  /** lightweight-charts LineStyle: 0 solid, 1 dotted, 2 dashed, 3 large-dashed, 4 sparse-dotted */
+  lineStyle?: 0 | 1 | 2 | 3 | 4;
+  /** label shown against the right price scale (used for pivot levels) */
+  title?: string;
 }
 export interface SubSeries {
   id: string;
@@ -186,12 +190,14 @@ export function PriceChart({
         s = main.addLineSeries({
           color: o.color,
           lineWidth: o.lineWidth ?? 2,
+          lineStyle: o.lineStyle ?? 0,
+          title: o.title,
           priceLineVisible: false,
           lastValueVisible: false,
         });
         overlaySeries.current.set(o.id, s);
       }
-      s.applyOptions({ color: o.color });
+      s.applyOptions({ color: o.color, lineStyle: o.lineStyle ?? 0, title: o.title });
       s.setData(o.data as never);
     }
 

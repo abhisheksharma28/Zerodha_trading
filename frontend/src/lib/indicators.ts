@@ -138,6 +138,78 @@ export function macd(
   return { macd: macdArr.slice(from), signal: sig.slice(from), hist: hist.slice(from) };
 }
 
+/** Standard (floor-trader) pivot points. Each level is derived from the
+ *  PREVIOUS calendar period's high/low/close and held flat across every
+ *  candle of the CURRENT period, so it steps once per period boundary.
+ *  Candle `time` is the IST-shifted epoch the backend emits, so the UTC
+ *  calendar accessors below bucket by the NSE trading day / week / month. */
+export type PivotBasis = "D" | "W" | "M";
+
+export interface PivotLevels {
+  p: LinePoint[];
+  r1: LinePoint[];
+  r2: LinePoint[];
+  r3: LinePoint[];
+  s1: LinePoint[];
+  s2: LinePoint[];
+  s3: LinePoint[];
+}
+
+function pivotBucketKey(t: number, basis: PivotBasis): string {
+  const d = new Date(t * 1000);
+  const y = d.getUTCFullYear();
+  if (basis === "M") return `${y}-${d.getUTCMonth()}`;
+  if (basis === "W") {
+    const dow = (d.getUTCDay() + 6) % 7; // Monday = 0
+    return `w${Date.UTC(y, d.getUTCMonth(), d.getUTCDate() - dow)}`;
+  }
+  return `${y}-${d.getUTCMonth()}-${d.getUTCDate()}`;
+}
+
+export function pivotPoints(candles: Candle[], basis: PivotBasis = "D"): PivotLevels {
+  const out: PivotLevels = { p: [], r1: [], r2: [], r3: [], s1: [], s2: [], s3: [] };
+  if (candles.length === 0) return out;
+
+  const buckets: Candle[][] = [];
+  let key = "";
+  for (const c of candles) {
+    const k = pivotBucketKey(c.time, basis);
+    if (k !== key) {
+      buckets.push([]);
+      key = k;
+    }
+    buckets[buckets.length - 1].push(c);
+  }
+
+  for (let i = 1; i < buckets.length; i++) {
+    const prev = buckets[i - 1];
+    const h = Math.max(...prev.map((c) => c.high));
+    const l = Math.min(...prev.map((c) => c.low));
+    const c = prev[prev.length - 1].close;
+    const p = (h + l + c) / 3;
+    const range = h - l;
+    const lv = {
+      p,
+      r1: 2 * p - l,
+      s1: 2 * p - h,
+      r2: p + range,
+      s2: p - range,
+      r3: h + 2 * (p - l),
+      s3: l - 2 * (h - p),
+    };
+    for (const bar of buckets[i]) {
+      out.p.push({ time: bar.time, value: lv.p });
+      out.r1.push({ time: bar.time, value: lv.r1 });
+      out.r2.push({ time: bar.time, value: lv.r2 });
+      out.r3.push({ time: bar.time, value: lv.r3 });
+      out.s1.push({ time: bar.time, value: lv.s1 });
+      out.s2.push({ time: bar.time, value: lv.s2 });
+      out.s3.push({ time: bar.time, value: lv.s3 });
+    }
+  }
+  return out;
+}
+
 export function atr(candles: Candle[], period = 14): LinePoint[] {
   if (candles.length < period + 1) return [];
   const tr: number[] = [];

@@ -14,7 +14,7 @@ import { useCandles } from "@/hooks/useCandles";
 import { useLiveTick } from "@/hooks/useLiveTick";
 import { useAnchoredVwap } from "@/hooks/useOrderFlow";
 import { useNow } from "@/hooks/useNow";
-import { atr, bollinger, ema, macd, rsi, sma, vwap, type Candle } from "@/lib/indicators";
+import { atr, bollinger, ema, macd, pivotPoints, rsi, sma, vwap, type Candle } from "@/lib/indicators";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
@@ -140,6 +140,17 @@ export default function ChartingPage() {
         ovs.push({ id: `${ind.uid}-u`, data: b.upper, color: ind.color, lineWidth: 1 });
         ovs.push({ id: `${ind.uid}-m`, data: b.middle, color: ind.color, lineWidth: 1 });
         ovs.push({ id: `${ind.uid}-l`, data: b.lower, color: ind.color, lineWidth: 1 });
+      } else if (ind.kind === "pivots") {
+        const pv = pivotPoints(candles, ind.basis ?? "D");
+        const R = "#40c057"; // resistance — green
+        const S = "#f06595"; // support — pink
+        ovs.push({ id: `${ind.uid}-p`, data: pv.p, color: ind.color, lineWidth: 2, title: "P" });
+        ovs.push({ id: `${ind.uid}-r1`, data: pv.r1, color: R, lineWidth: 1, lineStyle: 2, title: "R1" });
+        ovs.push({ id: `${ind.uid}-r2`, data: pv.r2, color: R, lineWidth: 1, lineStyle: 2, title: "R2" });
+        ovs.push({ id: `${ind.uid}-r3`, data: pv.r3, color: R, lineWidth: 1, lineStyle: 4, title: "R3" });
+        ovs.push({ id: `${ind.uid}-s1`, data: pv.s1, color: S, lineWidth: 1, lineStyle: 2, title: "S1" });
+        ovs.push({ id: `${ind.uid}-s2`, data: pv.s2, color: S, lineWidth: 1, lineStyle: 2, title: "S2" });
+        ovs.push({ id: `${ind.uid}-s3`, data: pv.s3, color: S, lineWidth: 1, lineStyle: 4, title: "S3" });
       } else if (ind.kind === "atr") {
         panes.push({ id: ind.uid, label: `ATR ${ind.period}`, series: [{ id: "atr", type: "line", data: atr(candles, ind.period), color: ind.color }] });
       } else if (ind.kind === "rsi") {
