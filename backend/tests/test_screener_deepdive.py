@@ -41,7 +41,7 @@ def test_no_llm_provider_returns_facts_and_hint(db, _rating, monkeypatch):
     assert out["available"] is False
     assert out["reason"] == "Set A_KEY."
     assert out["facts"]["symbol"] == "ACME"
-    assert out["facts"]["screener"]["composite_score"] == 71.0
+    assert out["facts"]["screener_scores"]["composite_0_100"] == 71.0
 
 
 def test_generates_parses_and_caches(db, _rating, monkeypatch):

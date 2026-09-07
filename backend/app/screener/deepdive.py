@@ -30,7 +30,44 @@ from app.providers.fundamentals import get_fundamentals_provider
 logger = get_logger(__name__)
 
 _TTL = timedelta(hours=24)
-_MAX_TOKENS = 3400
+_MAX_TOKENS = 4500  # 11 sections; input is trimmed to ~2k so this stays inside an 8k TPM cap
+
+# statement line-items worth sending (yfinance row labels vary — match loosely)
+_STATEMENT_ROWS = (
+    "total revenue", "revenue", "gross profit", "operating income", "ebitda",
+    "net income", "diluted eps", "basic eps",
+    "total assets", "total liab", "total debt", "long term debt",
+    "cash and cash equivalents", "cash cash equivalents", "stockholders equity",
+    "total equity", "operating cash flow", "free cash flow", "capital expenditure",
+)
+
+
+def _num3(v: Any) -> Any:
+    """Round big numbers to 3 significant figures to shrink the payload."""
+    if not isinstance(v, (int, float)) or v != v:
+        return v
+    if v == 0:
+        return 0
+    import math
+
+    mag = math.floor(math.log10(abs(v)))
+    return round(v, max(0, 2 - mag))
+
+
+def _slim_statement(rows: list[dict[str, Any]] | None, periods: int) -> list[dict[str, Any]] | None:
+    if not rows:
+        return None
+    out: list[dict[str, Any]] = []
+    for row in rows[:periods]:
+        kept = {"period": row.get("period")}
+        for k, v in row.items():
+            if k == "period":
+                continue
+            kl = str(k).lower()
+            if any(want in kl for want in _STATEMENT_ROWS):
+                kept[k] = _num3(v)
+        out.append(kept)
+    return out or None
 
 _SECTION_KEYS = [
     "business_model",
@@ -66,16 +103,11 @@ _SYSTEM = (
     "State the screener's composite score, say whether your reading of the "
     "qualitative picture agrees or disagrees with it, and if the data is "
     "thin say the verdict is low-confidence.\n"
+    "7. Keep every section to at most ~110 words.\n"
     "Return ONLY a JSON object with these keys (all strings): "
     + ", ".join(_SECTION_KEYS)
     + ". No markdown, no preamble."
 )
-
-
-def _clip_statement(rows: list[dict[str, Any]] | None, periods: int = 4) -> list[dict[str, Any]] | None:
-    if not rows:
-        return None
-    return rows[:periods]
 
 
 def _facts(db: Session, settings: Settings, rating: ScreenerRating) -> dict[str, Any]:
@@ -85,52 +117,88 @@ def _facts(db: Session, settings: Settings, rating: ScreenerRating) -> dict[str,
     def _data(res: Any) -> Any:
         return res.data if getattr(res, "available", False) else None
 
-    profile = _data(provider.get_company_profile(sym))
-    quarterly = _clip_statement(_data(provider.get_quarterly_results(sym)))
-    balance = _clip_statement(_data(provider.get_balance_sheet(sym)), periods=3)
-    cash_flow = _clip_statement(_data(provider.get_cash_flow(sym)))
+    profile = _data(provider.get_company_profile(sym)) or {}
+    desc = str(profile.get("description") or "")[:900]
+    quarterly = _slim_statement(_data(provider.get_quarterly_results(sym)), 3)
+    balance = _slim_statement(_data(provider.get_balance_sheet(sym)), 2)
+    cash_flow = _slim_statement(_data(provider.get_cash_flow(sym)), 2)
     shareholding = _data(provider.get_shareholding(sym))
-    news = _data(provider.get_news(sym))
-    if isinstance(news, list):
-        news = [
-            {"title": n.get("title"), "publisher": n.get("publisher"), "published": n.get("published")}
-            for n in news[:8]
-            if isinstance(n, dict)
-        ]
+    news_raw = _data(provider.get_news(sym))
+    news = (
+        [str(n.get("title")) for n in news_raw[:5] if isinstance(n, dict) and n.get("title")]
+        if isinstance(news_raw, list)
+        else None
+    )
+
+    m = rating.metrics or {}
+    keep_m = (
+        # dividend_yield is deliberately omitted — the free feed frequently
+        # returns it off by 100x, and it would poison the narrative.
+        "market_cap", "pe", "forward_pe", "pb", "ps", "ev_ebitda",
+        "roe", "debt_equity", "current_ratio", "operating_margin", "profit_margin",
+        "revenue_growth", "earnings_growth", "ltp", "week52_high", "week52_low",
+        "sma50", "sma200", "ret_1m", "ret_6m",
+    )
 
     return {
         "symbol": sym,
         "name": rating.name,
         "sector_yahoo": rating.sector,
-        "screener": {
+        "profile": {
+            "industry": profile.get("industry"),
+            "employees": profile.get("employees"),
+            "country": profile.get("country"),
+            "description": desc or None,
+        },
+        "screener_scores": {
             "verdict": rating.verdict,
             "confidence": rating.confidence,
-            "composite_score": rating.composite,
-            "pillar_scores_0_100": {
-                "value": rating.value_score,
-                "quality": rating.quality_score,
-                "growth": rating.growth_score,
-                "technical": rating.technical_score,
-            },
-            "pillar_factor_breakdown": rating.factors,
+            "composite_0_100": rating.composite,
+            "value": rating.value_score,
+            "quality": rating.quality_score,
+            "growth": rating.growth_score,
+            "technical": rating.technical_score,
             "data_completeness_0_1": rating.data_completeness,
-            "notes": rating.notes,
+            "note": rating.notes,
         },
-        "raw_metrics": rating.metrics,
-        "profile": profile,
+        "metrics": {k: _num3(m.get(k)) for k in keep_m if m.get(k) is not None},
         "quarterly_results_recent": quarterly,
         "balance_sheet_recent": balance,
         "cash_flow_recent": cash_flow,
         "shareholding_approx": shareholding,
         "recent_news_headlines": news,
         "as_of": rating.as_of.isoformat() if rating.as_of else None,
-        "data_source_caveats": (
-            "Fundamentals are from a free Yahoo Finance feed and can be stale, "
-            "mislabelled, or missing Indian-specific detail (promoter pledge, "
-            "FII/DII split, segment revenue, order book). yahoo 'sector' is a "
-            "coarse GICS bucket."
+        "data_source_note": (
+            "Free Yahoo feed — can be stale/mislabelled; no Indian promoter "
+            "pledge / FII-DII / segment / order-book detail."
         ),
     }
+
+
+_KEY_RE = None  # built lazily below
+
+
+def _salvage_sections(text: str) -> dict[str, str] | None:
+    """Tolerant fallback for a truncated / slightly malformed JSON object:
+    pull each `"key": "value"` pair with a regex so the sections that did
+    complete are still usable."""
+    import re
+
+    global _KEY_RE
+    if _KEY_RE is None:
+        keys = "|".join(re.escape(k) for k in _SECTION_KEYS)
+        _KEY_RE = re.compile(
+            rf'"({keys})"\s*:\s*"((?:[^"\\]|\\.)*)"', re.DOTALL
+        )
+    found: dict[str, str] = {}
+    for m in _KEY_RE.finditer(text):
+        try:
+            found[m.group(1)] = json.loads(f'"{m.group(2)}"')
+        except json.JSONDecodeError:
+            found[m.group(1)] = m.group(2)
+    if not found:
+        return None
+    return {k: (found.get(k) or "Not enough data.").strip() for k in _SECTION_KEYS}
 
 
 def _parse_sections(text: str) -> dict[str, str] | None:
@@ -139,15 +207,14 @@ def _parse_sections(text: str) -> dict[str, str] | None:
         t = t.split("```", 2)[1] if "```" in t[3:] else t.lstrip("`")
         t = t.removeprefix("json").strip()
     start, end = t.find("{"), t.rfind("}")
-    if start == -1 or end == -1:
-        return None
-    try:
-        obj = json.loads(t[start : end + 1])
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(obj, dict):
-        return None
-    return {k: str(obj.get(k, "Not enough data.")).strip() for k in _SECTION_KEYS}
+    if start != -1 and end != -1:
+        try:
+            obj = json.loads(t[start : end + 1])
+            if isinstance(obj, dict):
+                return {k: str(obj.get(k, "Not enough data.")).strip() for k in _SECTION_KEYS}
+        except json.JSONDecodeError:
+            pass
+    return _salvage_sections(t)
 
 
 def _cached(db: Session, symbol: str) -> ScreenerDeepDive | None:
