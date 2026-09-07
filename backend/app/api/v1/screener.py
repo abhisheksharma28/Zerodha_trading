@@ -1,0 +1,47 @@
+"""Stock Screener API — the BUY / HOLD / AVOID lists shown in Insights.
+
+    GET  /screener/ratings            buckets + summary + last-sweep meta
+    GET  /screener/ratings/{symbol}   one stock: full pillar + metric breakdown
+    GET  /screener/status             counts + last run
+    POST /screener/sweep              run a sweep now (slow: minutes)
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
+
+from app.config import Settings, get_settings
+from app.core.deps import get_db
+from app.screener import engine, service
+
+router = APIRouter(prefix="/screener", tags=["screener"])
+
+
+@router.get("/ratings")
+def get_ratings(
+    verdict: str | None = Query(None, pattern="^(?i)(buy|hold|avoid)$"),
+    sector: str | None = None,
+    sort: str = Query("score"),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return service.ratings(db, verdict=verdict, sector=sector, sort=sort)
+
+
+@router.get("/ratings/{symbol}")
+def get_rating(symbol: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+    return service.rating_detail(db, symbol)
+
+
+@router.get("/status")
+def get_status(db: Session = Depends(get_db)) -> dict[str, Any]:
+    return service.status(db)
+
+
+@router.post("/sweep")
+def post_sweep(
+    db: Session = Depends(get_db), settings: Settings = Depends(get_settings)
+) -> dict[str, Any]:
+    return engine.run_sweep(db, settings, trigger="manual")

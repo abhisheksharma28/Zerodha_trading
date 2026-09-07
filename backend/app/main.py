@@ -26,6 +26,7 @@ async def lifespan(app: FastAPI):
     from app.market_scanner import scheduler as scanner_scheduler
     from app.notifications import scheduler as notifications_scheduler
     from app.paper_account import scheduler as paper_scheduler
+    from app.screener import scheduler as screener_scheduler
 
     try:
         await live_engine.start(settings)
@@ -43,7 +44,15 @@ async def lifespan(app: FastAPI):
         await notifications_scheduler.start()
     except Exception:  # noqa: BLE001 - the notifications loop is optional, never block startup
         logger.exception("notifications_start_failed")
+    try:
+        await screener_scheduler.start()
+    except Exception:  # noqa: BLE001 - the screener sweep is optional, never block startup
+        logger.exception("screener_start_failed")
     yield
+    try:
+        await screener_scheduler.stop()
+    except Exception:  # noqa: BLE001
+        logger.exception("screener_stop_failed")
     try:
         await notifications_scheduler.stop()
     except Exception:  # noqa: BLE001

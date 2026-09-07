@@ -138,6 +138,19 @@ class Settings(BaseSettings):
     # for INTRADAY only. See app/market_scanner/tracker.py.
     market_scanner_swing_hold_days: int = 5
 
+    # --- Stock Screener (cross-sectional quant scorer -> Insights) ---
+    # A daily fundamental + technical sweep of the liquid NSE universe that
+    # buckets each name BUY / HOLD / AVOID off a transparent composite score.
+    # Never emits prose verdicts; a thin-data name is capped at HOLD (low
+    # confidence). Fundamentals come from the configured provider (yfinance
+    # by default); technicals from Kite daily candles.
+    screener_enabled: bool = True
+    screener_universe_max: int = 500          # cap on names scored per sweep
+    screener_sweep_hour_ist: int = 16         # run once/day at ~this IST hour
+    screener_buy_min_score: float = 66.0      # composite >= this -> BUY
+    screener_avoid_max_score: float = 40.0    # composite <  this -> AVOID
+    screener_min_completeness: float = 0.5    # below this -> forced HOLD, low confidence
+
     # --- Paper-account strategy deploys ---
     # Upper bound on how many instruments one deployed paper strategy may
     # cover, whether hand-picked or expanded from a named universe. A very

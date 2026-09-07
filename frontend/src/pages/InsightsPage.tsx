@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Loader2, RefreshCw } from "lucide-react";
 
 import type { InsightsBriefing, MoverRow, ScannerIdea, SectorRow } from "@/api/insights";
+import { ScreenerPanel } from "@/components/insights/ScreenerPanel";
 import { PageHeader } from "@/components/PageHeader";
 import { SectionCard } from "@/components/SectionCard";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,7 @@ const TONE_CLS: Record<string, string> = {
 };
 
 export default function InsightsPage() {
+  const [view, setView] = useState<"briefing" | "screener">("briefing");
   const [universe, setUniverse] = useState<"nifty50" | "nifty100" | "nifty200">("nifty100");
   const { data, isLoading } = useInsights(universe);
   const refresh = useRefreshInsights(universe);
@@ -43,36 +45,62 @@ export default function InsightsPage() {
         subtitle="One read of the whole board — pulse, sectors, what the scanner sees, your book — so you don't have to walk every tab."
         actions={
           <div className="flex items-center gap-2">
-            <select
-              className="h-8 rounded-md border border-line bg-surface px-2 text-xs"
-              value={universe}
-              onChange={(e) => setUniverse(e.target.value as typeof universe)}
-            >
-              <option value="nifty50">Nifty 50</option>
-              <option value="nifty100">Nifty 100</option>
-              <option value="nifty200">Nifty 200</option>
-            </select>
-            <Button size="sm" variant="outline" disabled={refresh.isPending} onClick={() => refresh.mutate()}>
-              {refresh.isPending ? (
-                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <RefreshCw className="mr-1 h-3.5 w-3.5" />
-              )}
-              Refresh
-            </Button>
+            {view === "briefing" && (
+              <>
+                <select
+                  className="h-8 rounded-md border border-line bg-surface px-2 text-xs"
+                  value={universe}
+                  onChange={(e) => setUniverse(e.target.value as typeof universe)}
+                >
+                  <option value="nifty50">Nifty 50</option>
+                  <option value="nifty100">Nifty 100</option>
+                  <option value="nifty200">Nifty 200</option>
+                </select>
+                <Button size="sm" variant="outline" disabled={refresh.isPending} onClick={() => refresh.mutate()}>
+                  {refresh.isPending ? (
+                    <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-1 h-3.5 w-3.5" />
+                  )}
+                  Refresh
+                </Button>
+              </>
+            )}
           </div>
         }
       />
 
-      {isLoading && <p className="py-10 text-center text-sm text-fg-faint">Reading the board…</p>}
+      <div className="flex gap-1 rounded-md border border-line-strong bg-surface p-0.5 self-start">
+        {(["briefing", "screener"] as const).map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setView(v)}
+            className={cn(
+              "rounded px-3 py-1 text-xs font-medium capitalize",
+              view === v ? "bg-accent-soft text-accent" : "text-fg-muted hover:text-fg",
+            )}
+          >
+            {v === "screener" ? "Stock Screener" : "Briefing"}
+          </button>
+        ))}
+      </div>
 
-      {data && !data.available && (
-        <div className="rounded-lg border border-amber-400/40 bg-amber-400/10 p-4 text-sm text-amber-600 dark:text-amber-400">
-          {data.reason ?? "Market data is unavailable — check the broker session."}
-        </div>
+      {view === "screener" ? (
+        <ScreenerPanel />
+      ) : (
+        <>
+          {isLoading && <p className="py-10 text-center text-sm text-fg-faint">Reading the board…</p>}
+
+          {data && !data.available && (
+            <div className="rounded-lg border border-amber-400/40 bg-amber-400/10 p-4 text-sm text-amber-600 dark:text-amber-400">
+              {data.reason ?? "Market data is unavailable — check the broker session."}
+            </div>
+          )}
+
+          {data?.available && <Briefing data={data} />}
+        </>
       )}
-
-      {data?.available && <Briefing data={data} />}
     </div>
   );
 }
