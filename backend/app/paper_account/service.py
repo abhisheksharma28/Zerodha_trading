@@ -318,7 +318,8 @@ def strategy_runs(db: Session) -> list[dict[str, Any]]:
         out.append({
             "id": str(r.id),
             "slug": r.slug, "name": r.name, "status": r.status,
-            "instruments": r.instruments, "timeframe": r.timeframe, "product": r.product,
+            "instruments": r.instruments, "universe": r.universe,
+            "timeframe": r.timeframe, "product": r.product,
             "params": r.params, "flatten_on_stop": r.flatten_on_stop,
             "started_at": r.started_at.isoformat() if r.started_at else None,
             "last_tick_at": r.last_tick_at.isoformat() if r.last_tick_at else None,

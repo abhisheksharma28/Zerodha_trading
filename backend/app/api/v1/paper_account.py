@@ -200,20 +200,29 @@ def get_strategy_templates() -> list[dict[str, Any]]:
     return strategies.templates()
 
 
+@router.get("/strategies/universes")
+def get_strategy_universes() -> list[dict[str, str]]:
+    """Named instrument universes the deploy form can target instead of the
+    user hand-picking every symbol."""
+    return strategies.universes()
+
+
 @router.post("/strategies", status_code=201)
 def post_strategy_run(
     slug: str = Body(..., embed=True),
     name: str = Body("", embed=True),
-    instruments: list[str] = Body(..., embed=True),
+    instruments: list[str] = Body([], embed=True),
     timeframe: str = Body("1d", embed=True),
     product: str = Body("CNC", embed=True),
     params: dict[str, Any] | None = Body(None, embed=True),
     flatten_on_stop: bool = Body(True, embed=True),
+    universe: str | None = Body(None, embed=True),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     run = strategies.create_run(
         db, slug=slug, name=name, instruments=instruments, timeframe=timeframe,
         product=product, params=params, flatten_on_stop=flatten_on_stop,
+        universe=universe,
     )
     return next((r for r in service.strategy_runs(db) if r["id"] == str(run.id)), {"id": str(run.id)})
 

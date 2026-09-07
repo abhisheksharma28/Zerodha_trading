@@ -198,6 +198,42 @@ def test_create_run_rejects_bad_input(db, _fixed_prices):
         strat.create_run(db, slug="does-not-exist", name="x", instruments=["NSE:INFY"],
                          timeframe="1d", product="CNC", params={})
 
+    # neither a hand-picked list nor a universe
+    with pytest.raises(ValidationError, match="instrument"):
+        strat.create_run(db, slug="trend-following", name="x", instruments=[],
+                         timeframe="1d", product="CNC", params={})
+
+
+def test_create_run_expands_a_named_universe(db, _fixed_prices):
+    from app.paper_account import strategies as strat
+
+    run = strat.create_run(
+        db, slug="trend-following", name="Trend · N50", instruments=[],
+        timeframe="1d", product="CNC", params={}, universe="nifty50",
+    )
+    assert run.universe == "nifty50"
+    assert len(run.instruments) == 50
+    assert run.instruments[0].startswith("NSE:")
+
+
+def test_create_run_universe_cap_and_focused_strategy(db, monkeypatch, _fixed_prices):
+    from app.core.exceptions import ValidationError
+    from app.paper_account import strategies as strat
+
+    # a focused strategy (MAX_INSTRUMENTS) can't take a whole-market universe
+    with pytest.raises(ValidationError, match="focused|cross-sectional|needs"):
+        strat.create_run(db, slug="bollinger-reversion", name="x", instruments=[],
+                         timeframe="1d", product="CNC", params={}, universe="nifty200")
+
+    # the hard cap is enforced regardless of the strategy
+    monkeypatch.setattr(
+        strat, "resolve_equity_universe",
+        lambda _db, _k: [f"NSE:SYM{i}" for i in range(5000)],
+    )
+    with pytest.raises(ValidationError, match="cap"):
+        strat.create_run(db, slug="trend-following", name="x", instruments=[],
+                         timeframe="1d", product="CNC", params={}, universe="fno")
+
 
 def test_reconcile_rebuilds_cash_and_holdings_from_trades(db, monkeypatch, _fixed_prices):
     from app.paper_account import engine as eng

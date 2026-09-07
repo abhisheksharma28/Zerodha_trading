@@ -138,6 +138,13 @@ class Settings(BaseSettings):
     # for INTRADAY only. See app/market_scanner/tracker.py.
     market_scanner_swing_hold_days: int = 5
 
+    # --- Paper-account strategy deploys ---
+    # Upper bound on how many instruments one deployed paper strategy may
+    # cover, whether hand-picked or expanded from a named universe. A very
+    # large universe multiplies the per-evaluation Kite historical calls, so
+    # "whole market" is only sensible on the daily timeframe.
+    paper_strategy_max_instruments: int = 600
+
     # --- Strategy-evaluation worker (app.workers) ---
     worker_poll_interval_seconds: int = 60
     # How far back the worker pulls candles each poll; only bars newer than

@@ -17,9 +17,10 @@ from sqlalchemy.orm import Session
 
 from app.backtesting.timeframes import kite_interval
 from app.backtesting.timeframes import resolve as resolve_tf
-from app.config import Settings
+from app.config import Settings, get_settings
 from app.core.exceptions import ValidationError
 from app.core.logging import get_logger
+from app.market_data.universes import EQUITY_UNIVERSES, resolve_equity_universe
 from app.models.paper_account import (
     PaperHolding,
     PaperOrder,
@@ -41,10 +42,35 @@ _RUNTIMES: dict[str, tuple[Any, StrategyContext]] = {}
 _LOOKBACK_BARS = {"day": 400, "60minute": 500, "15minute": 400, "5minute": 400, "minute": 400}
 _LOOKBACK_DAYS = {"day": 550, "60minute": 60, "15minute": 20, "5minute": 8, "minute": 4}
 
+# Minimum seconds between full re-evaluations of one run, by stored
+# timeframe token. The background loop ticks every ~5s; without this a run
+# covering a large universe would re-pull historical candles for every
+# symbol on every loop and blow past Kite's historical rate limit. A new
+# bar can't close faster than its own interval anyway, so nothing is lost.
+_EVAL_INTERVAL_SECONDS: dict[str, float] = {
+    "1m": 25, "3m": 60, "5m": 90, "10m": 150, "15m": 240, "30m": 480,
+    "1h": 900, "2h": 1800, "1d": 1800, "1w": 3600,
+}
+_EVAL_INTERVAL_DEFAULT = 120.0
+
+
+def _eval_due(run: PaperStrategyRun) -> bool:
+    """Whether enough time has passed to re-evaluate this run."""
+    if run.last_tick_at is None:
+        return True
+    gap = (datetime.now(UTC) - run.last_tick_at).total_seconds()
+    return gap >= _EVAL_INTERVAL_SECONDS.get(run.timeframe, _EVAL_INTERVAL_DEFAULT)
+
 
 # --------------------------------------------------------------------------
 # catalogue
 # --------------------------------------------------------------------------
+
+def universes() -> list[dict[str, str]]:
+    """Named instrument universes the deploy form offers instead of
+    hand-picking. Static list; resolution happens at deploy time."""
+    return list(EQUITY_UNIVERSES)
+
 
 def templates() -> list[dict[str, Any]]:
     out = []
@@ -73,21 +99,48 @@ def templates() -> list[dict[str, Any]]:
 def create_run(
     db: Session, *, slug: str, name: str, instruments: list[str], timeframe: str,
     product: str, params: dict[str, Any] | None, flatten_on_stop: bool = True,
+    universe: str | None = None,
 ) -> PaperStrategyRun:
     try:
         cls = get_by_slug(slug)
     except KeyError as exc:
         raise ValidationError(f"Unknown strategy '{slug}'") from exc
-    refs = [r.strip().upper() for r in instruments if r.strip()]
-    if not refs:
-        raise ValidationError("Pick at least one instrument.")
+
+    uni = (universe or "").strip().lower() or None
+    if uni in (None, "custom"):
+        uni = None
+        refs = [r.strip().upper() for r in instruments if r.strip()]
+        if not refs:
+            raise ValidationError("Pick at least one instrument, or choose a universe.")
+    else:
+        refs = resolve_equity_universe(db, uni)
+        if not refs:
+            raise ValidationError(
+                f"The '{uni}' universe resolved to 0 instruments — sync the "
+                "instrument master (make sync-instruments) and try again."
+            )
+
+    # de-dupe, preserve order
+    refs = list(dict.fromkeys(refs))
     n = len(refs)
-    if n < cls.MIN_INSTRUMENTS or (cls.MAX_INSTRUMENTS is not None and n > cls.MAX_INSTRUMENTS):
+
+    cap = get_settings().paper_strategy_max_instruments
+    if n > cap:
         raise ValidationError(
-            f"{cls.NAME} needs {cls.MIN_INSTRUMENTS}"
-            + (f"-{cls.MAX_INSTRUMENTS}" if cls.MAX_INSTRUMENTS else "+")
-            + f" instruments, got {n}."
+            f"That's {n} instruments; the deploy cap is {cap}. Pick a narrower universe."
         )
+    if n < cls.MIN_INSTRUMENTS or (cls.MAX_INSTRUMENTS is not None and n > cls.MAX_INSTRUMENTS):
+        want = (
+            f"{cls.MIN_INSTRUMENTS}"
+            + (f"-{cls.MAX_INSTRUMENTS}" if cls.MAX_INSTRUMENTS else "+")
+        )
+        hint = (
+            f" — {cls.NAME} is a focused / cross-sectional strategy; a whole-market "
+            "universe is too wide for it."
+            if uni and cls.MAX_INSTRUMENTS is not None and n > cls.MAX_INSTRUMENTS
+            else ""
+        )
+        raise ValidationError(f"{cls.NAME} needs {want} instruments, got {n}.{hint}")
     tf = resolve_tf(timeframe).token
     if cls.SUPPORTED_TIMEFRAMES and tf not in cls.SUPPORTED_TIMEFRAMES:
         raise ValidationError(f"{cls.NAME} does not support the {tf} timeframe.")
@@ -102,12 +155,12 @@ def create_run(
     acct = get_or_create_account(db)
     run = PaperStrategyRun(
         account_id=acct.id, slug=slug, name=name or cls.NAME, params=merged,
-        instruments=refs, timeframe=tf, product=prod, status="ACTIVE",
+        instruments=refs, universe=uni, timeframe=tf, product=prod, status="ACTIVE",
         flatten_on_stop=flatten_on_stop, started_at=datetime.now(UTC), last_bar_ts={},
     )
     db.add(run)
     db.commit()
-    logger.info("paper_strategy_created", slug=slug, instruments=refs, tf=tf)
+    logger.info("paper_strategy_created", slug=slug, universe=uni, instruments=n, tf=tf)
     return run
 
 
@@ -219,10 +272,15 @@ def _current_net(db: Session, run: PaperStrategyRun, symbol: str) -> int:
 def tick_run(db: Session, settings: Settings, run: PaperStrategyRun) -> int:
     if run.status != "ACTIVE":
         return 0
+    key = str(run.id)
+    # Once warmed, only re-evaluate as often as the timeframe warrants — a
+    # wide universe on a 5s loop would otherwise hammer Kite's historical
+    # API. A cold run (process restart) always evaluates to rebuild state.
+    if key in _RUNTIMES and not _eval_due(run):
+        return 0
     client = _client(db, settings)
     if client is None:
         return 0
-    key = str(run.id)
     rt = _RUNTIMES.get(key)
     warming = rt is None
     if rt is None:

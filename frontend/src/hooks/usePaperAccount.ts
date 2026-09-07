@@ -140,6 +140,14 @@ export function usePaperStrategyTemplates() {
   });
 }
 
+export function usePaperStrategyUniverses() {
+  return useQuery({
+    queryKey: [...KEY, "strategy-universes"],
+    queryFn: paperAccountApi.strategyUniverses,
+    staleTime: 30 * 60_000,
+  });
+}
+
 export function useCreatePaperStrategy() {
   const invalidate = useInvalidateAll();
   return useMutation({

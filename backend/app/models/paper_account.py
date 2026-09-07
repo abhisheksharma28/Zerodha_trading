@@ -194,6 +194,10 @@ class PaperStrategyRun(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     params: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     instruments: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)  # ["NSE:INFY", ...]
+    # Named universe this run was deployed against ("nifty200", "fno",
+    # "all_nse", …) or NULL when the instruments were hand-picked. The
+    # instruments column is always the concrete resolved list either way.
+    universe: Mapped[str | None] = mapped_column(String(20))
     timeframe: Mapped[str] = mapped_column(String(16), nullable=False, default="day")
     product: Mapped[str] = mapped_column(String(4), nullable=False, default="CNC")
 

@@ -4,7 +4,11 @@ import type { Product } from "@/api/paperAccount";
 import { InstrumentSearch } from "@/components/InstrumentSearch";
 import { SectionCard } from "@/components/SectionCard";
 import { Button } from "@/components/ui/button";
-import { useCreatePaperStrategy, usePaperStrategyTemplates } from "@/hooks/usePaperAccount";
+import {
+  useCreatePaperStrategy,
+  usePaperStrategyTemplates,
+  usePaperStrategyUniverses,
+} from "@/hooks/usePaperAccount";
 import { cn } from "@/lib/utils";
 
 const TF_LABEL: Record<string, string> = {
@@ -16,10 +20,12 @@ const KEY_PARAMS = ["capital_allocation", "sizing_method", "fixed_quantity"];
 
 export function StrategyDeploy({ onDone }: { onDone: () => void }) {
   const { data: templates = [] } = usePaperStrategyTemplates();
+  const { data: universes = [] } = usePaperStrategyUniverses();
   const create = useCreatePaperStrategy();
 
   const [slug, setSlug] = useState("");
   const [name, setName] = useState("");
+  const [universe, setUniverse] = useState("custom");
   const [instruments, setInstruments] = useState<string[]>([]);
   const [timeframe, setTimeframe] = useState("1d");
   const [product, setProduct] = useState<Product>("CNC");
@@ -42,10 +48,13 @@ export function StrategyDeploy({ onDone }: { onDone: () => void }) {
     }
   };
 
+  const customUniverse = universe === "custom";
+
   const submit = () => {
     setErr(null);
     if (!slug) return setErr("Pick a strategy.");
-    if (instruments.length === 0) return setErr("Add at least one instrument.");
+    if (customUniverse && instruments.length === 0)
+      return setErr("Add at least one instrument, or pick a universe.");
     let merged: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(params)) {
       if (v === "") continue;
@@ -59,7 +68,16 @@ export function StrategyDeploy({ onDone }: { onDone: () => void }) {
       }
     }
     create.mutate(
-      { slug, name, instruments, timeframe, product, params: merged, flatten_on_stop: true },
+      {
+        slug,
+        name,
+        instruments: customUniverse ? instruments : [],
+        universe: customUniverse ? undefined : universe,
+        timeframe,
+        product,
+        params: merged,
+        flatten_on_stop: true,
+      },
       {
         onSuccess: () => onDone(),
         onError: (e: unknown) => setErr((e as { message?: string })?.message ?? "Deploy failed."),
@@ -107,15 +125,45 @@ export function StrategyDeploy({ onDone }: { onDone: () => void }) {
         </p>
       )}
 
-      <div className="mt-3">
-        <span className="text-xs text-fg-faint">Instruments</span>
-        <InstrumentSearch
-          value={instruments}
-          onChange={setInstruments}
-          multiple
-          placeholder="Add stocks / futures / options…"
-        />
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <label className="text-xs">
+          <span className="text-fg-faint">Universe</span>
+          <select
+            value={universe}
+            onChange={(e) => setUniverse(e.target.value)}
+            className="mt-0.5 w-full rounded-md border border-line bg-bg px-2 py-1.5 text-sm"
+          >
+            {(universes.length
+              ? universes
+              : [{ key: "custom", label: "Custom — pick instruments", note: "" }]
+            ).map((u) => (
+              <option key={u.key} value={u.key}>
+                {u.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        {!customUniverse && (
+          <p className="self-end text-[11px] text-fg-faint">
+            {universes.find((u) => u.key === universe)?.note}
+            <span className="mt-0.5 block text-fg-muted">
+              The whole list is resolved and traded on deploy — no need to pick symbols.
+            </span>
+          </p>
+        )}
       </div>
+
+      {customUniverse && (
+        <div className="mt-3">
+          <span className="text-xs text-fg-faint">Instruments</span>
+          <InstrumentSearch
+            value={instruments}
+            onChange={setInstruments}
+            multiple
+            placeholder="Add stocks / futures / options…"
+          />
+        </div>
+      )}
 
       <div className="mt-3 flex flex-wrap items-end gap-3">
         <label className="text-xs">

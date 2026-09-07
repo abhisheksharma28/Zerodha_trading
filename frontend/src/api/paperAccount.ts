@@ -151,12 +151,19 @@ export interface StrategyTemplate {
   warning: string | null;
 }
 
+export interface StrategyUniverse {
+  key: string;
+  label: string;
+  note: string;
+}
+
 export interface PaperStrategyRun {
   id: string;
   slug: string;
   name: string;
   status: "ACTIVE" | "PAUSED" | "STOPPED";
   instruments: string[];
+  universe: string | null;
   timeframe: string;
   product: Product;
   params: Record<string, unknown>;
@@ -181,6 +188,8 @@ export interface CreateStrategyBody {
   product: Product;
   params?: Record<string, unknown>;
   flatten_on_stop?: boolean;
+  /** Named universe to expand server-side; omit / "custom" to use `instruments`. */
+  universe?: string;
 }
 
 export interface AlgoConfig {
@@ -265,6 +274,8 @@ export const paperAccountApi = {
     apiClient.get<PaperStrategyRun[]>("/paper-account/strategies").then((r) => r.data),
   strategyTemplates: () =>
     apiClient.get<StrategyTemplate[]>("/paper-account/strategies/templates").then((r) => r.data),
+  strategyUniverses: () =>
+    apiClient.get<StrategyUniverse[]>("/paper-account/strategies/universes").then((r) => r.data),
   createStrategy: (body: CreateStrategyBody) =>
     apiClient.post<PaperStrategyRun>("/paper-account/strategies", body).then((r) => r.data),
   setStrategyStatus: (id: string, status: string) =>
