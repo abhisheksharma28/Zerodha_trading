@@ -123,6 +123,10 @@ class Settings(BaseSettings):
     market_scanner_max_live: int = 40             # cap on concurrent LIVE recommendations
     market_scanner_overlay_min_confidence: float = 68.0  # add a separate OPTION card above this
     market_scanner_eod_flatten_ist: str = "15:20"       # unresolved -> NEUTRAL at this IST time
+    # SWING recommendations get this many trading days (Mon-Fri) to fill and
+    # play out before the EOD flatten applies to them - the flatten above is
+    # for INTRADAY only. See app/market_scanner/tracker.py.
+    market_scanner_swing_hold_days: int = 5
 
     # --- Strategy-evaluation worker (app.workers) ---
     worker_poll_interval_seconds: int = 60

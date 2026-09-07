@@ -324,9 +324,11 @@ export default function LogBookPage() {
         )}
       </SectionCard>
       <p className="text-[11px] text-fg-faint">
-        Outcomes are marked against the real-time price: TARGET / SL when the level trades, NEUTRAL at the
-        15:20 IST square-off, INVALIDATED if a limit entry never triggered. Not a trading record — screener
-        results for research.
+        Outcomes are marked against the real-time price: TARGET / SL when the level trades, INTRADAY squares
+        off at 15:20 IST same day, SWING gets a multi-day hold window before the same cutoff applies.
+        INVALIDATED means a limit entry never triggered within its window. Not a trading record — screener
+        results for research. SWING rows resolved before 2026-09-05 were force-closed same-day by an earlier
+        tracker bug and are excluded from the stats above, though still listed below.
       </p>
     </div>
   );

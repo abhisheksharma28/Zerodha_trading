@@ -17,6 +17,15 @@ from app.models.market_scanner import ScannerAlert, ScanRecommendation, ScanRun
 
 IST = ZoneInfo("Asia/Kolkata")
 
+# Before this, the tracker force-closed every LIVE row at the intraday EOD
+# cutoff regardless of horizon - a SWING recommendation was never actually
+# given the multi-day window its setup implies before being marked NEUTRAL
+# or INVALIDATED. Those pre-fix SWING outcomes aren't a fair test of the
+# setups and are excluded from aggregate stats below (they still show in the
+# raw logbook rows). INTRADAY rows are unaffected - the same-day cutoff was
+# always correct for them. See app/market_scanner/tracker.py.
+_SWING_TRACKING_FIX_AT = datetime(2026, 9, 5, tzinfo=IST)
+
 
 def _today_ist() -> str:
     return datetime.now(IST).date().isoformat()
@@ -153,7 +162,11 @@ def recommendation_detail(db: Session, rec_id: str) -> dict[str, Any] | None:
 
 
 def _stats(rows: list[ScanRecommendation]) -> dict[str, Any]:
-    resolved = [r for r in rows if r.outcome in ("TARGET", "SL", "NEUTRAL")]
+    resolved = [
+        r for r in rows
+        if r.outcome in ("TARGET", "SL", "NEUTRAL")
+        and not (r.horizon == "SWING" and r.created_at < _SWING_TRACKING_FIX_AT)
+    ]
     wins = [r for r in resolved if r.outcome == "TARGET"]
     losses = [r for r in resolved if r.outcome == "SL"]
     rs = [float(r.result_r) for r in resolved if r.result_r is not None]

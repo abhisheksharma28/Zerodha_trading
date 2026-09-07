@@ -223,10 +223,11 @@ def test_tracker_resolves_target_sl_and_stale(db, monkeypatch):
     assert out.resolved_target == 1 and out.resolved_sl == 1 and out.stale == 1
 
 
-def test_tracker_eod_flattens_to_neutral(db, monkeypatch):
+def test_tracker_eod_flattens_intraday_to_neutral(db, monkeypatch):
+    """INTRADAY still squares off same-day at the EOD cutoff."""
     s = get_settings()
     r = _live_rec(db, tradingsymbol="DDD", instrument_token="9", entry=1000.0,
-                  stop_loss=980.0, target_1=1050.0)
+                  stop_loss=980.0, target_1=1050.0, horizon="INTRADAY")
     db.flush()
     monkeypatch.setattr(trk, "_live_price", lambda tok: 1012.0)
     monkeypatch.setattr(trk.md, "get_client", lambda *a, **k: None)
@@ -235,6 +236,38 @@ def test_tracker_eod_flattens_to_neutral(db, monkeypatch):
     db.refresh(r)
     assert r.status == "EXPIRED" and r.outcome == "NEUTRAL"
     assert float(r.result_points) == 12.0 and out.resolved_neutral == 1
+
+
+def test_tracker_swing_survives_same_day_eod(db, monkeypatch):
+    """A SWING rec must NOT be flattened at the same-day EOD cutoff - it
+    should still be waiting for its multi-day hold window to elapse."""
+    s = get_settings()
+    r = _live_rec(db, tradingsymbol="GGG", instrument_token="10", entry=1000.0,
+                  stop_loss=980.0, target_1=1050.0, horizon="SWING")
+    db.flush()
+    monkeypatch.setattr(trk, "_live_price", lambda tok: 1012.0)
+    monkeypatch.setattr(trk.md, "get_client", lambda *a, **k: None)
+    now = datetime.now(trk.IST).replace(hour=15, minute=40).astimezone(UTC)
+    out = trk.run_tracker(db, s, now=now)
+    db.refresh(r)
+    assert r.status == "LIVE" and out.resolved_neutral == 0
+
+
+def test_tracker_swing_flattens_after_hold_window(db, monkeypatch):
+    """Once the configured swing hold window has elapsed, an unresolved
+    SWING rec is flattened NEUTRAL at that day's EOD, same as INTRADAY."""
+    s = get_settings()
+    r = _live_rec(db, tradingsymbol="HHH", instrument_token="11", entry=1000.0,
+                  stop_loss=980.0, target_1=1050.0, horizon="SWING",
+                  trading_day="2026-08-27")  # a Thursday
+    db.flush()
+    monkeypatch.setattr(trk, "_live_price", lambda tok: 1012.0)
+    monkeypatch.setattr(trk.md, "get_client", lambda *a, **k: None)
+    # 5 trading days later (Fri, Mon, Tue, Wed, Thu) = 2026-09-03
+    now = datetime(2026, 9, 3, 15, 40, tzinfo=trk.IST).astimezone(UTC)
+    out = trk.run_tracker(db, s, now=now)
+    db.refresh(r)
+    assert r.status == "EXPIRED" and r.outcome == "NEUTRAL" and out.resolved_neutral == 1
 
 
 def test_service_recommendations_and_logbook_shape(db):

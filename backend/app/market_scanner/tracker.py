@@ -10,7 +10,7 @@ it is never resolved on a guess.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from datetime import time as dtime
 from zoneinfo import ZoneInfo
 
@@ -25,6 +25,21 @@ from app.models.market_scanner import ScannerAlert, ScanRecommendation
 logger = get_logger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
 _STALE_AFTER_S = 90.0
+
+
+def _trading_days_elapsed(start_day: str, today: date) -> int:
+    """Weekdays strictly between ``start_day`` (YYYY-MM-DD) and ``today``,
+    inclusive of today. 0 on the scan day itself, 1 the next weekday, etc.
+    No NSE holiday calendar - a holiday just reads one day short, same
+    tolerance the rest of the scanner takes with gaps (see data_quality.py)."""
+    start = date.fromisoformat(start_day)
+    n = 0
+    d = start
+    while d < today:
+        d += timedelta(days=1)
+        if d.weekday() < 5:  # Mon-Fri
+            n += 1
+    return n
 
 
 @dataclass
@@ -124,6 +139,19 @@ def run_tracker(db: Session, settings: Settings, *, now: datetime | None = None)
         rec.last_checked_at = now
         long = rec.direction == "LONG"
 
+        # INTRADAY squares off same-day at the EOD cutoff, same as before.
+        # SWING gets a multi-day hold window - the EOD cutoff only applies
+        # to it once that window has elapsed, so a multi-day thesis actually
+        # gets multiple days to trigger and play out instead of being forced
+        # through an intraday clock.
+        if rec.horizon == "SWING":
+            hold_expired = past_eod and (
+                _trading_days_elapsed(rec.trading_day, now_ist.date())
+                >= settings.market_scanner_swing_hold_days
+            )
+        else:
+            hold_expired = past_eod
+
         # pending LIMIT entry: fill when price trades through the level
         if rec.entered_price is None:
             if rec.entry_type == "LIMIT":
@@ -131,7 +159,7 @@ def run_tracker(db: Session, settings: Settings, *, now: datetime | None = None)
                 if touched:
                     rec.entered_price = float(rec.entry)
                     out.filled += 1
-                elif past_eod:
+                elif hold_expired:
                     rec.status = "EXPIRED"
                     rec.outcome = "INVALIDATED"
                     rec.exit_at = now
@@ -156,7 +184,7 @@ def run_tracker(db: Session, settings: Settings, *, now: datetime | None = None)
         elif hit_t:
             _resolve(db, rec, "TARGET", float(rec.target_1), now)
             out.resolved_target += 1
-        elif past_eod:
+        elif hold_expired:
             _resolve(db, rec, "NEUTRAL", ltp, now)
             out.resolved_neutral += 1
 
