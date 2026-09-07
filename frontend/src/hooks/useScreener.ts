@@ -11,6 +11,22 @@ export function useScreenerRatings(sort = "score") {
   });
 }
 
+export function useScreenerStatus(fast = false) {
+  return useQuery({
+    queryKey: ["screener", "status"],
+    queryFn: screenerApi.status,
+    // always poll slowly so an externally-triggered sweep is noticed;
+    // poll fast once we know one is running
+    refetchInterval: fast ? 6_000 : 20_000,
+  });
+}
+
+export function useRunScreenerSweep() {
+  return useMutation({
+    mutationFn: (scope?: string) => screenerApi.sweep(scope),
+  });
+}
+
 export function useTechnicalRatings(sort = "ta_score") {
   return useQuery({
     queryKey: ["screener", "technical-ratings", sort],

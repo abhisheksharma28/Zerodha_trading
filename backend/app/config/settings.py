@@ -145,7 +145,8 @@ class Settings(BaseSettings):
     # confidence). Fundamentals come from the configured provider (yfinance
     # by default); technicals from Kite daily candles.
     screener_enabled: bool = True
-    screener_universe_max: int = 500          # cap on names scored per sweep
+    screener_default_scope: str = "broad500"  # fno | nifty200 | broad500 | all
+    screener_universe_max: int = 2600         # hard cap on names scored per sweep
     screener_sweep_hour_ist: int = 16         # run once/day at ~this IST hour
     screener_buy_min_score: float = 66.0      # composite >= this -> BUY
     screener_avoid_max_score: float = 40.0    # composite <  this -> AVOID

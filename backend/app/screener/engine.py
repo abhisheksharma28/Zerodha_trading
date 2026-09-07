@@ -8,8 +8,10 @@ the daily scheduler or the manual ``POST /screener/sweep`` endpoint.
 
 from __future__ import annotations
 
+import contextlib
+import threading
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import delete, select, text
@@ -18,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.config import Settings
 from app.core.exceptions import BrokerNotConnectedError
 from app.core.logging import get_logger
+from app.db.session import SessionLocal
 from app.market_data.instruments import resolve_instrument_token
 from app.models.instrument import Instrument
 from app.models.screener import ScreenerRating, ScreenerRun
@@ -32,15 +35,62 @@ _LOCK_KEY = 776640
 _FUND_WORKERS = 4
 
 
-def run_sweep(db: Session, settings: Settings, *, trigger: str = "schedule") -> dict[str, Any]:
+def start_sweep_bg(settings: Settings, *, scope: str | None = None) -> dict[str, Any]:
+    """Kick a manual sweep off on a background thread and return at once —
+    an 'all' sweep runs ~15-20 min and must not block the request."""
+    db = SessionLocal()
+    try:
+        latest = db.execute(
+            select(ScreenerRun).order_by(ScreenerRun.started_at.desc()).limit(1)
+        ).scalar_one_or_none()
+        if (
+            latest is not None
+            and latest.finished_at is None
+            and datetime.now(UTC) - latest.started_at < timedelta(minutes=45)
+        ):
+            return {"ok": False, "reason": "a screener sweep is already running", "sweeping": True}
+        wanted = _resolve_scope(db, settings, scope)
+    finally:
+        db.close()
+
+    def _run() -> None:
+        s = SessionLocal()
+        try:
+            run_sweep(s, settings, trigger="manual", scope=wanted)
+        finally:
+            s.close()
+
+    threading.Thread(target=_run, name="screener-manual-sweep", daemon=True).start()
+    return {"ok": True, "started": True, "scope": wanted, "sweeping": True}
+
+
+def _resolve_scope(db: Session, settings: Settings, scope: str | None) -> str:
+    """An explicit scope wins; otherwise repeat the last completed sweep's
+    scope; otherwise the configured default."""
+    if scope:
+        return universe.normalise_scope(scope)
+    last = db.execute(
+        select(ScreenerRun.scope)
+        .where(ScreenerRun.finished_at.is_not(None), ScreenerRun.error.is_(None))
+        .order_by(ScreenerRun.started_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    return universe.normalise_scope(last or settings.screener_default_scope)
+
+
+def run_sweep(
+    db: Session, settings: Settings, *, trigger: str = "schedule", scope: str | None = None
+) -> dict[str, Any]:
     if not bool(db.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": _LOCK_KEY}).scalar()):
         return {"ok": False, "reason": "another screener sweep is already running"}
-    run = ScreenerRun(started_at=datetime.now(UTC), trigger=trigger)
+    resolved_scope = _resolve_scope(db, settings, scope)
+    run = ScreenerRun(started_at=datetime.now(UTC), trigger=trigger, scope=resolved_scope)
     db.add(run)
     db.commit()
     try:
-        result = _sweep(db, settings, run)
+        result = _sweep(db, settings, run, scope=resolved_scope)
         run.finished_at = datetime.now(UTC)
+        result["scope"] = resolved_scope
         run.universe_size = result["universe_size"]
         run.scored = result["scored"]
         run.buy = result["buy"]
@@ -58,19 +108,26 @@ def run_sweep(db: Session, settings: Settings, *, trigger: str = "schedule") -> 
             db.commit()
         return {"ok": False, "reason": str(exc)}
     finally:
-        db.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _LOCK_KEY})
-        db.commit()
+        try:
+            db.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _LOCK_KEY})
+            db.commit()
+        finally:
+            # never let a session ride back into the pool still holding the
+            # session-level advisory lock — hard-drop its physical connection
+            with contextlib.suppress(Exception):
+                db.connection().invalidate()
+            db.close()
 
 
-def _sweep(db: Session, settings: Settings, run: ScreenerRun) -> dict[str, Any]:
+def _sweep(db: Session, settings: Settings, run: ScreenerRun, *, scope: str) -> dict[str, Any]:
     try:
         client = broker_service.build_authenticated_client(db, settings)
     except BrokerNotConnectedError as exc:
         raise RuntimeError(f"screener needs a connected Zerodha session for candles: {exc}") from exc
 
     provider = get_fundamentals_provider(settings)
-    syms = universe.build(db, client, cap=settings.screener_universe_max)
-    logger.info("screener_sweep_start", universe=len(syms), provider=provider.name)
+    syms = universe.build(db, client, scope=scope, cap=settings.screener_universe_max)
+    logger.info("screener_sweep_start", scope=scope, universe=len(syms), provider=provider.name)
 
     names: dict[str, str | None] = dict(
         db.execute(

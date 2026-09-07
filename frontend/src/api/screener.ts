@@ -48,7 +48,7 @@ export interface TechnicalRatingRow extends ScreenerRating {
   };
 }
 
-export interface TechnicalRatingsResponse {
+export interface TechnicalRatingsResponse extends ScreenerScopeMeta {
   available: boolean;
   reason?: string;
   as_of?: string | null;
@@ -61,7 +61,6 @@ export interface TechnicalRatingsResponse {
     total: number;
   };
   sectors?: string[];
-  last_run: ScreenerRun | null;
   ratings: TechnicalRatingRow[];
 }
 
@@ -69,6 +68,8 @@ export interface ScreenerRun {
   started_at: string | null;
   finished_at: string | null;
   trigger: string;
+  scope: string;
+  running: boolean;
   universe_size: number;
   scored: number;
   buy: number;
@@ -77,13 +78,33 @@ export interface ScreenerRun {
   error: string | null;
 }
 
-export interface ScreenerRatingsResponse {
+export interface ScreenerScopeOption {
+  key: string;
+  label: string;
+  note: string;
+}
+
+/** fields every screener response carries */
+export interface ScreenerScopeMeta {
+  scope: string;
+  scopes: ScreenerScopeOption[];
+  sweeping: boolean;
+  last_run: ScreenerRun | null;
+}
+
+export interface ScreenerStatus extends ScreenerScopeMeta {
+  rated: number;
+  buy: number;
+  hold: number;
+  avoid: number;
+}
+
+export interface ScreenerRatingsResponse extends ScreenerScopeMeta {
   available: boolean;
   reason?: string;
   as_of?: string | null;
   summary: { buy: number; hold: number; avoid: number; total: number };
   sectors?: string[];
-  last_run: ScreenerRun | null;
   ratings: ScreenerRating[];
 }
 
@@ -146,6 +167,15 @@ export const screenerApi = {
   technicalRatings: (params: { verdict?: TechnicalVerdict; sector?: string; sort?: string } = {}) =>
     apiClient
       .get<TechnicalRatingsResponse>("/screener/technical-ratings", { params })
+      .then((r) => r.data),
+  status: () => apiClient.get<ScreenerStatus>("/screener/status").then((r) => r.data),
+  sweep: (scope?: string) =>
+    apiClient
+      .post<{ ok: boolean; started?: boolean; reason?: string; scope?: string; sweeping?: boolean }>(
+        "/screener/sweep",
+        undefined,
+        { params: scope ? { scope } : {} },
+      )
       .then((r) => r.data),
   deepDive: (symbol: string, refresh = false) =>
     apiClient

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.models.screener import ScreenerRating, ScreenerRun
+from app.screener.universe import DEFAULT_SCOPE, SCOPES
 
 _SORTS: dict[str, ColumnElement[Any]] = {
     "score": ScreenerRating.composite.desc(),
@@ -70,7 +71,7 @@ def technical_ratings(
             "available": False,
             "reason": "No screener sweep has produced technical ratings yet.",
             "summary": {k.lower(): 0 for k in _TA_ORDER} | {"total": 0},
-            "last_run": _last_run(db),
+            "last_run": (_lr := _last_run(db)), **_scope_meta(_lr),
             "ratings": [],
         }
 
@@ -92,11 +93,19 @@ def technical_ratings(
                 select(ScreenerRating.sector).distinct().where(ScreenerRating.sector.is_not(None))
             ).all()
         ),
-        "last_run": _last_run(db),
+        "last_run": (_lr := _last_run(db)), **_scope_meta(_lr),
         "ratings": [
             {**_row(r), "ta_detail": r.ta_detail}
             for r in rows
         ],
+    }
+
+
+def _scope_meta(last_run: dict[str, Any] | None) -> dict[str, Any]:
+    return {
+        "scope": (last_run or {}).get("scope") or DEFAULT_SCOPE,
+        "scopes": SCOPES,
+        "sweeping": bool((last_run or {}).get("running")),
     }
 
 
@@ -110,6 +119,8 @@ def _last_run(db: Session) -> dict[str, Any] | None:
         "started_at": run.started_at.isoformat() if run.started_at else None,
         "finished_at": run.finished_at.isoformat() if run.finished_at else None,
         "trigger": run.trigger,
+        "scope": run.scope,
+        "running": run.finished_at is None,
         "universe_size": run.universe_size,
         "scored": run.scored,
         "buy": run.buy,
@@ -138,7 +149,7 @@ def ratings(
             "available": False,
             "reason": "No screener sweep has completed yet.",
             "summary": {"buy": 0, "hold": 0, "avoid": 0, "total": 0},
-            "last_run": _last_run(db),
+            "last_run": (_lr := _last_run(db)), **_scope_meta(_lr),
             "ratings": [],
         }
 
@@ -165,7 +176,7 @@ def ratings(
                 select(ScreenerRating.sector).distinct().where(ScreenerRating.sector.is_not(None))
             ).all()
         ),
-        "last_run": _last_run(db),
+        "last_run": (_lr := _last_run(db)), **_scope_meta(_lr),
         "ratings": [_row(r) for r in rows],
     }
 
@@ -195,5 +206,5 @@ def status(db: Session) -> dict[str, Any]:
         "buy": counts.get("BUY", 0),
         "hold": counts.get("HOLD", 0),
         "avoid": counts.get("AVOID", 0),
-        "last_run": _last_run(db),
+        "last_run": (_lr := _last_run(db)), **_scope_meta(_lr),
     }

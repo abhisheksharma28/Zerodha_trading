@@ -68,6 +68,10 @@ def get_status(db: Session = Depends(get_db)) -> dict[str, Any]:
 
 @router.post("/sweep")
 def post_sweep(
-    db: Session = Depends(get_db), settings: Settings = Depends(get_settings)
+    scope: str | None = Query(None, description="fno | nifty200 | broad500 | all"),
+    settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    return engine.run_sweep(db, settings, trigger="manual")
+    """Kick off a sweep in the background and return immediately. Poll
+    GET /screener/status (`sweeping`) for completion. Omit `scope` to
+    repeat the last sweep's scope."""
+    return engine.start_sweep_bg(settings, scope=scope)

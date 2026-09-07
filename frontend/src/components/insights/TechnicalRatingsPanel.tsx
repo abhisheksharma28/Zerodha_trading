@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 
 import type { TaGauge, TechnicalRatingRow, TechnicalVerdict } from "@/api/screener";
 import { DataTable, type Column } from "@/components/DataTable";
+import { ScreenerScopeControl } from "@/components/insights/ScreenerScopeControl";
 import { SectionCard } from "@/components/SectionCard";
 import { useTechnicalRatings } from "@/hooks/useScreener";
 import { num } from "@/lib/format";
@@ -217,6 +218,8 @@ export function TechnicalRatingsPanel() {
           Purely technical, EOD. As of {data.as_of ? new Date(data.as_of).toLocaleString() : "—"}. Not advice.
         </p>
       </div>
+
+      <ScreenerScopeControl scope={data.scope} scopes={data.scopes} sweeping={data.sweeping} />
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex gap-1 rounded-md border border-line-strong bg-surface p-0.5">
