@@ -49,6 +49,18 @@ def get_deepdive(
     return deepdive.generate(db, settings, symbol, refresh=refresh)
 
 
+@router.get("/technical-ratings")
+def get_technical_ratings(
+    verdict: str | None = Query(None, pattern="^(?i)(strong_buy|buy|neutral|sell|strong_sell)$"),
+    sector: str | None = None,
+    sort: str = Query("ta_score"),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Whole-universe TradingView-style technical rating (the per-stock
+    'Investment recommendations' gauge, computed for every screened name)."""
+    return service.technical_ratings(db, verdict=verdict, sector=sector, sort=sort)
+
+
 @router.get("/status")
 def get_status(db: Session = Depends(get_db)) -> dict[str, Any]:
     return service.status(db)

@@ -11,6 +11,15 @@ export function useScreenerRatings(sort = "score") {
   });
 }
 
+export function useTechnicalRatings(sort = "ta_score") {
+  return useQuery({
+    queryKey: ["screener", "technical-ratings", sort],
+    queryFn: () => screenerApi.technicalRatings({ sort }),
+    staleTime: 5 * 60_000,
+    refetchInterval: 5 * 60_000,
+  });
+}
+
 export function useScreenerRating(symbol: string | null) {
   return useQuery({
     queryKey: ["screener", "rating", symbol],

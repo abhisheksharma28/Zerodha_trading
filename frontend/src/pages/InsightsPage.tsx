@@ -4,6 +4,7 @@ import { Loader2, RefreshCw } from "lucide-react";
 
 import type { InsightsBriefing, MoverRow, ScannerIdea, SectorRow } from "@/api/insights";
 import { ScreenerPanel } from "@/components/insights/ScreenerPanel";
+import { TechnicalRatingsPanel } from "@/components/insights/TechnicalRatingsPanel";
 import { PageHeader } from "@/components/PageHeader";
 import { SectionCard } from "@/components/SectionCard";
 import { Button } from "@/components/ui/button";
@@ -33,7 +34,7 @@ const TONE_CLS: Record<string, string> = {
 };
 
 export default function InsightsPage() {
-  const [view, setView] = useState<"briefing" | "screener">("briefing");
+  const [view, setView] = useState<"briefing" | "screener" | "technicals">("briefing");
   const [universe, setUniverse] = useState<"nifty50" | "nifty100" | "nifty200">("nifty100");
   const { data, isLoading } = useInsights(universe);
   const refresh = useRefreshInsights(universe);
@@ -71,23 +72,31 @@ export default function InsightsPage() {
       />
 
       <div className="flex gap-1 rounded-md border border-line-strong bg-surface p-0.5 self-start">
-        {(["briefing", "screener"] as const).map((v) => (
+        {(
+          [
+            ["briefing", "Briefing"],
+            ["screener", "Stock Screener"],
+            ["technicals", "Technical Ratings"],
+          ] as const
+        ).map(([v, lbl]) => (
           <button
             key={v}
             type="button"
             onClick={() => setView(v)}
             className={cn(
-              "rounded px-3 py-1 text-xs font-medium capitalize",
+              "rounded px-3 py-1 text-xs font-medium",
               view === v ? "bg-accent-soft text-accent" : "text-fg-muted hover:text-fg",
             )}
           >
-            {v === "screener" ? "Stock Screener" : "Briefing"}
+            {lbl}
           </button>
         ))}
       </div>
 
       {view === "screener" ? (
         <ScreenerPanel />
+      ) : view === "technicals" ? (
+        <TechnicalRatingsPanel />
       ) : (
         <>
           {isLoading && <p className="py-10 text-center text-sm text-fg-faint">Reading the board…</p>}

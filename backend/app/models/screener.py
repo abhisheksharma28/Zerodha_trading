@@ -43,6 +43,14 @@ class ScreenerRating(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     pct_from_52w_high: Mapped[float | None] = mapped_column(Float)
     pct_from_52w_low: Mapped[float | None] = mapped_column(Float)
 
+    # TradingView-style technical rating from the same daily candles
+    # (STRONG_BUY | BUY | NEUTRAL | SELL | STRONG_SELL); ta_score is the
+    # net buy-minus-sell ratio in [-1, 1]; ta_detail holds the 3 gauges +
+    # the 9 raw signals. Null when there were too few candles.
+    ta_verdict: Mapped[str | None] = mapped_column(String(12), index=True)
+    ta_score: Mapped[float | None] = mapped_column(Float)
+    ta_detail: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+
     # every raw metric + per-pillar sub-factor breakdown, as pulled
     metrics: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     factors: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)

@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from app.core.logging import get_logger
+from app.screener import technical_rating
 
 logger = get_logger(__name__)
 
@@ -57,6 +58,9 @@ class StockMetrics:
     sma200: float | None = None
     ret_1m: float | None = None
     ret_6m: float | None = None
+
+    # TradingView-style technical rating (see app.screener.technical_rating)
+    ta: dict[str, Any] | None = None
 
     fundamentals_ok: bool = False
     technicals_ok: bool = False
@@ -139,9 +143,11 @@ def from_fundamentals(m: StockMetrics, km: dict[str, Any] | None, profile: dict[
 
 def from_candles(m: StockMetrics, candles: list[list[Any]] | None) -> None:
     """candles: Kite rows [ts, o, h, l, c, v], oldest first."""
-    closes = [float(r[4]) for r in candles or [] if len(r) >= 5 and r[4] is not None]
-    highs = [float(r[2]) for r in candles or [] if len(r) >= 5 and r[2] is not None]
-    lows = [float(r[3]) for r in candles or [] if len(r) >= 5 and r[3] is not None]
+    rows = [r for r in candles or [] if len(r) >= 5 and r[4] is not None]
+    closes = [float(r[4]) for r in rows]
+    highs = [float(r[2]) for r in rows if r[2] is not None]
+    lows = [float(r[3]) for r in rows if r[3] is not None]
+    volumes = [float(r[5]) if len(r) > 5 and r[5] is not None else 0.0 for r in rows]
     if len(closes) < 20:
         m.missing.append("candles")
         return
@@ -158,6 +164,8 @@ def from_candles(m: StockMetrics, candles: list[list[Any]] | None) -> None:
         m.ret_1m = (closes[-1] - closes[-22]) / closes[-22] * 100.0
     if len(closes) >= 126:
         m.ret_6m = (closes[-1] - closes[-126]) / closes[-126] * 100.0
+
+    m.ta = technical_rating.rate(closes, highs, lows, volumes)
 
 
 def candle_window() -> tuple[datetime, datetime]:

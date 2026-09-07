@@ -39,8 +39,64 @@ def _row(r: ScreenerRating) -> dict[str, Any]:
         "ltp": r.ltp,
         "pct_from_52w_high": r.pct_from_52w_high,
         "pct_from_52w_low": r.pct_from_52w_low,
+        "ta_verdict": r.ta_verdict,
+        "ta_score": r.ta_score,
         "notes": r.notes,
         "as_of": r.as_of.isoformat() if r.as_of else None,
+    }
+
+
+_TA_ORDER = ["STRONG_BUY", "BUY", "NEUTRAL", "SELL", "STRONG_SELL"]
+
+
+def technical_ratings(
+    db: Session, *, verdict: str | None = None, sector: str | None = None, sort: str = "ta_score"
+) -> dict[str, Any]:
+    """Whole-universe TradingView-style technical rating, grouped into the
+    five Strong Buy … Strong Sell buckets. Same rows as the fundamental
+    screen; the `ta_*` fields come from the same daily-candle sweep."""
+    counts: dict[str, int] = {
+        v: c
+        for v, c in db.execute(
+            select(ScreenerRating.ta_verdict, func.count())
+            .where(ScreenerRating.ta_verdict.is_not(None))
+            .group_by(ScreenerRating.ta_verdict)
+        ).tuples().all()
+        if v is not None
+    }
+    total = sum(counts.values())
+    if total == 0:
+        return {
+            "available": False,
+            "reason": "No screener sweep has produced technical ratings yet.",
+            "summary": {k.lower(): 0 for k in _TA_ORDER} | {"total": 0},
+            "last_run": _last_run(db),
+            "ratings": [],
+        }
+
+    q = select(ScreenerRating).where(ScreenerRating.ta_verdict.is_not(None))
+    if verdict:
+        q = q.where(ScreenerRating.ta_verdict == verdict.upper())
+    if sector:
+        q = q.where(ScreenerRating.sector == sector)
+    order = ScreenerRating.symbol.asc() if sort == "symbol" else ScreenerRating.ta_score.desc()
+    rows = db.execute(q.order_by(order).limit(600)).scalars().all()
+
+    as_of = max((r.as_of for r in rows), default=None) if rows else None
+    return {
+        "available": True,
+        "as_of": as_of.isoformat() if as_of else None,
+        "summary": {k.lower(): counts.get(k, 0) for k in _TA_ORDER} | {"total": total},
+        "sectors": sorted(
+            s for (s,) in db.execute(
+                select(ScreenerRating.sector).distinct().where(ScreenerRating.sector.is_not(None))
+            ).all()
+        ),
+        "last_run": _last_run(db),
+        "ratings": [
+            {**_row(r), "ta_detail": r.ta_detail}
+            for r in rows
+        ],
     }
 
 

@@ -10,6 +10,8 @@ export interface ScreenerScores {
   technical: number | null;
 }
 
+export type TechnicalVerdict = "STRONG_BUY" | "BUY" | "NEUTRAL" | "SELL" | "STRONG_SELL";
+
 export interface ScreenerRating {
   symbol: string;
   name: string | null;
@@ -22,8 +24,45 @@ export interface ScreenerRating {
   ltp: number | null;
   pct_from_52w_high: number | null;
   pct_from_52w_low: number | null;
+  ta_verdict: TechnicalVerdict | null;
+  ta_score: number | null;
   notes: string | null;
   as_of: string | null;
+}
+
+export interface TaGauge {
+  label: string;
+  buy: number;
+  neutral: number;
+  sell: number;
+  verdict: TechnicalVerdict;
+}
+
+export interface TechnicalRatingRow extends ScreenerRating {
+  ta_detail: {
+    verdict: TechnicalVerdict;
+    score: number;
+    gauges: { moving_average: TaGauge; technical_indicators: TaGauge; overall: TaGauge };
+    signals: Record<string, number>;
+    readings: Record<string, number | null>;
+  };
+}
+
+export interface TechnicalRatingsResponse {
+  available: boolean;
+  reason?: string;
+  as_of?: string | null;
+  summary: {
+    strong_buy: number;
+    buy: number;
+    neutral: number;
+    sell: number;
+    strong_sell: number;
+    total: number;
+  };
+  sectors?: string[];
+  last_run: ScreenerRun | null;
+  ratings: TechnicalRatingRow[];
 }
 
 export interface ScreenerRun {
@@ -104,6 +143,10 @@ export const screenerApi = {
       .then((r) => r.data),
   rating: (symbol: string) =>
     apiClient.get<ScreenerRatingDetail>(`/screener/ratings/${encodeURIComponent(symbol)}`).then((r) => r.data),
+  technicalRatings: (params: { verdict?: TechnicalVerdict; sector?: string; sort?: string } = {}) =>
+    apiClient
+      .get<TechnicalRatingsResponse>("/screener/technical-ratings", { params })
+      .then((r) => r.data),
   deepDive: (symbol: string, refresh = false) =>
     apiClient
       .get<ScreenerDeepDive>(`/screener/ratings/${encodeURIComponent(symbol)}/deepdive`, {
