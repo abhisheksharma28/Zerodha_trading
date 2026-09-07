@@ -12,8 +12,8 @@ import {
 import { cn } from "@/lib/utils";
 
 const TF_LABEL: Record<string, string> = {
-  "1m": "1 min", "3m": "3 min", "5m": "5 min", "15m": "15 min", "30m": "30 min",
-  "1h": "1 hour", "1d": "Daily",
+  "1m": "1 min", "3m": "3 min", "5m": "5 min", "10m": "10 min", "15m": "15 min",
+  "30m": "30 min", "1h": "1 hour", "60m": "1 hour", "1d": "Daily", "1w": "Weekly",
 };
 const PRODUCTS: Product[] = ["CNC", "MIS", "NRML"];
 const KEY_PARAMS = ["capital_allocation", "sizing_method", "fixed_quantity"];
@@ -171,14 +171,30 @@ export function StrategyDeploy({ onDone }: { onDone: () => void }) {
           <select
             value={timeframe}
             onChange={(e) => setTimeframe(e.target.value)}
-            className="mt-0.5 rounded-md border border-line bg-bg px-2 py-1.5 text-sm"
+            disabled={!tpl || (tpl.supported_timeframes.length ?? 0) <= 1}
+            title={
+              !tpl
+                ? "Pick a strategy first"
+                : tpl.supported_timeframes.length <= 1
+                  ? `${tpl.name} runs on this timeframe only`
+                  : "Bar interval the strategy is evaluated on"
+            }
+            className="mt-0.5 rounded-md border border-line bg-bg px-2 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {(tpl?.supported_timeframes ?? ["1d"]).map((t) => (
+            {!tpl && <option value="1d">—</option>}
+            {(tpl?.supported_timeframes ?? []).map((t) => (
               <option key={t} value={t}>
                 {TF_LABEL[t] ?? t}
               </option>
             ))}
           </select>
+          {tpl && (
+            <span className="mt-0.5 block text-[11px] text-fg-faint">
+              {tpl.supported_timeframes.length <= 1
+                ? `${tpl.name} supports the ${TF_LABEL[timeframe] ?? timeframe} timeframe only.`
+                : `Supported: ${tpl.supported_timeframes.map((t) => TF_LABEL[t] ?? t).join(", ")}`}
+            </span>
+          )}
         </label>
         <div className="text-xs">
           <span className="text-fg-faint">Product</span>
