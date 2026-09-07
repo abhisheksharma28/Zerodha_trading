@@ -69,6 +69,34 @@ export interface ScreenerRatingDetail extends ScreenerRating {
   };
 }
 
+export const DEEP_DIVE_SECTIONS = [
+  ["business_model", "Business model"],
+  ["quarterly_results", "Latest quarterly results"],
+  ["balance_sheet", "Balance sheet health"],
+  ["competitive_position", "Competitive position"],
+  ["management_quality", "Management quality"],
+  ["technical_setup", "Technical setup"],
+  ["catalysts", "Key upcoming catalysts"],
+  ["bull_case", "Bull case"],
+  ["bear_case", "Bear case"],
+  ["valuation", "Valuation"],
+  ["verdict", "Final verdict"],
+] as const;
+
+export interface ScreenerDeepDive {
+  available: boolean;
+  symbol: string;
+  reason?: string;
+  hint?: string;
+  raw?: string;
+  verdict?: string | null;
+  model?: string | null;
+  sections?: Record<string, string>;
+  facts?: Record<string, unknown>;
+  generated_at?: string | null;
+  stale?: boolean;
+}
+
 export const screenerApi = {
   ratings: (params: { verdict?: Verdict; sector?: string; sort?: string } = {}) =>
     apiClient
@@ -76,4 +104,10 @@ export const screenerApi = {
       .then((r) => r.data),
   rating: (symbol: string) =>
     apiClient.get<ScreenerRatingDetail>(`/screener/ratings/${encodeURIComponent(symbol)}`).then((r) => r.data),
+  deepDive: (symbol: string, refresh = false) =>
+    apiClient
+      .get<ScreenerDeepDive>(`/screener/ratings/${encodeURIComponent(symbol)}/deepdive`, {
+        params: refresh ? { refresh: true } : {},
+      })
+      .then((r) => r.data),
 };

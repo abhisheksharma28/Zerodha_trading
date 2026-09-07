@@ -53,6 +53,24 @@ class ScreenerRating(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __table_args__ = (Index("ix_screener_verdict_score", "verdict", "composite"),)
 
 
+class ScreenerDeepDive(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """A generated, on-demand narrative deep-dive for one stock. The
+    sections are written by the configured assistant LLM strictly from the
+    numbers the screener already pulled — anything unsupported is left as
+    "Not enough data." Cached per symbol; regenerated on request or when
+    stale."""
+
+    __tablename__ = "screener_deep_dives"
+
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, unique=True, index=True)
+    verdict: Mapped[str | None] = mapped_column(String(8))
+    model: Mapped[str | None] = mapped_column(String(120))
+    sections: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    facts: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    error: Mapped[str | None] = mapped_column(Text)
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class ScreenerRun(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "screener_runs"
 

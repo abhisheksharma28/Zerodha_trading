@@ -34,7 +34,7 @@ from app.models.paper_account import (
     PaperStrategyRun,
     PaperTrade,
 )
-from app.models.screener import ScreenerRating, ScreenerRun
+from app.models.screener import ScreenerDeepDive, ScreenerRating, ScreenerRun
 from app.models.seasonality import SeasonalityModelVersion, SeasonalitySignal
 from app.models.strategy import Strategy, StrategyVersion
 
@@ -64,6 +64,7 @@ __all__ = [
     "OptionsStrategyInstance",
     "Order",
     "Trade",
+    "ScreenerDeepDive",
     "ScreenerRating",
     "ScreenerRun",
     "SeasonalityModelVersion",
