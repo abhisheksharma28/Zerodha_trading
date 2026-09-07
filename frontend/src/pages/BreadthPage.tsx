@@ -11,11 +11,11 @@ import { useMarketOverview } from "@/hooks/useMarket";
 import { useNow } from "@/hooks/useNow";
 import type { LiveTick } from "@/lib/marketStream";
 import { useStockDrawer } from "@/lib/stockDrawer";
-import type { MarketIndexRow, MarketQuoteRow, PreOpen, SectorRow } from "@/types/api";
+import type { MarketIndexRow, MarketQuoteRow, PreOpen } from "@/types/api";
 import { countCompact, inrCompact, num } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-const TABS = ["Movers", "Sectors", "Heat-map", "Signals", "Most Active"] as const;
+const TABS = ["Movers", "Sectors", "Signals", "Most Active"] as const;
 
 // Index tradingsymbol → F&O underlying for the option chain. Only indices that
 // actually trade options are listed; anything else opens the quote drawer.
@@ -31,8 +31,10 @@ const pctClass = (p?: number | null) =>
   p == null ? "text-fg-muted" : p > 0 ? "text-pos" : p < 0 ? "text-neg" : "text-fg-muted";
 const sign = (p?: number | null, d = 2) => (p == null ? "–" : `${p >= 0 ? "+" : ""}${p.toFixed(d)}%`);
 const fmtVol = (v?: number | null) => countCompact(v);
-const heatStyle = (p: number): React.CSSProperties => {
-  const t = Math.max(-3, Math.min(3, p)) / 3;
+// `range` is the % move that saturates the colour — stocks swing wider than
+// sector averages, so the sector heat-map passes a tighter range for contrast.
+const heatStyle = (p: number, range = 3): React.CSSProperties => {
+  const t = Math.max(-range, Math.min(range, p)) / range;
   const a = 0.12 + 0.5 * Math.abs(t);
   return { backgroundColor: t >= 0 ? `rgba(52,211,153,${a})` : `rgba(248,113,113,${a})` };
 };
@@ -159,7 +161,7 @@ export default function BreadthPage() {
   if (data && !data.available) {
     return (
       <div className="flex flex-col gap-5">
-        <PageHeader title="Market Breadth" subtitle="Live NSE movers, sectors, heat-map and signals." />
+        <PageHeader title="Market Breadth" subtitle="Live NSE movers, sector heat-map and signals." />
         <Card>
           <CardContent className="py-12 text-center">
             <p className="text-sm text-fg-muted">Live market data unavailable.</p>
@@ -177,7 +179,7 @@ export default function BreadthPage() {
     <div className="flex flex-col gap-4">
       <PageHeader
         title="Market Breadth"
-        subtitle="Live NSE movers, sectors, heat-map and signals — real Zerodha quotes."
+        subtitle="Live NSE movers, sector heat-map and signals — real Zerodha quotes."
         actions={
           <div className="flex items-center gap-2">
             <select
@@ -272,18 +274,11 @@ export default function BreadthPage() {
           )}
 
           {tab === "Sectors" && (
-            <SectionCard title="Sector Performance">
-              <div className="flex flex-col gap-1.5">
-                {data.sectors.map((s) => (
-                  <SectorBar key={s.sector} s={s} />
-                ))}
-              </div>
-            </SectionCard>
-          )}
-
-          {tab === "Heat-map" && (
-            <SectionCard title="Change Heat-map" bodyClassName="p-3">
-              <Heatmap rows={(view ?? data).heatmap} />
+            <SectionCard
+              title="Sector Heat-map"
+              bodyClassName="p-3"
+            >
+              <SectorHeatmap rows={(view ?? data).heatmap} />
             </SectionCard>
           )}
 
@@ -493,57 +488,117 @@ function SignalCard({ label, tone, syms }: { label: string; tone: "pos" | "neg";
   );
 }
 
-function SectorBar({ s }: { s: SectorRow }) {
-  const w = Math.min(Math.abs(s.avg_change_pct) / 3, 1) * 50;
-  return (
-    <div className="flex items-center gap-3 text-xs">
-      <span className="w-36 shrink-0 truncate text-fg-muted">{s.sector}</span>
-      <div className="relative flex h-4 flex-1 items-center">
-        <span className="absolute left-1/2 h-full w-px bg-line" />
-        <span
-          className={cn("absolute h-2.5 rounded", s.avg_change_pct >= 0 ? "bg-pos" : "bg-neg")}
-          style={s.avg_change_pct >= 0 ? { left: "50%", width: `${w}%` } : { right: "50%", width: `${w}%` }}
-        />
-      </div>
-      <span className={cn("w-14 shrink-0 text-right tabular-nums", pctClass(s.avg_change_pct))}>{sign(s.avg_change_pct)}</span>
-      <span className="w-16 shrink-0 text-right text-[11px] text-fg-faint">{s.advances}▲ {s.declines}▼</span>
-    </div>
-  );
-}
+type HeatRow = { symbol: string; sector: string; change_pct: number; value?: number };
 
-function Heatmap({ rows }: { rows: { symbol: string; sector: string; change_pct: number }[] }) {
+// Merged sector + stock heat-map. View 1 is a tile per sector coloured by its
+// (live) average move; hovering a tile peeks at that sector's stocks below,
+// clicking pins it open. View 2 is that sector's stocks as their own heat grid.
+function SectorHeatmap({ rows }: { rows: HeatRow[] }) {
   const openStock = useSym();
-  const bySector = useMemo(() => {
-    const m = new Map<string, typeof rows>();
+  const [pinned, setPinned] = useState<string | null>(null);
+  const [hovered, setHovered] = useState<string | null>(null);
+  const active = hovered ?? pinned;
+
+  const { sectors, bySector } = useMemo(() => {
+    const m = new Map<string, HeatRow[]>();
     for (const r of rows) {
       const arr = m.get(r.sector) ?? [];
       arr.push(r);
       m.set(r.sector, arr);
     }
-    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    const list = [...m.entries()]
+      .map(([sector, items]) => {
+        const sum = items.reduce((a, r) => a + r.change_pct, 0);
+        return {
+          sector,
+          count: items.length,
+          advances: items.filter((r) => r.change_pct > 0).length,
+          declines: items.filter((r) => r.change_pct < 0).length,
+          avg: items.length ? sum / items.length : 0,
+        };
+      })
+      .sort((a, b) => b.avg - a.avg);
+    return { sectors: list, bySector: m };
   }, [rows]);
+
+  const activeItems = active
+    ? [...(bySector.get(active) ?? [])].sort((a, b) => b.change_pct - a.change_pct)
+    : [];
+
   return (
     <div className="flex flex-col gap-3">
-      {bySector.map(([sector, items]) => (
-        <div key={sector}>
-          <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-fg-faint">{sector}</p>
-          <div className="grid grid-cols-3 gap-1 sm:grid-cols-5 md:grid-cols-8">
-            {items.map((it) => (
-              <button
-                key={it.symbol}
-                type="button"
-                onClick={() => openStock(it.symbol)}
-                style={heatStyle(it.change_pct)}
-                className="rounded p-1.5 text-center hover:ring-1 hover:ring-accent"
-                title={`${it.symbol} ${sign(it.change_pct)}`}
-              >
-                <p className="truncate text-[11px] font-medium text-fg">{it.symbol}</p>
-                <p className="text-[11px] tabular-nums text-fg">{sign(it.change_pct, 1)}</p>
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
+      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+        {sectors.map((s) => (
+          <button
+            key={s.sector}
+            type="button"
+            onMouseEnter={() => setHovered(s.sector)}
+            onMouseLeave={() => setHovered(null)}
+            onClick={() => setPinned((p) => (p === s.sector ? null : s.sector))}
+            style={heatStyle(s.avg, 1.5)}
+            className={cn(
+              "rounded-md p-2 text-left transition hover:ring-1 hover:ring-accent",
+              pinned === s.sector && "ring-2 ring-accent",
+            )}
+          >
+            <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-fg">
+              {s.sector}
+            </p>
+            <p className={cn("mt-0.5 text-sm font-bold tabular-nums", pctClass(s.avg))}>
+              {sign(s.avg)}
+            </p>
+            <p className="text-[10px] text-fg-muted">
+              {s.count} · <span className="text-pos">{s.advances}▲</span>{" "}
+              <span className="text-neg">{s.declines}▼</span>
+            </p>
+          </button>
+        ))}
+      </div>
+
+      <div className="rounded-lg border border-line bg-surface/40 p-3">
+        {!active ? (
+          <p className="py-6 text-center text-xs text-fg-faint">
+            Hover a sector to peek at its stocks · click to pin it open
+          </p>
+        ) : (
+          <>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
+                {active} · {activeItems.length} stocks
+                {pinned === active && (
+                  <span className="ml-2 rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">
+                    pinned
+                  </span>
+                )}
+              </p>
+              {pinned && (
+                <button
+                  type="button"
+                  onClick={() => setPinned(null)}
+                  className="shrink-0 text-[11px] text-fg-faint hover:text-fg"
+                >
+                  clear
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-3 gap-1 sm:grid-cols-5 md:grid-cols-8">
+              {activeItems.map((it) => (
+                <button
+                  key={it.symbol}
+                  type="button"
+                  onClick={() => openStock(it.symbol)}
+                  style={heatStyle(it.change_pct)}
+                  className="rounded p-1.5 text-center hover:ring-1 hover:ring-accent"
+                  title={`${it.symbol} ${sign(it.change_pct)}`}
+                >
+                  <p className="truncate text-[11px] font-medium text-fg">{it.symbol}</p>
+                  <p className="text-[11px] tabular-nums text-fg">{sign(it.change_pct, 1)}</p>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
