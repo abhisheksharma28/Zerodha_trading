@@ -71,6 +71,24 @@ def test_briefing_assembles_all_sections(monkeypatch):
     assert rep["seasonality"]["month"] == "September"
 
 
+def test_briefing_survives_scanner_with_no_live_ideas(monkeypatch):
+    # _scanner_digest reports available:True but long_pct None when there are
+    # zero live ideas (e.g. the scanner is disabled). The narrative must not
+    # try to format None as a float — that used to 500 the whole briefing.
+    monkeypatch.setattr(briefing, "market_overview", lambda *a, **k: _overview())
+    monkeypatch.setattr(
+        briefing, "_scanner_digest",
+        lambda _db: {"available": True, "live": 0, "long": 0, "short": 0, "long_pct": None},
+    )
+    monkeypatch.setattr(briefing, "_book_digest", lambda _db, _s: {"available": False})
+    monkeypatch.setattr(briefing, "_seasonality_note", lambda: None)
+
+    rep = briefing.build(None, None)
+    assert rep["available"] is True
+    assert "0 live ideas" in rep["headline"]
+    assert "% long" not in rep["headline"]
+
+
 def test_briefing_handles_no_market_data(monkeypatch):
     monkeypatch.setattr(
         briefing, "market_overview",

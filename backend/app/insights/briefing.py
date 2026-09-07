@@ -210,10 +210,12 @@ def _narrative(pulse: dict[str, Any], sectors: dict[str, Any], scan: dict[str, A
         f"{lead} leading; {lag} lagging.",
     ]
     if scan.get("available"):
-        parts.append(
-            f"The scanner has {scan.get('live', 0)} live ideas, "
-            f"{scan.get('long_pct', 0):.0f}% long."
-        )
+        live_n = scan.get("live", 0)
+        long_pct = scan.get("long_pct")
+        if live_n and long_pct is not None:
+            parts.append(f"The scanner has {live_n} live ideas, {long_pct:.0f}% long.")
+        else:
+            parts.append(f"The scanner has {live_n} live ideas.")
     if book.get("available") and book.get("total_pnl_pct") is not None:
         parts.append(
             f"Your paper book is {_sign(book['total_pnl_pct'])}% overall "
