@@ -491,13 +491,11 @@ function SignalCard({ label, tone, syms }: { label: string; tone: "pos" | "neg";
 type HeatRow = { symbol: string; sector: string; change_pct: number; value?: number };
 
 // Merged sector + stock heat-map. View 1 is a tile per sector coloured by its
-// (live) average move; hovering a tile peeks at that sector's stocks below,
-// clicking pins it open. View 2 is that sector's stocks as their own heat grid.
+// (live) average move. Click a sector to open View 2 — that sector's stocks
+// as their own heat grid; click it again to close.
 function SectorHeatmap({ rows }: { rows: HeatRow[] }) {
   const openStock = useSym();
-  const [pinned, setPinned] = useState<string | null>(null);
-  const [hovered, setHovered] = useState<string | null>(null);
-  const active = hovered ?? pinned;
+  const [selected, setSelected] = useState<string | null>(null);
 
   const { sectors, bySector } = useMemo(() => {
     const m = new Map<string, HeatRow[]>();
@@ -521,8 +519,8 @@ function SectorHeatmap({ rows }: { rows: HeatRow[] }) {
     return { sectors: list, bySector: m };
   }, [rows]);
 
-  const activeItems = active
-    ? [...(bySector.get(active) ?? [])].sort((a, b) => b.change_pct - a.change_pct)
+  const selectedItems = selected
+    ? [...(bySector.get(selected) ?? [])].sort((a, b) => b.change_pct - a.change_pct)
     : [];
 
   return (
@@ -532,13 +530,11 @@ function SectorHeatmap({ rows }: { rows: HeatRow[] }) {
           <button
             key={s.sector}
             type="button"
-            onMouseEnter={() => setHovered(s.sector)}
-            onMouseLeave={() => setHovered(null)}
-            onClick={() => setPinned((p) => (p === s.sector ? null : s.sector))}
+            onClick={() => setSelected((cur) => (cur === s.sector ? null : s.sector))}
             style={heatStyle(s.avg, 1.5)}
             className={cn(
               "rounded-md p-2 text-left transition hover:ring-1 hover:ring-accent",
-              pinned === s.sector && "ring-2 ring-accent",
+              selected === s.sector && "ring-2 ring-accent",
             )}
           >
             <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-fg">
@@ -555,50 +551,37 @@ function SectorHeatmap({ rows }: { rows: HeatRow[] }) {
         ))}
       </div>
 
-      <div className="rounded-lg border border-line bg-surface/40 p-3">
-        {!active ? (
-          <p className="py-6 text-center text-xs text-fg-faint">
-            Hover a sector to peek at its stocks · click to pin it open
-          </p>
-        ) : (
-          <>
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
-                {active} · {activeItems.length} stocks
-                {pinned === active && (
-                  <span className="ml-2 rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">
-                    pinned
-                  </span>
-                )}
-              </p>
-              {pinned && (
-                <button
-                  type="button"
-                  onClick={() => setPinned(null)}
-                  className="shrink-0 text-[11px] text-fg-faint hover:text-fg"
-                >
-                  clear
-                </button>
-              )}
-            </div>
-            <div className="grid grid-cols-3 gap-1 sm:grid-cols-5 md:grid-cols-8">
-              {activeItems.map((it) => (
-                <button
-                  key={it.symbol}
-                  type="button"
-                  onClick={() => openStock(it.symbol)}
-                  style={heatStyle(it.change_pct)}
-                  className="rounded p-1.5 text-center hover:ring-1 hover:ring-accent"
-                  title={`${it.symbol} ${sign(it.change_pct)}`}
-                >
-                  <p className="truncate text-[11px] font-medium text-fg">{it.symbol}</p>
-                  <p className="text-[11px] tabular-nums text-fg">{sign(it.change_pct, 1)}</p>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
+      {selected && (
+        <div className="rounded-lg border border-line bg-surface/40 p-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
+              {selected} · {selectedItems.length} stocks
+            </p>
+            <button
+              type="button"
+              onClick={() => setSelected(null)}
+              className="shrink-0 text-[11px] text-fg-faint hover:text-fg"
+            >
+              close
+            </button>
+          </div>
+          <div className="grid grid-cols-3 gap-1 sm:grid-cols-5 md:grid-cols-8">
+            {selectedItems.map((it) => (
+              <button
+                key={it.symbol}
+                type="button"
+                onClick={() => openStock(it.symbol)}
+                style={heatStyle(it.change_pct)}
+                className="rounded p-1.5 text-center hover:ring-1 hover:ring-accent"
+                title={`${it.symbol} ${sign(it.change_pct)}`}
+              >
+                <p className="truncate text-[11px] font-medium text-fg">{it.symbol}</p>
+                <p className="text-[11px] tabular-nums text-fg">{sign(it.change_pct, 1)}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
