@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 
 import { PageHeader } from "@/components/PageHeader";
 import { SectionCard } from "@/components/SectionCard";
+import { NotificationsPanel } from "@/components/settings/NotificationsPanel";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useTheme, type Theme } from "@/lib/theme";
@@ -174,14 +175,7 @@ export default function SettingsPage() {
         </SectionCard>
       )}
 
-      {tab === "Notifications" && (
-        <SectionCard title="Notifications">
-          <p className="text-sm text-fg-muted">
-            Email / webhook delivery for alerts and fills is configured here once the live-data
-            phase ships.
-          </p>
-        </SectionCard>
-      )}
+      {tab === "Notifications" && <NotificationsPanel />}
 
       {tab === "API" && (
         <SectionCard title="API">

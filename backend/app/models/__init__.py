@@ -21,6 +21,7 @@ from app.models.discovery import (
 )
 from app.models.instrument import Instrument
 from app.models.market_scanner import ScannerAlert, ScanRecommendation, ScanRun
+from app.models.notifications import Notification, NotificationConfig
 from app.models.options_strategy import OptionsStrategyInstance
 from app.models.order import Order, Trade
 from app.models.paper_account import (
@@ -57,6 +58,8 @@ __all__ = [
     "ScanRecommendation",
     "ScanRun",
     "ScannerAlert",
+    "Notification",
+    "NotificationConfig",
     "OptionsStrategyInstance",
     "Order",
     "Trade",

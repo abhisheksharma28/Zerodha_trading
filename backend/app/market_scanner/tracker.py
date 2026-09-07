@@ -95,6 +95,20 @@ def _resolve(
         payload={"recommendation_id": str(rec.id), "outcome": outcome,
                  "result_pct": rec.result_pct, "result_r": rec.result_r},
     ))
+    from app.notifications import service as notifications
+
+    notifications.enqueue(
+        db, "IDEA_OUTCOME",
+        title=f"{outcome} · {rec.direction} {rec.tradingsymbol}",
+        body="",
+        payload={
+            "recommendation_id": str(rec.id), "symbol": rec.tradingsymbol,
+            "direction": rec.direction, "outcome": outcome, "horizon": rec.horizon,
+            "exit_price": float(exit_price),
+            "result_pct": float(rec.result_pct) if rec.result_pct is not None else None,
+            "result_r": float(rec.result_r) if rec.result_r is not None else None,
+        },
+    )
 
 
 def run_tracker(db: Session, settings: Settings, *, now: datetime | None = None) -> TrackOutcome:
@@ -165,6 +179,18 @@ def run_tracker(db: Session, settings: Settings, *, now: datetime | None = None)
                     rec.exit_at = now
                     rec.result_points = rec.result_pct = rec.result_r = 0.0
                     out.invalidated += 1
+                    from app.notifications import service as notifications
+
+                    notifications.enqueue(
+                        db, "IDEA_OUTCOME",
+                        title=f"INVALIDATED · {rec.direction} {rec.tradingsymbol}",
+                        body="",
+                        payload={
+                            "recommendation_id": str(rec.id), "symbol": rec.tradingsymbol,
+                            "direction": rec.direction, "outcome": "INVALIDATED",
+                            "horizon": rec.horizon,
+                        },
+                    )
                     continue
                 else:
                     continue

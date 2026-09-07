@@ -301,6 +301,23 @@ def _fill(db: Session, acct: PaperAccount, order: PaperOrder, price: float,
     logger.info("paper_fill", sym=order.tradingsymbol, side=order.side, qty=qty, px=price,
                 product=order.product)
 
+    from app.notifications import service as notifications
+    from app.paper_account.service import _classify_source
+
+    src = _classify_source(order.tag, order.is_squareoff, {})
+    notifications.enqueue(
+        db, "PAPER_FILL",
+        title=f"{order.side} {qty} {order.tradingsymbol} @ {price:.2f}",
+        body="",
+        payload={
+            "order_id": str(order.id), "symbol": order.tradingsymbol,
+            "side": order.side, "quantity": qty, "price": round(price, 2),
+            "product": order.product, "value": round(value, 2), "charges": charges,
+            "realized_pnl": round(realized, 2),
+            "source": src.get("source"), "source_label": src.get("source_label"),
+        },
+    )
+
 
 def _apply_holding(db: Session, acct: PaperAccount, order: PaperOrder, price: float,
                    prev_close: float | None) -> float:

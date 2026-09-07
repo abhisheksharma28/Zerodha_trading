@@ -80,6 +80,16 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-sonnet-4-5"
     anthropic_base_url: str = "https://api.anthropic.com"
 
+    # --- Telegram notifications (Settings ▸ Notifications) ---
+    # Create a bot with @BotFather and put the token here; restart the
+    # backend, then pick the chat and toggle categories in the UI. The bot
+    # token is the only secret — the chat id and every on/off toggle live in
+    # the notification_config DB row and are editable at runtime. Empty
+    # token => the notifications subsystem is dormant (rows are recorded as
+    # "skipped", never sent, never a 500).
+    telegram_bot_token: str = ""
+    telegram_api_base: str = "https://api.telegram.org"
+
     # --- Risk limits (internal ceiling, intentionally tighter than Kite's own) ---
     risk_max_orders_per_second: int = 5
     risk_max_orders_per_minute: int = 200

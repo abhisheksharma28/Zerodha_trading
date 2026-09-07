@@ -300,6 +300,30 @@ def _persist(
         payload={"recommendation_id": str(rec.id), "confidence": setup.confidence,
                  "direction": setup.direction, "horizon": setup.horizon, "trade_style": trade_style},
     ))
+
+    # Push the idea to Telegram (grade-filtered in the notifications layer).
+    from app.notifications import service as notifications
+
+    grade = getattr(setup, "grade", None) or (getattr(setup, "score_detail", None) or {}).get("grade")
+    notifications.enqueue(
+        db, "IDEA_NEW",
+        title=f"{setup.direction} {si.tradingsymbol} · {label}",
+        body="",
+        grade=grade,
+        payload={
+            "recommendation_id": str(rec.id),
+            "symbol": si.tradingsymbol, "name": si.name,
+            "direction": setup.direction, "trade_style": label, "horizon": setup.horizon,
+            "grade": grade, "setup_type": setup.setup_type,
+            "entry": float(setup.entry), "stop_loss": float(setup.stop_loss),
+            "target_1": float(setup.target_1),
+            "target_2": float(setup.target_2) if setup.target_2 else None,
+            "rr": float(setup.rr) if setup.rr is not None else None,
+            "confidence": float(setup.confidence),
+            "risk_pct": round(abs(float(setup.entry) - float(setup.stop_loss)) / float(setup.entry) * 100.0, 2)
+            if setup.entry else None,
+        },
+    )
     return rec
 
 

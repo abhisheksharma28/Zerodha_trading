@@ -18,6 +18,7 @@ from app.api.v1 import (
     market,
     market_scanner,
     monitoring,
+    notifications,
     options_strategies,
     orderflow,
     orders,
@@ -52,6 +53,7 @@ api_router.include_router(leaderboard.router)
 api_router.include_router(seasonality.router)
 api_router.include_router(orderflow.router)
 api_router.include_router(monitoring.router)
+api_router.include_router(notifications.router)
 api_router.include_router(audit.router)
 api_router.include_router(orders.router)
 api_router.include_router(paper_account.router)

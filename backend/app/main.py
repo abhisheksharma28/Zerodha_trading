@@ -24,6 +24,7 @@ async def lifespan(app: FastAPI):
     logger.info("startup", environment=settings.environment)
     from app.live import engine as live_engine
     from app.market_scanner import scheduler as scanner_scheduler
+    from app.notifications import scheduler as notifications_scheduler
     from app.paper_account import scheduler as paper_scheduler
 
     try:
@@ -38,7 +39,15 @@ async def lifespan(app: FastAPI):
         await paper_scheduler.start()
     except Exception:  # noqa: BLE001 - the paper loop is optional, never block startup
         logger.exception("paper_account_start_failed")
+    try:
+        await notifications_scheduler.start()
+    except Exception:  # noqa: BLE001 - the notifications loop is optional, never block startup
+        logger.exception("notifications_start_failed")
     yield
+    try:
+        await notifications_scheduler.stop()
+    except Exception:  # noqa: BLE001
+        logger.exception("notifications_stop_failed")
     try:
         await paper_scheduler.stop()
     except Exception:  # noqa: BLE001
