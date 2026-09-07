@@ -46,6 +46,9 @@ def wired(monkeypatch):
     monkeypatch.setattr(market_data_service, "UNIVERSES", {"t": _UNIVERSE})
     monkeypatch.setattr(market_data_service, "BROAD_INDICES", [])
     monkeypatch.setattr(market_data_service, "SECTOR_INDICES", [])
+    # Pin the clock outside the 09:00–09:15 IST pre-open window so the
+    # snapshot branch is deterministic regardless of when the suite runs.
+    monkeypatch.setattr(market_data_service, "_ist_minutes_now", lambda: (1, 12 * 60))
     monkeypatch.setattr(broker_service, "build_authenticated_client", lambda db, s: _FakeClient())
 
 
@@ -99,3 +102,37 @@ def test_heatmap_covers_every_constituent(wired):
     out = market_data_service.market_overview(None, None, universe="t")
     assert {h["symbol"] for h in out["heatmap"]} == {"AAA", "BBB", "CCC", "DDD"}
     assert out["heatmap"][0]["change_pct"] >= out["heatmap"][-1]["change_pct"]
+
+
+def test_pre_open_inactive_outside_window(wired):
+    out = market_data_service.market_overview(None, None, universe="t")
+    assert out["pre_open"]["active"] is False
+    assert "09:00" in out["pre_open"]["reason"]
+
+
+def test_pre_open_snapshot_in_window(monkeypatch):
+    monkeypatch.setattr(market_data_service, "UNIVERSES", {"t": _UNIVERSE})
+    monkeypatch.setattr(market_data_service, "BROAD_INDICES", ["NIFTY 50"])
+    monkeypatch.setattr(market_data_service, "SECTOR_INDICES", [])
+    monkeypatch.setattr(market_data_service, "_ist_minutes_now", lambda: (1, 9 * 60 + 5))
+
+    quotes = dict(_QUOTES)
+    quotes["NSE:NIFTY 50"] = {
+        "last_price": 24_240.0,  # indicative, +1% vs prev close
+        "ohlc": {"open": 0, "high": 0, "low": 0, "close": 24_000.0},
+        "timestamp": "2026-09-01 09:05:00",
+    }
+
+    class _C:
+        def get_quote(self, instruments):
+            return {k: v for k, v in quotes.items() if k in instruments}
+
+    monkeypatch.setattr(broker_service, "build_authenticated_client", lambda db, s: _C())
+
+    po = market_data_service.market_overview(None, None, universe="t")["pre_open"]
+    assert po["active"] is True
+    assert po["indices"][0]["symbol"] == "NIFTY 50"
+    assert po["indices"][0]["change_pct"] == pytest.approx(1.0)
+    assert po["advances"] == 1 and po["declines"] == 2 and po["total"] == 4
+    assert po["gainers"][0]["symbol"] == "AAA"
+    assert po["losers"][0]["symbol"] == "DDD"

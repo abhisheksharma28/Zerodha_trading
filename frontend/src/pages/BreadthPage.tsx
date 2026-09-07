@@ -11,7 +11,7 @@ import { useMarketOverview } from "@/hooks/useMarket";
 import { useNow } from "@/hooks/useNow";
 import type { LiveTick } from "@/lib/marketStream";
 import { useStockDrawer } from "@/lib/stockDrawer";
-import type { MarketIndexRow, MarketQuoteRow, SectorRow } from "@/types/api";
+import type { MarketIndexRow, MarketQuoteRow, PreOpen, SectorRow } from "@/types/api";
 import { countCompact, inrCompact, num } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -204,6 +204,9 @@ export default function BreadthPage() {
         <p className="text-sm text-fg-faint">Loading market data…</p>
       ) : (
         <>
+          {/* pre-open snapshot — live only 09:00–09:15 IST */}
+          {data.pre_open.active && <PreOpenStrip po={data.pre_open} openIndex={openIndex} />}
+
           {/* index strip */}
           <div className="flex gap-2 overflow-x-auto pb-1">
             {(view ?? data).indices.map((ix) => (
@@ -347,6 +350,101 @@ function LiveClock({
       <RefreshCw className={cn("h-3.5 w-3.5", fetching && "animate-spin")} />
       {secs == null ? "Refresh" : secs <= 2 ? "live" : `${secs}s ago`}
     </button>
+  );
+}
+
+function PreOpenStrip({
+  po,
+  openIndex,
+}: {
+  po: Extract<PreOpen, { active: true }>;
+  openIndex: (sym: string) => void;
+}) {
+  const openStock = useSym();
+  const t = Math.max(po.total, 1);
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-accent/30 bg-accent/[0.04] px-3 py-2.5">
+      <div className="flex items-center gap-2 text-xs">
+        <span className="rounded bg-accent/15 px-1.5 py-0.5 font-semibold uppercase tracking-wide text-accent">
+          Pre-open
+        </span>
+        <span className="text-fg-muted">
+          NSE indicative · {new Date(po.as_of).toLocaleTimeString()}
+        </span>
+      </div>
+
+      <div className="flex flex-wrap items-stretch gap-2">
+        {po.indices.length === 0 && (
+          <span className="text-xs text-fg-faint">Index quotes unavailable.</span>
+        )}
+        {po.indices.map((ix) => (
+          <button
+            key={ix.symbol}
+            type="button"
+            onClick={() => openIndex(ix.symbol)}
+            className="min-w-[8.5rem] shrink-0 rounded-md border border-line bg-surface px-2.5 py-1.5 text-left hover:border-line-strong"
+          >
+            <p className="truncate text-[11px] text-fg-faint">{ix.name}</p>
+            <p className="mt-0.5 text-sm font-semibold tabular-nums">
+              {ix.ltp?.toLocaleString("en-IN") ?? "–"}
+            </p>
+            <p className={cn("text-xs tabular-nums", pctClass(ix.change_pct))}>{sign(ix.change_pct)}</p>
+          </button>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-3 text-xs">
+        <span className="shrink-0 font-medium text-fg-muted">Pre-open breadth</span>
+        <span className="text-pos tabular-nums">{po.advances}▲</span>
+        <span className="text-fg-faint tabular-nums">{po.unchanged}=</span>
+        <span className="text-neg tabular-nums">{po.declines}▼</span>
+        <div className="flex h-2 max-w-[16rem] flex-1 overflow-hidden rounded-full bg-elevated">
+          <div className="bg-pos" style={{ width: `${(po.advances / t) * 100}%` }} />
+          <div className="bg-line-strong" style={{ width: `${(po.unchanged / t) * 100}%` }} />
+          <div className="bg-neg" style={{ width: `${(po.declines / t) * 100}%` }} />
+        </div>
+        <span className="shrink-0 text-fg-muted">
+          A/D <span className="font-medium text-fg tabular-nums">{po.ad_ratio ?? "–"}</span>
+        </span>
+      </div>
+
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+        <PreOpenMovers label="Top" tone="pos" rows={po.gainers} onPick={openStock} />
+        <PreOpenMovers label="Bottom" tone="neg" rows={po.losers} onPick={openStock} />
+      </div>
+    </div>
+  );
+}
+
+function PreOpenMovers({
+  label,
+  tone,
+  rows,
+  onPick,
+}: {
+  label: string;
+  tone: "pos" | "neg";
+  rows: MarketQuoteRow[];
+  onPick: (sym: string) => void;
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-fg-faint">{label}</span>
+      {rows.map((r) => (
+        <button
+          key={r.symbol}
+          type="button"
+          onClick={() => onPick(r.symbol)}
+          className={cn(
+            "rounded px-1.5 py-0.5 tabular-nums hover:underline",
+            tone === "pos" ? "bg-pos/10 text-pos" : "bg-neg/10 text-neg",
+          )}
+        >
+          {r.symbol} {sign(r.change_pct, 1)}
+        </button>
+      ))}
+    </div>
   );
 }
 

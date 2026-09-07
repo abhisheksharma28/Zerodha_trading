@@ -17,7 +17,6 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.backtesting.timeframes import UnknownTimeframeError, kite_interval, resolve
@@ -27,7 +26,6 @@ from app.core.logging import get_logger
 from app.db.session import SessionLocal
 from app.market_data.instruments import resolve_instrument_token
 from app.market_data.nse_universe import BROAD_INDICES, SECTOR_INDICES, UNIVERSES
-from app.models.instrument import Instrument
 from app.services import broker_service, instrument_service
 
 logger = get_logger(__name__)
@@ -61,13 +59,18 @@ def _quote_all(client: Any, symbols: list[str]) -> dict[str, Any]:
     return out
 
 
-def _known_index_symbols(db: Session) -> set[str]:
-    rows = db.execute(
-        select(Instrument.tradingsymbol)
-        .where(Instrument.exchange == "NSE")
-        .where(Instrument.segment.ilike("%INDICES%"))
-    ).scalars().all()
-    return {r.upper() for r in rows}
+# NSE pre-open session: order collection 09:00–09:08, matched 09:08–09:12,
+# buffer to 09:15. Kite `/quote` carries the indicative equilibrium price as
+# `last_price` throughout this window; outside it there is no pre-open data.
+_PREOPEN_START_MIN = 9 * 60          # 09:00 IST
+_PREOPEN_END_MIN = 9 * 60 + 15      # 09:15 IST
+_IST = timedelta(hours=5, minutes=30)
+
+
+def _ist_minutes_now() -> tuple[int, int]:
+    """(weekday, minutes-past-midnight) in IST."""
+    ist = datetime.now(UTC) + _IST
+    return ist.weekday(), ist.hour * 60 + ist.minute
 
 
 # Stale-while-revalidate hot cache. A single client polling every ~2-3s would
@@ -164,9 +167,12 @@ def _market_overview_uncached(
     constituents = UNIVERSES.get(universe) or UNIVERSES["nifty50"]
     name_by_symbol = {sym: name for sym, name, _sector in constituents}
 
-    idx_candidates = [*BROAD_INDICES, *SECTOR_INDICES]
-    known_idx = _known_index_symbols(db) if idx_candidates else set()
-    idx_wanted = [s for s in idx_candidates if s.upper() in known_idx]
+    # Curated broad + sector index tradingsymbols. Kite `/quote` silently
+    # omits any symbol it doesn't recognise and `_row()` drops those, so we
+    # request the whole list directly. (This used to be gated on a DB
+    # `segment ILIKE '%INDICES%'` lookup, which blanked the entire index
+    # strip whenever the instrument master was thin or freshly re-synced.)
+    idx_wanted = [*BROAD_INDICES, *SECTOR_INDICES]
 
     all_syms = [f"NSE:{s}" for s in idx_wanted] + [f"NSE:{sym}" for sym, _n, _s in constituents]
     quotes = _quote_all(client, all_syms)
@@ -277,12 +283,46 @@ def _market_overview_uncached(
     }
 
     trim = ("symbol", "name", "sector", "ltp", "change", "change_pct", "volume", "value")
+
+    # --- NSE pre-open snapshot ------------------------------------------
+    # Live only, during 09:00–09:15 IST on trading days. Everything here is
+    # the exchange's *indicative* pre-open equilibrium price straight from
+    # Kite `/quote` — no fabrication, and nothing outside that window.
+    weekday, mins_now = _ist_minutes_now()
+    in_preopen = weekday < 5 and _PREOPEN_START_MIN <= mins_now < _PREOPEN_END_MIN
+    if in_preopen:
+        po_idx = [
+            {k: ix[k] for k in ("symbol", "name", "ltp", "change", "change_pct", "prev_close")}
+            for ix in indices
+            if ix["symbol"] in ("NIFTY 50", "NIFTY BANK", "NIFTY NEXT 50", "NIFTY FIN SERVICE")
+        ]
+        po_up = sum(1 for s in stocks if s["change_pct"] > 0)
+        po_dn = sum(1 for s in stocks if s["change_pct"] < 0)
+        pre_open: dict[str, Any] = {
+            "active": True,
+            "as_of": as_of or datetime.now(UTC).isoformat(),
+            "indices": po_idx,
+            "advances": po_up,
+            "declines": po_dn,
+            "unchanged": len(stocks) - po_up - po_dn,
+            "total": len(stocks),
+            "ad_ratio": round(po_up / po_dn, 2) if po_dn else None,
+            "gainers": [{k: g[k] for k in trim} for g in by_change[:5]],
+            "losers": [{k: x[k] for k in trim} for x in reversed(by_change[-5:])],
+        }
+    else:
+        pre_open = {
+            "active": False,
+            "reason": "NSE pre-open runs 09:00–09:15 IST on trading days.",
+        }
+
     return {
         "available": True,
         "as_of": as_of or datetime.now(UTC).isoformat(),
         "universe": universe,
         "constituent_count": len(stocks),
         "indices": indices,
+        "pre_open": pre_open,
         "breadth": {
             "advances": advances,
             "declines": declines,

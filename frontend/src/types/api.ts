@@ -287,6 +287,30 @@ export interface SectorRow {
   avg_change_pct: number;
 }
 
+export interface PreOpenIndexRow {
+  symbol: string;
+  name: string;
+  ltp: number | null;
+  change: number | null;
+  change_pct: number | null;
+  prev_close: number | null;
+}
+
+export type PreOpen =
+  | { active: false; reason: string }
+  | {
+      active: true;
+      as_of: string;
+      indices: PreOpenIndexRow[];
+      advances: number;
+      declines: number;
+      unchanged: number;
+      total: number;
+      ad_ratio: number | null;
+      gainers: MarketQuoteRow[];
+      losers: MarketQuoteRow[];
+    };
+
 export type MarketOverview =
   | { available: false; reason: string; universe: string }
   | {
@@ -295,6 +319,7 @@ export type MarketOverview =
       universe: string;
       constituent_count: number;
       indices: MarketIndexRow[];
+      pre_open: PreOpen;
       breadth: {
         advances: number;
         declines: number;
