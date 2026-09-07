@@ -19,6 +19,7 @@ from app.models.discovery import (
     DiscoveryInstrument,
     DiscoverySearchRun,
 )
+from app.models.imie import ImieConfig, ImieScan, ImieSignal, ImieStateTransition
 from app.models.instrument import Instrument
 from app.models.market_scanner import ScannerAlert, ScanRecommendation, ScanRun
 from app.models.notifications import Notification, NotificationConfig
@@ -55,6 +56,10 @@ __all__ = [
     "DiscoveryIngestRun",
     "DiscoveryInstrument",
     "DiscoverySearchRun",
+    "ImieConfig",
+    "ImieScan",
+    "ImieSignal",
+    "ImieStateTransition",
     "Instrument",
     "ScanRecommendation",
     "ScanRun",

@@ -152,6 +152,19 @@ class Settings(BaseSettings):
     screener_avoid_max_score: float = 40.0    # composite <  this -> AVOID
     screener_min_completeness: float = 0.5    # below this -> forced HOLD, low confidence
 
+    # --- Intraday Move Intelligence Engine (IMIE) ---
+    # A 1-minute intraday scan loop that ranks instruments by the empirical
+    # probability of a significant move and classifies each into the
+    # compression -> pressure -> breakout state machine. Reads the live tick
+    # feed + Kite 1-minute history; writes only its own tables. Market-hours
+    # gated. Weights / thresholds live in the editable `imie_config` row,
+    # not here.
+    imie_enabled: bool = True
+    imie_scan_interval_seconds: int = 60
+    imie_universe: str = "fno"                # fno | nifty200 | broad500 (screener scopes)
+    imie_history_days: int = 20               # trailing 1-minute sessions for baselines
+    imie_max_instruments: int = 220           # hard cap per scan (Kite history budget)
+
     # --- Paper-account strategy deploys ---
     # Upper bound on how many instruments one deployed paper strategy may
     # cover, whether hand-picked or expanded from a named universe. A very
